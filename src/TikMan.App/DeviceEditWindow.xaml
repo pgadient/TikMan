@@ -1,0 +1,66 @@
+<Window x:Class="TikMan.App.DeviceEditWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:TikMan.App.Localization"
+        Title="{loc:Loc De_TitleEdit}" Width="440" SizeToContent="Height" Icon="pack://application:,,,/TikMan;component/tikman.png"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False">
+    <StackPanel Margin="14">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="130"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="32"/>
+                <RowDefinition Height="32"/>
+                <RowDefinition Height="32"/>
+                <RowDefinition Height="32"/>
+                <RowDefinition Height="32"/>
+                <RowDefinition Height="32"/>
+                <RowDefinition Height="32"/>
+                <RowDefinition Height="32"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc De_Name}"/>
+            <TextBox x:Name="NameBox" Grid.Row="0" Grid.Column="1" VerticalContentAlignment="Center" Height="24"/>
+
+            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc De_Address}"/>
+            <TextBox x:Name="HostBox" Grid.Row="1" Grid.Column="1" VerticalContentAlignment="Center" Height="24"/>
+
+            <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc De_Connection}"/>
+            <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                <CheckBox x:Name="HttpsCheck" VerticalAlignment="Center" IsChecked="True"
+                          Checked="HttpsCheck_Changed" Unchecked="HttpsCheck_Changed" Content="{loc:Loc De_Https}"/>
+                <TextBlock VerticalAlignment="Center" Margin="16,0,4,0" Text="{loc:Loc De_Port}"/>
+                <TextBox x:Name="PortBox" Width="60" VerticalContentAlignment="Center" Height="24" Text="443"/>
+            </StackPanel>
+
+            <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center"/>
+            <CheckBox x:Name="IgnoreCertCheck" Grid.Row="3" Grid.Column="1" VerticalAlignment="Center" IsChecked="True"
+                      Content="{loc:Loc De_IgnoreCert}"/>
+
+            <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc De_User}"/>
+            <TextBox x:Name="UserBox" Grid.Row="4" Grid.Column="1" VerticalContentAlignment="Center" Height="24" Text="admin"/>
+
+            <TextBlock Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc De_Password}"/>
+            <PasswordBox x:Name="PasswordBox" Grid.Row="5" Grid.Column="1" VerticalContentAlignment="Center" Height="24"/>
+
+            <TextBlock Grid.Row="6" Grid.Column="0" VerticalAlignment="Center"/>
+            <CheckBox x:Name="MonitoringCheck" Grid.Row="6" Grid.Column="1" VerticalAlignment="Center" IsChecked="True" Content="{loc:Loc De_Monitor}"/>
+
+            <TextBlock Grid.Row="7" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc De_Notes}"/>
+            <TextBox x:Name="NotesBox" Grid.Row="7" Grid.Column="1" VerticalContentAlignment="Center" Height="24"/>
+        </Grid>
+
+        <TextBlock x:Name="PasswordHint" Foreground="#777777" FontSize="11" Margin="130,2,0,0"
+                   Text="{loc:Loc De_PwHint}" Visibility="Collapsed"/>
+
+        <TextBlock x:Name="TestResultText" Margin="0,10,0,0" TextWrapping="Wrap" MinHeight="18"/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button x:Name="TestButton" Padding="10,5" Margin="0,0,8,0" Click="Test_Click" Content="{loc:Loc De_Test}"/>
+            <Button Padding="14,5" Margin="0,0,8,0" IsDefault="True" Click="Ok_Click" Content="{loc:Loc De_Ok}"/>
+            <Button Padding="14,5" IsCancel="True" Content="{loc:Loc De_Cancel}"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

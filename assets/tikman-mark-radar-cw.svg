@@ -1,0 +1,33 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <defs>
+    <linearGradient id="sweep" x1="372" y1="122" x2="252" y2="70" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2FCAE8" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#2FCAE8" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- scan trail behind clockwise-rotating beam -->
+  <path d="M256 256 L256 60 A196 196 0 0 1 382 106 Z" fill="url(#sweep)"/>
+
+  <!-- beam line from center to rim -->
+  <line x1="256" y1="256" x2="382" y2="106" stroke="#7FE9FB" stroke-width="7" stroke-linecap="round"/>
+
+  <!-- rings -->
+  <circle cx="256" cy="256" r="196" stroke="#2FCAE8" stroke-width="12"/>
+  <circle cx="256" cy="256" r="120" stroke="#2FCAE8" stroke-width="4" stroke-opacity="0.4"/>
+
+  <!-- pulse -->
+  <path d="M64 256 L158 256 L174 242 L188 256 L210 256 L244 118 L266 388 L288 256 L306 256 L320 266 L334 256 L448 256"
+        stroke="#2FCAE8" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- flat blips, clear of all lines -->
+  <g fill="#7FE9FB">
+    <circle cx="368" cy="160" r="7"/>
+    <circle cx="322" cy="206" r="5"/>
+    <circle cx="196" cy="132" r="6"/>
+    <circle cx="126" cy="208" r="6"/>
+    <circle cx="140" cy="330" r="6"/>
+    <circle cx="232" cy="330" r="5"/>
+    <circle cx="356" cy="344" r="6"/>
+  </g>
+</svg>

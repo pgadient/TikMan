@@ -1,0 +1,53 @@
+<Window x:Class="TikMan.App.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:TikMan.App.Localization"
+        Title="{loc:Loc Set_Title}" Width="480" SizeToContent="Height" Icon="pack://application:,,,/TikMan;component/tikman.png"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False">
+    <StackPanel Margin="16">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="150"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="34"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="34"/>
+                <RowDefinition Height="34"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" FontWeight="SemiBold" Text="{loc:Loc Set_Language}"/>
+            <ComboBox x:Name="LanguageCombo" Grid.Row="0" Grid.Column="1" Width="220" HorizontalAlignment="Left"
+                      VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag"
+                      SelectionChanged="LanguageCombo_SelectionChanged">
+                <ComboBoxItem Tag="System" Content="{loc:Loc Set_LangSystem}"/>
+                <ComboBoxItem Tag="SwissGerman" Content="{loc:Loc Set_LangSwiss}"/>
+                <ComboBoxItem Tag="German" Content="{loc:Loc Set_LangGerman}"/>
+                <ComboBoxItem Tag="English" Content="{loc:Loc Set_LangEnglish}"/>
+            </ComboBox>
+
+            <TextBlock Grid.Row="1" Grid.Column="1" Foreground="#777777" FontSize="11" Margin="0,2,0,6"
+                       Text="{loc:Loc Set_LangHint}"/>
+
+            <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" FontWeight="SemiBold" Text="{loc:Loc Set_BackupMethod}"/>
+            <ComboBox x:Name="BackupMethodCombo" Grid.Row="2" Grid.Column="1" Width="220" HorizontalAlignment="Left"
+                      VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag">
+                <ComboBoxItem Tag="Auto" Content="{loc:Loc Set_BackupAuto}"/>
+                <ComboBoxItem Tag="Web" Content="{loc:Loc Set_BackupWeb}"/>
+                <ComboBoxItem Tag="Ssh" Content="{loc:Loc Set_BackupSsh}"/>
+            </ComboBox>
+
+            <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" FontWeight="SemiBold" Text="{loc:Loc Set_SshPort}"/>
+            <TextBox x:Name="SshPortBox" Grid.Row="3" Grid.Column="1" Width="80" HorizontalAlignment="Left"
+                     VerticalContentAlignment="Center" Height="26" Text="22"/>
+        </Grid>
+
+        <TextBlock Margin="0,12,0,0" TextWrapping="Wrap" Foreground="#777777" Text="{loc:Loc Set_BackupInfo}"/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Padding="14,5" Margin="0,0,8,0" IsDefault="True" Click="Save_Click" Content="{loc:Loc Set_Save}"/>
+            <Button Padding="14,5" IsCancel="True" Content="{loc:Loc Set_Cancel}"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

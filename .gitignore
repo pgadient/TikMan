@@ -1,0 +1,18 @@
+bin/
+obj/
+dist/
+*.user
+.vs/
+
+# Lokale Claude-Code-Konfiguration (enthält lokale Pfade + Windows-Benutzername)
+.claude/
+
+# KI-Gedächtnis mit internen Netzwerk-Details (interne IPs, Gerätenamen) – bleibt lokal
+memory/
+
+# Versehentlich im Repo abgelegte Geräte-Backups (könnten Konfig/Passwörter enthalten)
+*.rsc
+*.backup
+
+# App-Konfig, falls jemand sie hierher kopiert (Passwörter, DPAPI-verschlüsselt)
+devices.json

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>TikMan</AssemblyName>
+    <RootNamespace>TikMan.App</RootNamespace>
+    <ApplicationIcon>tikman.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TikMan.Core\TikMan.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="tikman.png" />
+  </ItemGroup>
+
+</Project>

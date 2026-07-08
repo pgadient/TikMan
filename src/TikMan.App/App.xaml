@@ -1,0 +1,28 @@
+<Application x:Class="TikMan.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <SolidColorBrush x:Key="AccentBrush" Color="#2D6CB5"/>
+        <SolidColorBrush x:Key="OnlineBrush" Color="#2E9E44"/>
+        <SolidColorBrush x:Key="OfflineBrush" Color="#C63B3B"/>
+        <SolidColorBrush x:Key="BusyBrush" Color="#D98E1F"/>
+        <SolidColorBrush x:Key="UnknownBrush" Color="#9A9A9A"/>
+
+        <Style x:Key="ToolButton" TargetType="Button">
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="Margin" Value="2,0"/>
+        </Style>
+
+        <Style TargetType="DataGrid">
+            <Setter Property="AutoGenerateColumns" Value="False"/>
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="CanUserAddRows" Value="False"/>
+            <Setter Property="SelectionMode" Value="Single"/>
+            <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+            <Setter Property="HorizontalGridLinesBrush" Value="#E4E4E4"/>
+            <Setter Property="HeadersVisibility" Value="Column"/>
+            <Setter Property="RowHeight" Value="26"/>
+            <Setter Property="Background" Value="White"/>
+        </Style>
+    </Application.Resources>
+</Application>

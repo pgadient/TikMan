@@ -1,0 +1,34 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{27F5662E-D38E-450D-AC0D-2575E6499707}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TikMan.Core", "src\TikMan.Core\TikMan.Core.csproj", "{962290C4-834B-4104-AFFA-23A026F18B61}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TikMan.App", "src\TikMan.App\TikMan.App.csproj", "{62422E9D-9180-4BA2-AFC8-981F5D0257BF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{962290C4-834B-4104-AFFA-23A026F18B61}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{962290C4-834B-4104-AFFA-23A026F18B61}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{962290C4-834B-4104-AFFA-23A026F18B61}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{962290C4-834B-4104-AFFA-23A026F18B61}.Release|Any CPU.Build.0 = Release|Any CPU
+		{62422E9D-9180-4BA2-AFC8-981F5D0257BF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{62422E9D-9180-4BA2-AFC8-981F5D0257BF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{62422E9D-9180-4BA2-AFC8-981F5D0257BF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{62422E9D-9180-4BA2-AFC8-981F5D0257BF}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{962290C4-834B-4104-AFFA-23A026F18B61} = {27F5662E-D38E-450D-AC0D-2575E6499707}
+		{62422E9D-9180-4BA2-AFC8-981F5D0257BF} = {27F5662E-D38E-450D-AC0D-2575E6499707}
+	EndGlobalSection
+EndGlobal
