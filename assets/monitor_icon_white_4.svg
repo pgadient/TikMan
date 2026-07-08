@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!--
+    Monitor icon, monochrome white with black outline.
+    Perfect circles via <circle>; two-layer black-under-white for the outline.
+  -->
+
+  <defs>
+    <!-- ECG baseline + heartbeat waveform -->
+    <path id="ecg" fill="none" d="
+      M 60 256
+      L 152 256
+      L 168 256
+      L 178 234
+      L 189 256
+      L 214 256
+      L 240 112
+      L 271 400
+      L 291 256
+      L 314 256
+      L 325 273
+      L 338 256
+      L 452 256
+    "/>
+  </defs>
+
+  <!-- ============ BLACK OUTLINE LAYER ============ -->
+  <g stroke="#000000" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="256" cy="256" r="196" stroke-width="22"/>
+    <circle cx="256" cy="256" r="126" stroke-width="15"/>
+    <use href="#ecg" stroke-width="22"/>
+  </g>
+
+  <!-- ============ WHITE FILL LAYER ============ -->
+  <g stroke="#FFFFFF" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="256" cy="256" r="196" stroke-width="13"/>
+    <circle cx="256" cy="256" r="126" stroke-width="8"/>
+    <use href="#ecg" stroke-width="13"/>
+  </g>
+</svg>

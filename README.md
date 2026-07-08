@@ -7,12 +7,20 @@ managing many devices at once.
 
 > ⚠️ **Disclaimer**
 >
-> This tool is **vibe-coded** — largely generated with an AI assistant and **not** tested
-> against real hardware. It is provided **without any warranty** (see [LICENSE](LICENSE),
-> MIT) and used **entirely at your own risk**. The author accepts **no liability** for any
-> damage, downtime, misconfiguration or data loss — in particular not for the "Install
-> update" and "Backup" features, which reboot devices and export configurations. Test
-> first, verify your backups, and mind the ordering when doing bulk updates.
+> This tool is **vibe-coded** — largely generated with an AI assistant and only tested
+> with a handful of devices, so it almost certainly still contains plenty of bugs. It is
+> provided **without any warranty** (see [LICENSE](LICENSE), MIT) and used **entirely at
+> your own risk**. The author accepts **no liability** for any damage, downtime,
+> misconfiguration or data loss — in particular not for the "Install update" and "Backup"
+> features, which reboot devices and export configurations. Test first, verify your
+> backups, and mind the ordering when doing bulk updates.
+
+## Screenshot
+
+![TikMan main window with the network scan dialog open](screenshots/main_window.png)
+
+*Main window (device list, tabs for logs/monitoring/update/details) with the MNDP
+network-scan dialog on top.*
 
 ## Structure
 
