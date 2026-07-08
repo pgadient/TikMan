@@ -128,3 +128,19 @@ The finished `TikMan.exe` will then be in `dist\`.
 Updates reboot the device. The assistant therefore works sequentially and in list order:
 **edge devices first (APs, switches), the uplink router last** — otherwise you cut off the
 connection to the remaining devices.
+
+## Versioning & releases (maintainer notes)
+
+1. Bump `<Version>` in `src/TikMan.App/TikMan.App.csproj` (e.g. `1.1.0`). This sets the
+   exe's file/product version.
+2. Build a self-contained single-file exe — runs on any Windows x64 **without** requiring
+   a separate .NET install:
+   ```powershell
+   dotnet publish src\TikMan.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o dist\release
+   ```
+3. On GitHub → **Releases → Draft a new release**: create a tag `vX.Y.Z` (match `<Version>`),
+   write short notes, and attach `dist\release\TikMan.exe`. Binaries live in Releases, not
+   in git (`dist/` is git-ignored).
+4. The exe is **unsigned**, so Windows SmartScreen shows an "unknown publisher" warning on
+   first run — users click *More info → Run anyway*. (Code signing would remove this but
+   needs a paid certificate.)
