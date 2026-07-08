@@ -9,6 +9,9 @@
     <AssemblyName>TikMan</AssemblyName>
     <RootNamespace>TikMan.App</RootNamespace>
     <ApplicationIcon>tikman.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Product>TikMan</Product>
+    <Company>Pascal Montico-Gadient</Company>
   </PropertyGroup>
 
   <ItemGroup>
