@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
+using System.Net;
+using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Windows.Media;
 using TikMan.App.Localization;
@@ -65,6 +67,20 @@ public class DeviceViewModel : INotifyPropertyChanged
     }
 
     public string Host => Model.Host;
+
+    /// <summary>Both addresses of the device shown together (primary + other-family), e.g.
+    /// "192.168.1.5 · fe80::1"; just the primary when there is no alternate.</summary>
+    public string AddressesDisplay => Model.AltAddress.Length > 0 ? $"{Model.Host}  ·  {Model.AltAddress}" : Model.Host;
+
+    /// <summary>Whether the device has an IPv4 / IPv6 address (across Host + AltAddress) – drives the
+    /// main-page view filter (Combined / IPv4 / IPv6).</summary>
+    public bool HasIpv4 => IsFamily(AddressFamily.InterNetwork);
+    public bool HasIpv6 => IsFamily(AddressFamily.InterNetworkV6);
+
+    private bool IsFamily(AddressFamily family) =>
+        (IPAddress.TryParse(Model.Host, out var a) && a.AddressFamily == family) ||
+        (IPAddress.TryParse(Model.AltAddress, out var b) && b.AddressFamily == family);
+
     public string ConnectionDisplay => $"{(Model.UseHttps ? "https" : "http")}://{Model.Host}:{Model.Port}";
 
     /// <summary>Transport used for the REST API of this device (used by the filter).</summary>
@@ -236,6 +252,9 @@ public class DeviceViewModel : INotifyPropertyChanged
         _client = null;
         Notify(nameof(Name));
         Notify(nameof(Host));
+        Notify(nameof(AddressesDisplay));
+        Notify(nameof(HasIpv4));
+        Notify(nameof(HasIpv6));
         Notify(nameof(ConnectionDisplay));
         Notify(nameof(TransportDisplay));
         Notify(nameof(SupportedProtocols));

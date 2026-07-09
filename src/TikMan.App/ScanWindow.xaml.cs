@@ -413,13 +413,17 @@ public partial class ScanWindow : Window
             return;
         }
 
-        foreach (var result in selected)
+        foreach (var group in GroupByDevice(selected))
         {
+            // Prefer an IPv4 address as the primary (REST over HTTPS); the other family becomes the alt.
+            var primary = group.FirstOrDefault(r => IsIpv4(r.IpAddress)) ?? group[0];
+            var alt = group.FirstOrDefault(r => !ReferenceEquals(r, primary));
             NewDevices.Add(new Device
             {
-                Name = result.Identity.Length > 0 ? result.Identity : result.IpAddress,
-                Host = result.IpAddress,
-                MacAddress = result.MacAddress,
+                Name = primary.Identity.Length > 0 ? primary.Identity : primary.IpAddress,
+                Host = primary.IpAddress,
+                AltAddress = alt?.IpAddress ?? "",
+                MacAddress = primary.MacAddress.Length > 0 ? primary.MacAddress : (alt?.MacAddress ?? ""),
                 Username = _defaultUsername,
                 EncryptedPassword = _defaultEncryptedPassword,
                 UseHttps = true,
@@ -429,6 +433,25 @@ public partial class ScanWindow : Window
         }
         DialogResult = true;
     }
+
+    /// <summary>Groups the selected results so IPv4 and IPv6 of the same physical device (same MAC)
+    /// become one device; entries without a MAC stay on their own.</summary>
+    private static List<List<ScanResultViewModel>> GroupByDevice(IEnumerable<ScanResultViewModel> selected)
+    {
+        var groups = new List<List<ScanResultViewModel>>();
+        var byMac = new Dictionary<string, List<ScanResultViewModel>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in selected)
+        {
+            var mac = new string(r.MacAddress.Where(Uri.IsHexDigit).ToArray());
+            if (mac.Length == 0) { groups.Add(new List<ScanResultViewModel> { r }); continue; }
+            if (!byMac.TryGetValue(mac, out var g)) { g = new List<ScanResultViewModel>(); byMac[mac] = g; groups.Add(g); }
+            g.Add(r);
+        }
+        return groups;
+    }
+
+    private static bool IsIpv4(string address) =>
+        IPAddress.TryParse(address, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork;
 
     /// <summary>Returns the /24 of the primary local IPv4 address as a suggestion.</summary>
     private static string GuessLocalSubnet()

@@ -12,6 +12,12 @@
                  to a second line when the window gets too narrow, so nothing overlaps. -->
             <DockPanel>
                 <WrapPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <ComboBox x:Name="ViewModeCombo" Width="118" Height="24" VerticalContentAlignment="Center" Margin="0,0,8,0"
+                              SelectedValuePath="Tag" ToolTip="{loc:Loc View_Tip}" SelectionChanged="ViewMode_Changed">
+                        <ComboBoxItem Tag="all" Content="{loc:Loc View_Combined}" IsSelected="True"/>
+                        <ComboBoxItem Tag="v4" Content="{loc:Loc View_Ipv4}"/>
+                        <ComboBoxItem Tag="v6" Content="{loc:Loc View_Ipv6}"/>
+                    </ComboBox>
                     <TextBlock VerticalAlignment="Center" Margin="0,0,3,0" Text="🔎"/>
                     <TextBox x:Name="DeviceFilterBox" Width="160" VerticalContentAlignment="Center" Height="24" Margin="0,0,8,0"
                              ToolTip="{loc:Loc Filter_Tip}" TextChanged="DeviceFilterBox_TextChanged"/>
@@ -100,7 +106,7 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="{loc:Loc Col_Name}" Binding="{Binding Name}" Width="170"/>
-                    <DataGridTextColumn Header="{loc:Loc Col_Address}" Binding="{Binding Host}" Width="120"/>
+                    <DataGridTextColumn Header="{loc:Loc Col_Address}" Binding="{Binding AddressesDisplay}" Width="180"/>
                     <DataGridTemplateColumn Header="{loc:Loc Col_Protocol}" Width="140" SortMemberPath="TransportDisplay">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
