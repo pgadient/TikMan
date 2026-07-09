@@ -10,6 +10,24 @@
             <TextBlock TextWrapping="Wrap" Text="{loc:Loc Ua_Warn}"/>
         </Border>
 
+        <Border DockPanel.Dock="Top" Padding="0,8,0,0">
+            <StackPanel Orientation="Horizontal">
+                <CheckBox x:Name="UseDefaultChannelCheck" VerticalAlignment="Center"
+                          Checked="UseDefaultChannel_Changed" Unchecked="UseDefaultChannel_Changed"
+                          Content="{loc:Loc Ua_UseDefaultChannel}"/>
+                <ComboBox x:Name="DefaultChannelCombo" Width="150" Margin="8,0,0,0" VerticalAlignment="Center"
+                          SelectedValuePath="Content" SelectedIndex="0"
+                          IsEnabled="{Binding IsChecked, ElementName=UseDefaultChannelCheck}">
+                    <ComboBoxItem>stable</ComboBoxItem>
+                    <ComboBoxItem>testing</ComboBoxItem>
+                    <ComboBoxItem>long-term</ComboBoxItem>
+                    <ComboBoxItem>development</ComboBoxItem>
+                </ComboBox>
+                <TextBlock VerticalAlignment="Center" Margin="12,0,0,0" Foreground="#777777"
+                           Text="{loc:Loc Ua_UseDefaultChannelHint}"/>
+            </StackPanel>
+        </Border>
+
         <Border DockPanel.Dock="Bottom" Padding="0,8,0,0">
             <DockPanel>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
@@ -50,8 +68,21 @@
                         </DataGridTemplateColumn>
                         <DataGridTextColumn Header="{loc:Loc Col_Device}" Binding="{Binding Device.Name}" Width="170"/>
                         <DataGridTextColumn Header="{loc:Loc Col_Address}" Binding="{Binding Device.Host}" Width="120"/>
-                        <DataGridTextColumn Header="{loc:Loc Col_Installed}" Binding="{Binding Device.Version}" Width="110"/>
-                        <DataGridTextColumn Header="{loc:Loc Col_Latest}" Binding="{Binding Device.LatestVersion}" Width="90"/>
+                        <DataGridTextColumn Header="{loc:Loc Col_Installed}" Binding="{Binding Device.Version}" Width="100"/>
+                        <DataGridTextColumn Header="{loc:Loc Col_Latest}" Binding="{Binding Device.LatestVersion}" Width="80"/>
+                        <DataGridTemplateColumn Header="{loc:Loc Upd_ChannelLabel}" Width="130">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <ComboBox SelectedValue="{Binding Channel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                              SelectedValuePath="Content" IsEnabled="{Binding ChannelEnabled}" Margin="2,1">
+                                        <ComboBoxItem>stable</ComboBoxItem>
+                                        <ComboBoxItem>testing</ComboBoxItem>
+                                        <ComboBoxItem>long-term</ComboBoxItem>
+                                        <ComboBoxItem>development</ComboBoxItem>
+                                    </ComboBox>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                         <DataGridTextColumn Header="{loc:Loc Col_State}" Binding="{Binding StateText}" Width="*"/>
                     </DataGrid.Columns>
                 </DataGrid>

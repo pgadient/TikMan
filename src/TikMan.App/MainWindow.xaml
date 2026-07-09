@@ -144,53 +144,6 @@
                     <controls:HistoryChart Snapshots="{Binding History}" Margin="4"/>
                 </TabItem>
 
-                <TabItem Header="{loc:Loc Tab_Update}">
-                    <StackPanel Margin="12" MaxWidth="560" HorizontalAlignment="Left">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="170"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="26"/>
-                                <RowDefinition Height="26"/>
-                                <RowDefinition Height="26"/>
-                                <RowDefinition Height="26"/>
-                                <RowDefinition Height="26"/>
-                            </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Grid.Column="0" FontWeight="SemiBold" Text="{loc:Loc Upd_Installed}"/>
-                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Version}"/>
-                            <TextBlock Grid.Row="1" Grid.Column="0" FontWeight="SemiBold" Text="{loc:Loc Upd_Latest}"/>
-                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding LatestReleaseText}"/>
-                            <TextBlock Grid.Row="2" Grid.Column="0" FontWeight="SemiBold" Text="{loc:Loc Upd_Channel}"/>
-                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding UpdateChannel}"/>
-                            <TextBlock Grid.Row="3" Grid.Column="0" FontWeight="SemiBold" Text="{loc:Loc Upd_Status}"/>
-                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding UpdateStatusText}"/>
-                        </Grid>
-                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                            <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Width="170" Text="{loc:Loc Upd_ChannelLabel}"/>
-                            <ComboBox x:Name="ChannelCombo" Width="150" SelectedValuePath="Tag"
-                                      SelectionChanged="ChannelCombo_SelectionChanged">
-                                <ComboBoxItem Tag="stable">stable</ComboBoxItem>
-                                <ComboBoxItem Tag="testing">testing</ComboBoxItem>
-                                <ComboBoxItem Tag="long-term">long-term</ComboBoxItem>
-                                <ComboBoxItem Tag="development">development</ComboBoxItem>
-                            </ComboBox>
-                            <TextBlock VerticalAlignment="Center" Margin="10,0,0,0" Foreground="#777777"
-                                       Text="{loc:Loc Upd_ChannelHint}"/>
-                        </StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                            <Button Style="{StaticResource ToolButton}" Click="CheckUpdateSingle_Click" Content="{loc:Loc Upd_Check}"/>
-                            <Button Style="{StaticResource ToolButton}" Click="InstallUpdateSingle_Click"
-                                    IsEnabled="{Binding UpdateAvailable}" Content="{loc:Loc Upd_Install}"/>
-                        </StackPanel>
-                        <TextBlock Margin="0,10,0,0" TextWrapping="Wrap" Foreground="#777777" Text="{loc:Loc Upd_Note}"/>
-                        <Border Margin="0,10,0,0" Background="#FFF6E8" BorderBrush="#E0B060" BorderThickness="1" CornerRadius="3" Padding="8">
-                            <TextBlock TextWrapping="Wrap" Text="{loc:Loc Upd_RightsBox}"/>
-                        </Border>
-                    </StackPanel>
-                </TabItem>
-
                 <TabItem Header="{loc:Loc Tab_Details}">
                     <StackPanel Margin="12" HorizontalAlignment="Left">
                         <Grid>
@@ -203,6 +156,8 @@
                                 <RowDefinition Height="26"/>
                                 <RowDefinition Height="26"/>
                                 <RowDefinition Height="26"/>
+                                <RowDefinition Height="26"/>
+                                <RowDefinition Height="26"/>
                             </Grid.RowDefinitions>
                             <TextBlock Grid.Row="0" Grid.Column="0" FontWeight="SemiBold" Text="{loc:Loc Det_Connection}"/>
                             <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding ConnectionDisplay}"/>
@@ -210,8 +165,12 @@
                             <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Model.Username}"/>
                             <TextBlock Grid.Row="2" Grid.Column="0" FontWeight="SemiBold" Text="{loc:Loc Det_Mac}"/>
                             <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Model.MacAddress}"/>
-                            <TextBlock Grid.Row="3" Grid.Column="0" FontWeight="SemiBold" Text="{loc:Loc Det_Notes}"/>
-                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Model.Notes}" TextWrapping="Wrap"/>
+                            <TextBlock Grid.Row="3" Grid.Column="0" FontWeight="SemiBold" Text="{loc:Loc Upd_Latest}"/>
+                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding LatestReleaseText}"/>
+                            <TextBlock Grid.Row="4" Grid.Column="0" FontWeight="SemiBold" Text="{loc:Loc Upd_Channel}"/>
+                            <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding UpdateChannel}"/>
+                            <TextBlock Grid.Row="5" Grid.Column="0" FontWeight="SemiBold" Text="{loc:Loc Det_Notes}"/>
+                            <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding Model.Notes}" TextWrapping="Wrap"/>
                         </Grid>
                         <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
                             <Button Style="{StaticResource ToolButton}" Click="EditDevice_Click" Content="{loc:Loc Det_Edit}"/>

@@ -195,6 +195,9 @@ internal static class Strings
 
         // Mass update
         ["Ua_Title"] = "Updates installieren",
+        ["Ua_UseDefaultChannel"] = "Standard-Kanal für alle:",
+        ["Ua_UseDefaultChannelHint"] = "sonst nutzt jedes Gerät seinen eigenen Kanal (Spalte).",
+        ["Ua_SettingChannel"] = "Setze Kanal «{0}» und prüfe…",
         ["Ua_Warn"] = "Achtung: Jedes Update rebootet das Gerät. Die Installation läuft sequenziell in der Reihenfolge der Liste – Geräte am Netzwerkrand (APs, Switches) zuerst, den Uplink-Router zuletzt, sonst sägt man den Ast ab, auf dem die restlichen Geräte erreichbar sind. Reihenfolge mit ▲/▼ anpassen.",
         ["Ua_WaitOnline"] = "Warten bis Gerät wieder online",
         ["Ua_ContinueOnError"] = "Bei Fehler mit nächstem Gerät weiterfahren",
@@ -440,6 +443,9 @@ internal static class Strings
 
         // Mass update
         ["Ua_Title"] = "Install updates",
+        ["Ua_UseDefaultChannel"] = "Default channel for all:",
+        ["Ua_UseDefaultChannelHint"] = "otherwise each device uses its own channel (column).",
+        ["Ua_SettingChannel"] = "Setting channel «{0}» and checking…",
         ["Ua_Warn"] = "Warning: Every update reboots the device. Installation runs sequentially in list order – edge devices (APs, switches) first, the uplink router last, otherwise you cut off the branch the remaining devices hang on. Reorder with ▲/▼.",
         ["Ua_WaitOnline"] = "Wait until device is back online",
         ["Ua_ContinueOnError"] = "Continue with next device on error",
@@ -686,6 +692,9 @@ internal static class Strings
 
         // Mass update
         ["Ua_Title"] = "Updates installiere",
+        ["Ua_UseDefaultChannel"] = "Standard-Kanal für alli:",
+        ["Ua_UseDefaultChannelHint"] = "susch bruucht jedes Grät sin eigät Kanal (Spaltä).",
+        ["Ua_SettingChannel"] = "Setze Kanal «{0}» und prüefe…",
         ["Ua_Warn"] = "Achtung: Jedes Update rebootet s Grät. D Installation lauft sequenziell i de Reihefolg vo de Lischtä – Grät am Netzwärkrand (APs, Switches) zerscht, de Uplink-Router zletscht, susch sägt mä de Ascht ab, wo di andere Grät dra hanged. Reihefolg mit ▲/▼ apasse.",
         ["Ua_WaitOnline"] = "Warte bis s Grät wieder online isch",
         ["Ua_ContinueOnError"] = "Bi Fähler mit em nächschtä Grät wiiterfahre",

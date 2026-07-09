@@ -15,6 +15,7 @@ public class UpdateItemViewModel : INotifyPropertyChanged
         Device = device;
         _isSelected = device.UpdateAvailable;
         _stateText = device.UpdateAvailable ? T("Ua_StateUpdateAvail") : device.UpdateStatusText;
+        _channel = device.UpdateChannel.Length > 0 ? device.UpdateChannel : "stable";
     }
 
     private bool _isSelected;
@@ -22,6 +23,22 @@ public class UpdateItemViewModel : INotifyPropertyChanged
     {
         get => _isSelected;
         set { _isSelected = value; Notify(nameof(IsSelected)); }
+    }
+
+    private string _channel;
+    /// <summary>Per-device channel chosen in the update dialog (used unless "use default channel" is on).</summary>
+    public string Channel
+    {
+        get => _channel;
+        set { _channel = value; Notify(nameof(Channel)); }
+    }
+
+    private bool _channelEnabled = true;
+    /// <summary>False while "use default channel" is active (per-row combo disabled).</summary>
+    public bool ChannelEnabled
+    {
+        get => _channelEnabled;
+        set { _channelEnabled = value; Notify(nameof(ChannelEnabled)); }
     }
 
     private bool _canSelect = true;
@@ -50,6 +67,8 @@ public partial class UpdateAllWindow : Window
     private readonly ObservableCollection<UpdateItemViewModel> _items = new();
     private CancellationTokenSource? _cts;
     private bool _running;
+    private bool _useDefaultChannel;
+    private string _defaultChannel = "stable";
 
     public UpdateAllWindow(List<DeviceViewModel> candidates)
     {
@@ -57,6 +76,15 @@ public partial class UpdateAllWindow : Window
         foreach (var device in candidates)
             _items.Add(new UpdateItemViewModel(device));
         ItemGrid.ItemsSource = _items;
+    }
+
+    /// <summary>Devices in the (possibly reordered) list order — used by the caller to persist the order.</summary>
+    public IReadOnlyList<DeviceViewModel> OrderedDevices => _items.Select(i => i.Device).ToList();
+
+    private void UseDefaultChannel_Changed(object sender, RoutedEventArgs e)
+    {
+        var useDefault = UseDefaultChannelCheck.IsChecked == true;
+        foreach (var item in _items) item.ChannelEnabled = !useDefault;
     }
 
     private void Window_Closing(object sender, CancelEventArgs e)
@@ -107,6 +135,8 @@ public partial class UpdateAllWindow : Window
 
         bool waitForOnline = WaitForOnlineCheck.IsChecked == true;
         bool continueOnError = ContinueOnErrorCheck.IsChecked == true;
+        _useDefaultChannel = UseDefaultChannelCheck.IsChecked == true;
+        _defaultChannel = DefaultChannelCombo.SelectedValue as string ?? "stable";
         int done = 0, failed = 0;
 
         UpdateProgress.Minimum = 0;
@@ -153,24 +183,22 @@ public partial class UpdateAllWindow : Window
         var device = item.Device;
         Log(T("Ua_DeviceHeader", device.Name, device.Host));
 
-        // If not checked yet: fetch the update status first
+        // Apply the chosen channel (one default for all, or the device's own) and check for updates.
+        var channel = _useDefaultChannel ? _defaultChannel : item.Channel;
+        item.StateText = T("Ua_StateCheck");
+        Log(T("Ua_SettingChannel", channel));
+        if (!await device.SetChannelAsync(channel, ct))
+        {
+            item.StateText = T("Ua_StateCheckFailed", device.LastError);
+            Log(T("Ua_CheckFailed", device.LastError));
+            return false;
+        }
         if (!device.UpdateAvailable)
         {
-            item.StateText = T("Ua_StateCheck");
-            Log(T("Ua_Checking"));
-            if (!await device.CheckUpdateAsync(ct))
-            {
-                item.StateText = T("Ua_StateCheckFailed", device.LastError);
-                Log(T("Ua_CheckFailed", device.LastError));
-                return false;
-            }
-            if (!device.UpdateAvailable)
-            {
-                item.StateText = T("Ua_StateCurrent");
-                item.IsSelected = false;
-                Log(T("Ua_AlreadyCurrent"));
-                return true;
-            }
+            item.StateText = T("Ua_StateCurrent");
+            item.IsSelected = false;
+            Log(T("Ua_AlreadyCurrent"));
+            return true;
         }
 
         item.StateText = T("Ua_StateInstalling", device.LatestVersion);
@@ -223,7 +251,12 @@ public partial class UpdateAllWindow : Window
         CloseButton.IsEnabled = !running;
         UpButton.IsEnabled = !running;
         DownButton.IsEnabled = !running;
-        foreach (var item in _items) item.CanSelect = !running;
+        UseDefaultChannelCheck.IsEnabled = !running;
+        foreach (var item in _items)
+        {
+            item.CanSelect = !running;
+            item.ChannelEnabled = !running && UseDefaultChannelCheck.IsChecked != true;
+        }
     }
 
     private void Log(string message)

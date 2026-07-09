@@ -209,47 +209,9 @@ public partial class MainWindow : Window
     private void DeviceGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         ApplyLogFilter();
-        SyncChannelCombo();
         // Initial log load on first selection of a device (Refresh logs reloads later).
         if (SelectedDevice is { } vm && vm.Logs.Count == 0)
             _ = LoadLogsAsync(vm);
-    }
-
-    private bool _syncingChannel;
-
-    /// <summary>Sets the channel dropdown to the device's current channel without letting
-    /// the SelectionChanged handler trigger a channel switch.</summary>
-    private void SyncChannelCombo()
-    {
-        _syncingChannel = true;
-        try
-        {
-            var channel = SelectedDevice?.UpdateChannel ?? "";
-            ChannelCombo.SelectedValue = channel.Length > 0 ? channel : null;
-        }
-        finally
-        {
-            _syncingChannel = false;
-        }
-    }
-
-    private async void ChannelCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_syncingChannel) return;                       // programmatic synchronization, not a user action
-        if (SelectedDevice is not { } vm) return;
-        if (ChannelCombo.SelectedValue is not string channel || channel.Length == 0) return;
-        if (channel == vm.UpdateChannel) return;           // already this channel
-
-        SetStatus(T("Msg_SettingChannel", channel, vm.Name));
-        var ok = await vm.SetChannelAsync(channel);
-        if (!ok)
-        {
-            SetStatus(T("Msg_ChannelFailed", vm.Name, vm.LastError));
-            SyncChannelCombo();                            // reset dropdown to the actual channel
-            return;
-        }
-        var tail = vm.UpdateAvailable ? T("Msg_ChannelUpdateAvail", vm.LatestVersion) : T("Msg_ChannelNoUpdate");
-        SetStatus(T("Msg_ChannelResult", vm.Name, vm.UpdateChannel, tail));
     }
 
     private void LogFilterBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyLogFilter();
@@ -276,22 +238,6 @@ public partial class MainWindow : Window
         await Task.WhenAll(_devices.Select(d => d.CheckUpdateAsync()));
         var available = _devices.Count(d => d.UpdateAvailable);
         SetStatus(available > 0 ? T("Msg_UpdatesDoneSome", available) : T("Msg_UpdatesDoneNone"));
-    }
-
-    private async void CheckUpdateSingle_Click(object sender, RoutedEventArgs e)
-    {
-        if (SelectedDevice is not { } vm) return;
-        SetStatus(T("Msg_CheckingUpdateOne", vm.Name));
-        await vm.CheckUpdateAsync();
-        SetStatus(vm.UpdateAvailable
-            ? T("Msg_UpdateAvailableOne", vm.Name, vm.LatestVersion)
-            : T("Msg_NoUpdateOne", vm.Name, vm.UpdateStatusText.Length > 0 ? vm.UpdateStatusText : T("Msg_NoUpdateFallback")));
-    }
-
-    private void InstallUpdateSingle_Click(object sender, RoutedEventArgs e)
-    {
-        if (SelectedDevice is not { } vm) return;
-        OpenUpdateWindow(new List<DeviceViewModel> { vm });
     }
 
     // ----- Backups -----
@@ -468,11 +414,27 @@ public partial class MainWindow : Window
         {
             var dialog = new UpdateAllWindow(candidates) { Owner = this };
             dialog.ShowDialog();
+            ApplyUpdateOrder(dialog.OrderedDevices); // persist any reordering done in the dialog
         }
         finally
         {
             _pollTimer.IsEnabled = wasPolling;
         }
+    }
+
+    /// <summary>Reorders the main device list so the given devices appear in this order
+    /// (at the positions they occupied), then persists the new order.</summary>
+    private void ApplyUpdateOrder(IReadOnlyList<DeviceViewModel> orderedSubset)
+    {
+        var subset = new HashSet<DeviceViewModel>(orderedSubset);
+        var queue = new Queue<DeviceViewModel>(orderedSubset);
+        var target = _devices.Select(d => subset.Contains(d) ? queue.Dequeue() : d).ToList();
+        for (int i = 0; i < target.Count; i++)
+        {
+            int cur = _devices.IndexOf(target[i]);
+            if (cur != i) _devices.Move(cur, i);
+        }
+        SaveAppData();
     }
 
     private void SetStatus(string text) => StatusText.Text = text;
