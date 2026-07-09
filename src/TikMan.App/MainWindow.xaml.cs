@@ -5,8 +5,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
+using TikMan.Core.Discovery;
 using TikMan.Core.Models;
 using TikMan.Core.Storage;
 using static TikMan.App.Localization.LocalizationManager;
@@ -35,6 +37,7 @@ public partial class MainWindow : Window
     {
         foreach (var device in _appData.Devices)
             _devices.Add(new DeviceViewModel(device));
+        MarkGateways();
 
         SelectIntervalItem(_appData.PollIntervalSeconds);
         AutoRefreshCheck.IsChecked = _appData.AutoRefreshEnabled;
@@ -43,7 +46,10 @@ public partial class MainWindow : Window
         ApplyTimerSettings();
 
         if (_devices.Count > 0)
+        {
             await RefreshAllAsync(quiet: false);
+            _ = CheckUpdatesAsync(_devices.ToList()); // auto-check in the background (no manual button anymore)
+        }
         else
             SetStatus(T("Msg_NoDevices"));
     }
@@ -175,8 +181,9 @@ public partial class MainWindow : Window
             {
                 var vm = new DeviceViewModel(device);
                 _devices.Add(vm);
-                _ = vm.RefreshAsync();
+                _ = RefreshAndCheckAsync(vm);
             }
+            MarkGateways();
             SaveAppData();
             SetStatus(T("Msg_DevicesAdded", dialog.NewDevices.Count));
         }
@@ -189,9 +196,23 @@ public partial class MainWindow : Window
         {
             var vm = new DeviceViewModel(device);
             _devices.Add(vm);
+            MarkGateways();
             SaveAppData();
-            _ = vm.RefreshAsync();
+            _ = RefreshAndCheckAsync(vm);
         }
+    }
+
+    /// <summary>Refreshes a freshly added device, then checks it for updates automatically.</summary>
+    private static async Task RefreshAndCheckAsync(DeviceViewModel vm)
+    {
+        if (await vm.RefreshAsync()) await vm.CheckUpdateAsync();
+    }
+
+    /// <summary>Flags devices whose host is the local default gateway (row shown orange).</summary>
+    private void MarkGateways()
+    {
+        var gateways = NetworkInfo.GetDefaultGateways();
+        foreach (var d in _devices) d.IsGateway = gateways.Contains(d.Host);
     }
 
     private void EditDevice_Click(object sender, RoutedEventArgs e)
@@ -228,7 +249,44 @@ public partial class MainWindow : Window
 
     private void DeviceGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (SelectedDevice is not null) EditDevice_Click(sender, e);
+        // Double-click on a cell copies that cell's value to the clipboard.
+        if (TryGetCellText(e.OriginalSource as DependencyObject, out var text))
+            CopyToClipboard(text);
+    }
+
+    /// <summary>Walks up from the clicked element to its DataGridCell and returns the cell text
+    /// (empty for non-text cells like the checkbox/status columns).</summary>
+    private static bool TryGetCellText(DependencyObject? source, out string text)
+    {
+        text = "";
+        TextBlock? tb = null;
+        while (source is not null and not DataGridCell)
+        {
+            if (tb is null && source is TextBlock t) tb = t; // template columns wrap the text
+            source = VisualTreeHelper.GetParent(source);
+        }
+        if (source is not DataGridCell cell) return false;   // clicked a header or empty space
+        tb ??= cell.Content as TextBlock;                    // text columns expose the TextBlock directly
+        if (tb is not null && tb.Text.Length > 0) { text = tb.Text; return true; }
+        return false;
+    }
+
+    /// <summary>Copies text to the clipboard and confirms in the status bar.</summary>
+    private void CopyToClipboard(string text)
+    {
+        try { Clipboard.SetText(text); SetStatus(T("Msg_Copied")); }
+        catch (Exception ex) when (ex is System.Runtime.InteropServices.ExternalException)
+        {
+            // the clipboard is briefly locked by another app – ignore
+        }
+    }
+
+    /// <summary>Copies the full IEEE vendor record (name + address) for the row's MAC.</summary>
+    private void CopyVendorFull_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as MenuItem)?.DataContext is not DeviceViewModel vm) return;
+        var entry = OuiLookup.GetFullEntry(vm.Model.MacAddress);
+        if (entry.Length > 0) CopyToClipboard(entry);
     }
 
     // ----- Logs -----
@@ -302,13 +360,14 @@ public partial class MainWindow : Window
 
     // ----- Updates -----
 
-    private async void CheckUpdatesAll_Click(object sender, RoutedEventArgs e)
+    /// <summary>Checks the given devices for firmware updates. Runs automatically after a device
+    /// is added and once on startup – there is no manual "Check updates" button anymore.</summary>
+    private async Task CheckUpdatesAsync(IReadOnlyList<DeviceViewModel> targets)
     {
-        if (_devices.Count == 0) return;
-        SetStatus(T("Msg_CheckingUpdatesAll"));
-        await Task.WhenAll(_devices.Select(d => d.CheckUpdateAsync()));
-        var available = _devices.Count(d => d.UpdateAvailable);
-        SetStatus(available > 0 ? T("Msg_UpdatesDoneSome", available) : T("Msg_UpdatesDoneNone"));
+        if (targets.Count == 0) return;
+        await Task.WhenAll(targets.Select(d => d.CheckUpdateAsync()));
+        var available = targets.Count(d => d.UpdateAvailable);
+        if (available > 0) SetStatus(T("Msg_UpdatesDoneSome", available));
     }
 
     // ----- Backups -----

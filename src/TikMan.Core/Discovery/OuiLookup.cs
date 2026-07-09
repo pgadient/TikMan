@@ -41,6 +41,50 @@ public static class OuiLookup
         return prefix.Length == 6 && Db.TryGetValue(prefix, out var vendor) ? vendor : "";
     }
 
+    /// <summary>Returns the complete IEEE record for a MAC (company name + postal address),
+    /// exactly as it appears in a locally present full <c>oui.txt</c>. The embedded list only
+    /// keeps company names, so the address block is only available once the user has downloaded
+    /// the full oui.txt (Settings). Falls back to just the vendor name otherwise.</summary>
+    public static string GetFullEntry(string mac)
+    {
+        var prefix = NormalizePrefix(mac);
+        if (prefix.Length != 6) return "";
+        foreach (var path in FileCandidates())
+        {
+            try
+            {
+                if (!File.Exists(path)) continue;
+                var block = ExtractBlock(File.ReadLines(path), prefix);
+                if (block.Length > 0) return block;
+            }
+            catch (IOException) { /* unreadable – try the next candidate */ }
+        }
+        return Lookup(mac); // no full list available – the friendly name is all we have
+    }
+
+    /// <summary>Pulls the multi-line record for one OUI out of an IEEE oui.txt: the "(hex)" line
+    /// plus the indented address lines that follow it, up to the next blank line.</summary>
+    private static string ExtractBlock(IEnumerable<string> lines, string prefix)
+    {
+        var block = new List<string>();
+        bool inBlock = false;
+        foreach (var line in lines)
+        {
+            int marker = line.IndexOf("(hex)", StringComparison.OrdinalIgnoreCase);
+            if (marker >= 0)
+            {
+                if (inBlock) break; // reached the next entry
+                if (NormalizePrefix(line[..marker]) == prefix) { inBlock = true; block.Add(line.Trim()); }
+                continue;
+            }
+            if (!inBlock) continue;
+            if (line.Trim().Length == 0) break; // blank line ends the record
+            if (line.Contains("(base 16)", StringComparison.OrdinalIgnoreCase)) continue; // redundant with (hex)
+            block.Add(line.Trim());
+        }
+        return string.Join(Environment.NewLine, block);
+    }
+
     /// <summary>Loads the full IEEE OUI list embedded as a gzip resource (oui.txt.gz).</summary>
     private static void TryLoadEmbedded()
     {

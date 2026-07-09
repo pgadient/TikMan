@@ -8,19 +8,10 @@
         Loaded="Window_Loaded" Closing="Window_Closing">
     <DockPanel>
         <Border DockPanel.Dock="Top" Background="#F3F3F3" BorderBrush="#DDDDDD" BorderThickness="0,0,0,1" Padding="6,5">
+            <!-- Two flowing rows: the right-hand group stays docked right, the tool buttons wrap
+                 to a second line when the window gets too narrow, so nothing overlaps. -->
             <DockPanel>
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
-                    <Button Style="{StaticResource ToolButton}" Click="Scan_Click" Content="{loc:Loc Tb_Scan}"/>
-                    <Button Style="{StaticResource ToolButton}" Click="AddDevice_Click" Content="{loc:Loc Tb_Add}"/>
-                    <Button Style="{StaticResource ToolButton}" Click="EditDevice_Click" Content="{loc:Loc Tb_Edit}"/>
-                    <Button Style="{StaticResource ToolButton}" Click="RemoveDevice_Click" Content="{loc:Loc Tb_Remove}"/>
-                    <Separator Margin="6,2" Width="1" Background="#CCCCCC"/>
-                    <Button Style="{StaticResource ToolButton}" Click="RefreshAll_Click" Content="{loc:Loc Tb_RefreshAll}"/>
-                    <Button Style="{StaticResource ToolButton}" Click="BackupAll_Click" Content="{loc:Loc Tb_BackupAll}"/>
-                    <Button Style="{StaticResource ToolButton}" Click="CheckUpdatesAll_Click" Content="{loc:Loc Tb_CheckUpdates}"/>
-                    <Button Style="{StaticResource ToolButton}" FontWeight="SemiBold" Click="InstallUpdates_Click" Content="{loc:Loc Tb_InstallUpdates}"/>
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <WrapPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <TextBlock VerticalAlignment="Center" Margin="0,0,3,0" Text="🔎"/>
                     <TextBox x:Name="DeviceFilterBox" Width="160" VerticalContentAlignment="Center" Height="24" Margin="0,0,8,0"
                              ToolTip="{loc:Loc Filter_Tip}" TextChanged="DeviceFilterBox_TextChanged"/>
@@ -36,7 +27,17 @@
                         <ComboBoxItem Tag="120">2 min</ComboBoxItem>
                         <ComboBoxItem Tag="300">5 min</ComboBoxItem>
                     </ComboBox>
-                </StackPanel>
+                </WrapPanel>
+                <WrapPanel Orientation="Horizontal">
+                    <Button Style="{StaticResource ToolButton}" Click="Scan_Click" Content="{loc:Loc Tb_Scan}"/>
+                    <Button Style="{StaticResource ToolButton}" Click="AddDevice_Click" Content="{loc:Loc Tb_Add}"/>
+                    <Button Style="{StaticResource ToolButton}" Click="EditDevice_Click" Content="{loc:Loc Tb_Edit}"/>
+                    <Button Style="{StaticResource ToolButton}" Click="RemoveDevice_Click" Content="{loc:Loc Tb_Remove}"/>
+                    <Separator Margin="6,2" Width="1" Background="#CCCCCC"/>
+                    <Button Style="{StaticResource ToolButton}" Click="RefreshAll_Click" Content="{loc:Loc Tb_RefreshAll}"/>
+                    <Button Style="{StaticResource ToolButton}" Click="BackupAll_Click" Content="{loc:Loc Tb_BackupAll}"/>
+                    <Button Style="{StaticResource ToolButton}" FontWeight="SemiBold" Click="InstallUpdates_Click" Content="{loc:Loc Tb_InstallUpdates}"/>
+                </WrapPanel>
             </DockPanel>
         </Border>
 
@@ -59,6 +60,16 @@
             <DataGrid x:Name="DeviceGrid" Grid.Row="0"
                       SelectionChanged="DeviceGrid_SelectionChanged"
                       MouseDoubleClick="DeviceGrid_MouseDoubleClick">
+                <DataGrid.RowStyle>
+                    <Style TargetType="DataGridRow">
+                        <Style.Triggers>
+                            <!-- Highlight the local default gateway in orange. -->
+                            <DataTrigger Binding="{Binding IsGateway}" Value="True">
+                                <Setter Property="Background" Value="#F68500"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </DataGrid.RowStyle>
                 <DataGrid.Columns>
                     <DataGridTemplateColumn Width="30" CanUserResize="False" CanUserSort="False">
                         <DataGridTemplateColumn.Header>
@@ -85,7 +96,19 @@
                     <DataGridTextColumn Header="{loc:Loc Col_Name}" Binding="{Binding Name}" Width="170"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Address}" Binding="{Binding Host}" Width="120"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Protocol}" Binding="{Binding TransportDisplay}" Width="70"/>
-                    <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding Vendor}" Width="100"/>
+                    <DataGridTemplateColumn Header="{loc:Loc Col_Vendor}" Width="100" SortMemberPath="Vendor">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Vendor}" VerticalAlignment="Center" Padding="4,0">
+                                    <TextBlock.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="{loc:Loc Ctx_CopyVendorFull}" Click="CopyVendorFull_Click"/>
+                                        </ContextMenu>
+                                    </TextBlock.ContextMenu>
+                                </TextBlock>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridTextColumn Header="{loc:Loc Col_Board}" Binding="{Binding Board}" Width="130"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Version}" Width="110">
                         <DataGridTextColumn.ElementStyle>

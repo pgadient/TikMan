@@ -48,6 +48,10 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// <summary>Ticked in the main list; batch actions (backup/update) act on marked devices.</summary>
     public bool IsSelected { get => _isSelected; set { _isSelected = value; Notify(); } }
 
+    private bool _isGateway;
+    /// <summary>True when this device's host is the local default gateway (row highlighted orange).</summary>
+    public bool IsGateway { get => _isGateway; set { _isGateway = value; Notify(); } }
+
     private DeviceStatus _status = DeviceStatus.Unknown;
     public DeviceStatus Status
     {
