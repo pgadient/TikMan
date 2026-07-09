@@ -34,7 +34,12 @@
 
         <DataGrid x:Name="ResultGrid" Margin="0,8,0,0">
             <DataGrid.Columns>
-                <DataGridTemplateColumn Header="" Width="34">
+                <DataGridTemplateColumn Width="34" CanUserSort="False">
+                    <DataGridTemplateColumn.Header>
+                        <CheckBox x:Name="ScanSelectAll" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  Checked="ScanSelectAll_Changed" Unchecked="ScanSelectAll_Changed"
+                                  ToolTip="{loc:Loc Col_MarkAllTip}"/>
+                    </DataGridTemplateColumn.Header>
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}"

@@ -40,6 +40,10 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// <summary>Transport used for the REST API of this device (shown as a column).</summary>
     public string TransportDisplay => Model.UseHttps ? "HTTPS" : "HTTP";
 
+    private bool _isSelected;
+    /// <summary>Ticked in the main list; batch actions (backup/update) act on marked devices.</summary>
+    public bool IsSelected { get => _isSelected; set { _isSelected = value; Notify(); } }
+
     private DeviceStatus _status = DeviceStatus.Unknown;
     public DeviceStatus Status
     {

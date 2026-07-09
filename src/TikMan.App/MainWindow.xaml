@@ -41,6 +41,9 @@
             <StatusBarItem>
                 <TextBlock x:Name="StatusText" Text="{loc:Loc Status_Ready}"/>
             </StatusBarItem>
+            <StatusBarItem HorizontalAlignment="Right">
+                <ProgressBar x:Name="MainProgress" Width="200" Height="12" Visibility="Collapsed"/>
+            </StatusBarItem>
         </StatusBar>
 
         <Grid Margin="6">
@@ -54,6 +57,19 @@
                       SelectionChanged="DeviceGrid_SelectionChanged"
                       MouseDoubleClick="DeviceGrid_MouseDoubleClick">
                 <DataGrid.Columns>
+                    <DataGridTemplateColumn Width="30" CanUserResize="False" CanUserSort="False">
+                        <DataGridTemplateColumn.Header>
+                            <CheckBox x:Name="MainSelectAll" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      Checked="MainSelectAll_Changed" Unchecked="MainSelectAll_Changed"
+                                      ToolTip="{loc:Loc Col_MarkAllTip}"/>
+                        </DataGridTemplateColumn.Header>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridTemplateColumn Header="" Width="30" CanUserResize="False">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>

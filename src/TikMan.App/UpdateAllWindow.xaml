@@ -27,6 +27,7 @@
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="170"/>
             </Grid.RowDefinitions>
 
@@ -61,7 +62,9 @@
                 </StackPanel>
             </Grid>
 
-            <TextBox x:Name="LogBox" Grid.Row="1" Margin="0,8,0,0" IsReadOnly="True"
+            <ProgressBar x:Name="UpdateProgress" Grid.Row="1" Height="12" Margin="0,8,0,0" Visibility="Collapsed"/>
+
+            <TextBox x:Name="LogBox" Grid.Row="2" Margin="0,8,0,0" IsReadOnly="True"
                      FontFamily="Consolas" FontSize="12" VerticalScrollBarVisibility="Auto"
                      TextWrapping="Wrap" Background="#FBFBFB"/>
         </Grid>

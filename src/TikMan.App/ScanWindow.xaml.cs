@@ -81,6 +81,12 @@ public partial class ScanWindow : Window
         ScanStatusText.Text = T("Sc_Intro");
     }
 
+    private void ScanSelectAll_Changed(object sender, RoutedEventArgs e)
+    {
+        var value = ScanSelectAll.IsChecked == true;
+        foreach (var r in _results.Where(r => r.CanSelect)) r.IsSelected = value;
+    }
+
     private async void Window_Loaded(object sender, RoutedEventArgs e) => await RunMndpAsync();
 
     private void Window_Closing(object sender, CancelEventArgs e) => _cts?.Cancel();

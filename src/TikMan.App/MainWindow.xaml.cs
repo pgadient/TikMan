@@ -371,9 +371,10 @@ public partial class MainWindow : Window
 
     private async void BackupAll_Click(object sender, RoutedEventArgs e)
     {
-        if (_devices.Count == 0)
+        var targets = _devices.Where(d => d.IsSelected).ToList();
+        if (targets.Count == 0)
         {
-            SetStatus(T("Msg_NoDevicesConfigured"));
+            SetStatus(T("Msg_NoDevicesMarked"));
             return;
         }
 
@@ -382,8 +383,8 @@ public partial class MainWindow : Window
         var folder = folderDialog.FolderName;
 
         var timestamp = DateTime.Now;
-        var targets = _devices.ToList();
         SetStatus(T("Msg_BackingUpAll", targets.Count));
+        BeginProgress(targets.Count);
 
         int ok = 0;
         var failures = new List<string>();
@@ -391,22 +392,26 @@ public partial class MainWindow : Window
         {
             SetStatus(T("Msg_LoadingConfig", vm.Name));
             var result = await vm.DownloadConfigAsync();
-            if (result is not { } data)
+            if (result is { } data)
+            {
+                try
+                {
+                    var fileName = BackupNaming.SuggestFileName(data.Identity, vm.Board, vm.Host, timestamp);
+                    File.WriteAllText(Path.Combine(folder, fileName), data.Config);
+                    ok++;
+                }
+                catch (Exception ex)
+                {
+                    failures.Add($"{vm.Name} ({vm.Host}): {ex.Message}");
+                }
+            }
+            else
             {
                 failures.Add($"{vm.Name} ({vm.Host}): {vm.LastError}");
-                continue;
             }
-            try
-            {
-                var fileName = BackupNaming.SuggestFileName(data.Identity, vm.Board, vm.Host, timestamp);
-                File.WriteAllText(Path.Combine(folder, fileName), data.Config);
-                ok++;
-            }
-            catch (Exception ex)
-            {
-                failures.Add($"{vm.Name} ({vm.Host}): {ex.Message}");
-            }
+            StepProgress();
         }
+        EndProgress();
 
         SetStatus(T("Msg_BackupAllDone", ok, failures.Count, folder));
         if (failures.Count > 0)
@@ -419,12 +424,40 @@ public partial class MainWindow : Window
 
     private void InstallUpdates_Click(object sender, RoutedEventArgs e)
     {
-        if (_devices.Count == 0)
+        var targets = _devices.Where(d => d.IsSelected).ToList();
+        if (targets.Count == 0)
         {
-            SetStatus(T("Msg_NoDevicesConfigured"));
+            SetStatus(T("Msg_NoDevicesMarked"));
             return;
         }
-        OpenUpdateWindow(_devices.ToList());
+        OpenUpdateWindow(targets);
+    }
+
+    // ----- Selection / progress -----
+
+    private void MainSelectAll_Changed(object sender, RoutedEventArgs e)
+    {
+        var value = MainSelectAll.IsChecked == true;
+        foreach (var d in _devices) d.IsSelected = value;
+    }
+
+    private void BeginProgress(int max)
+    {
+        MainProgress.Minimum = 0;
+        MainProgress.Maximum = Math.Max(1, max);
+        MainProgress.Value = 0;
+        MainProgress.Visibility = Visibility.Visible;
+    }
+
+    private void StepProgress()
+    {
+        if (MainProgress.Value < MainProgress.Maximum) MainProgress.Value += 1;
+    }
+
+    private void EndProgress()
+    {
+        MainProgress.Visibility = Visibility.Collapsed;
+        MainProgress.Value = 0;
     }
 
     private void OpenUpdateWindow(List<DeviceViewModel> candidates)

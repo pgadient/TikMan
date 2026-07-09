@@ -109,9 +109,14 @@ public partial class UpdateAllWindow : Window
         bool continueOnError = ContinueOnErrorCheck.IsChecked == true;
         int done = 0, failed = 0;
 
+        UpdateProgress.Minimum = 0;
+        UpdateProgress.Maximum = selected.Count;
+        UpdateProgress.Value = 0;
+        UpdateProgress.Visibility = Visibility.Visible;
+
         try
         {
-            foreach (var item in _items.Where(i => i.IsSelected).ToList())
+            foreach (var item in selected)
             {
                 _cts.Token.ThrowIfCancellationRequested();
                 var ok = await UpdateDeviceAsync(item, waitForOnline, _cts.Token);
@@ -125,6 +130,7 @@ public partial class UpdateAllWindow : Window
                         break;
                     }
                 }
+                UpdateProgress.Value += 1;
             }
             Log(T("Ua_Done", done, failed));
         }
@@ -138,6 +144,7 @@ public partial class UpdateAllWindow : Window
             _cts.Dispose();
             _cts = null;
             SetUiRunning(false);
+            UpdateProgress.Visibility = Visibility.Collapsed;
         }
     }
 

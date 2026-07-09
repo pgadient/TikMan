@@ -48,6 +48,8 @@ internal static class Strings
 
         // Monitoring
         ["Chart_NoData"] = "Noch keine Messwerte – Gerät wird beim nächsten Abfragen erfasst.",
+        ["Col_MarkAllTip"] = "Alle aus-/abwählen",
+        ["Msg_NoDevicesMarked"] = "Keine Geräte markiert – Geräte in der Liste ankreuzen.",
         ["Col_Protocol"] = "Protokoll",
         ["Sc_Clear"] = "🗑️ Leeren",
         ["Sc_CredsHint"] = "Neue Geräte verwenden die Standard-Zugangsdaten aus den Einstellungen.",
@@ -291,6 +293,8 @@ internal static class Strings
 
         // Monitoring
         ["Chart_NoData"] = "No samples yet – the device is recorded on the next refresh.",
+        ["Col_MarkAllTip"] = "Select/deselect all",
+        ["Msg_NoDevicesMarked"] = "No devices marked – tick the devices in the list.",
         ["Col_Protocol"] = "Protocol",
         ["Sc_Clear"] = "🗑️ Clear",
         ["Sc_CredsHint"] = "New devices use the default credentials from Settings.",
@@ -535,6 +539,8 @@ internal static class Strings
 
         // Monitoring
         ["Chart_NoData"] = "Na kei Mässwärt – s Grät wird bim nächschtä Abfrage erfasst.",
+        ["Col_MarkAllTip"] = "Alli us-/abwähle",
+        ["Msg_NoDevicesMarked"] = "Kei Grät markiert – Grät i de Lischtä ahögglä.",
         ["Col_Protocol"] = "Protokoll",
         ["Sc_Clear"] = "🗑️ Lääre",
         ["Sc_CredsHint"] = "Nöii Grät bruuched d Standard-Zugangsdatä us de Iistellige.",
