@@ -45,12 +45,26 @@ public static class DeviceStore
         try
         {
             if (File.Exists(StorageFile))
-                return JsonSerializer.Deserialize<AppData>(File.ReadAllText(StorageFile)) ?? new AppData();
+            {
+                var text = File.ReadAllText(StorageFile);
+                var data = JsonSerializer.Deserialize<AppData>(text) ?? new AppData();
+                // Grandfather existing users: a config written before the persistence toggle existed
+                // and that already holds devices must keep persisting them – otherwise upgrading to a
+                // build with the (default-off) toggle would silently wipe the device list on the next save.
+                if (data.Devices.Count > 0 && !text.Contains("\"PersistDeviceList\"", StringComparison.Ordinal))
+                    data.PersistDeviceList = true;
+                return data;
+            }
         }
         catch (Exception ex) when (ex is IOException or JsonException)
         {
-            // don't overwrite a corrupt file, set it aside instead
-            try { File.Move(StorageFile, StorageFile + ".corrupt", overwrite: true); } catch { }
+            // don't overwrite a corrupt file, set it aside instead (keep the first one if it exists)
+            try
+            {
+                var backup = StorageFile + ".corrupt";
+                if (!File.Exists(backup)) File.Move(StorageFile, backup);
+            }
+            catch { }
         }
         return new AppData();
     }

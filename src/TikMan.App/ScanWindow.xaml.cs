@@ -185,7 +185,11 @@ public partial class ScanWindow : Window
     {
         if (_resultsV6.Any(r => r.IpAddress == discovered.IpAddress)) return;
         bool known = _knownDevices.Any(d => d.Host == discovered.IpAddress);
-        var vm = new ScanResultViewModel(discovered, known) { IsGateway = _gateways.Contains(discovered.IpAddress) };
+        var vm = new ScanResultViewModel(discovered, known)
+        {
+            IsGateway = _gateways.Contains(discovered.IpAddress),
+            IsSelected = !known && ScanSelectAllV6.IsChecked == true, // follow the header's state
+        };
         _resultsV6.Add(vm);
         _ = vm.ProbeHttpAsync();
     }
@@ -371,7 +375,11 @@ public partial class ScanWindow : Window
         bool known = _knownDevices.Any(d =>
             d.Host == discovered.IpAddress ||
             (discovered.MacAddress != "" && string.Equals(d.MacAddress, discovered.MacAddress, StringComparison.OrdinalIgnoreCase)));
-        var vm = new ScanResultViewModel(discovered, known) { IsGateway = _gateways.Contains(discovered.IpAddress) };
+        var vm = new ScanResultViewModel(discovered, known)
+        {
+            IsGateway = _gateways.Contains(discovered.IpAddress),
+            IsSelected = !known && ScanSelectAll.IsChecked == true, // follow the header's state
+        };
         _results.Add(vm);
         _ = vm.ProbeHttpAsync();
     }

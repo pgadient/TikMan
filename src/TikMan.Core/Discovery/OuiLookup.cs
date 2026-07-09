@@ -38,8 +38,13 @@ public static class OuiLookup
         }
 
         var prefix = NormalizePrefix(mac);
-        return prefix.Length == 6 && Db.TryGetValue(prefix, out var vendor) ? vendor : "";
+        return prefix.Length == 6 && Db.TryGetValue(prefix, out var vendor) ? Friendly(vendor) : "";
     }
+
+    /// <summary>Normalizes raw IEEE names to a friendly form – the IEEE list registers MikroTik's
+    /// OUIs under "Routerboard.com"; show them as "MikroTik".</summary>
+    private static string Friendly(string vendor) =>
+        vendor.Contains("routerboard", StringComparison.OrdinalIgnoreCase) ? "MikroTik" : vendor;
 
     /// <summary>Returns the complete IEEE record for a MAC (company name + postal address),
     /// exactly as it appears in a locally present full <c>oui.txt</c>. The embedded list only

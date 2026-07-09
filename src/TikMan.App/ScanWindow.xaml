@@ -75,7 +75,7 @@
                         <DataGrid.Columns>
                             <DataGridTemplateColumn Width="34" CanUserSort="False">
                                 <DataGridTemplateColumn.Header>
-                                    <CheckBox x:Name="ScanSelectAll" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    <CheckBox x:Name="ScanSelectAll" HorizontalAlignment="Center" VerticalAlignment="Center" IsChecked="True"
                                               Checked="ScanSelectAll_Changed" Unchecked="ScanSelectAll_Changed"
                                               ToolTip="{loc:Loc Col_MarkAllTip}"/>
                                 </DataGridTemplateColumn.Header>
@@ -120,7 +120,7 @@
                         <DataGrid.Columns>
                             <DataGridTemplateColumn Width="34" CanUserSort="False">
                                 <DataGridTemplateColumn.Header>
-                                    <CheckBox x:Name="ScanSelectAllV6" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    <CheckBox x:Name="ScanSelectAllV6" HorizontalAlignment="Center" VerticalAlignment="Center" IsChecked="True"
                                               Checked="ScanSelectAllV6_Changed" Unchecked="ScanSelectAllV6_Changed"
                                               ToolTip="{loc:Loc Col_MarkAllTip}"/>
                                 </DataGridTemplateColumn.Header>

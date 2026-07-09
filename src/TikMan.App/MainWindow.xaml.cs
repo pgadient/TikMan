@@ -187,7 +187,7 @@ public partial class MainWindow : Window
         {
             foreach (var device in dialog.NewDevices)
             {
-                var vm = new DeviceViewModel(device);
+                var vm = new DeviceViewModel(device) { IsSelected = MainSelectAll.IsChecked == true };
                 _devices.Add(vm);
                 _ = RefreshAndCheckAsync(vm);
             }
@@ -202,7 +202,7 @@ public partial class MainWindow : Window
         var dialog = new DeviceEditWindow((Device?)null) { Owner = this };
         if (dialog.ShowDialog() == true && dialog.Result is { } device)
         {
-            var vm = new DeviceViewModel(device);
+            var vm = new DeviceViewModel(device) { IsSelected = MainSelectAll.IsChecked == true };
             _devices.Add(vm);
             MarkGateways();
             SaveAppData();
