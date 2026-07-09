@@ -3,12 +3,20 @@ using System.Runtime.Versioning;
 
 namespace TikMan.Core.Discovery;
 
+/// <summary>Outcome of a share enumeration: shares came back, the server refused us (needs a
+/// login / admin rights), or it was unreachable.</summary>
+public enum ShareListStatus { Ok, AccessDenied, Failed }
+
+public readonly record struct ShareListResult(ShareListStatus Status, List<string> Shares);
+
 /// <summary>Lists the SMB/Windows file shares exposed by a host via the Windows server API
 /// (netapi32 NetShareEnum, level 1). Returns the user-visible disk shares (admin$, C$, IPC$
-/// and other special shares are filtered out). Requires no admin rights for level 1.</summary>
+/// and other special shares are filtered out). Password-protected servers typically require a
+/// session/admin rights and answer with access-denied.</summary>
 [SupportedOSPlatform("windows")]
 public static class SmbShares
 {
+    private const int ErrorAccessDenied = 5; // ERROR_ACCESS_DENIED
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct ShareInfo1
     {
@@ -29,15 +37,18 @@ public static class SmbShares
     private const uint StypeDisktree = 0;
     private const int MaxPreferredLength = -1;
 
-    /// <summary>Returns the visible disk-share names of a host (empty if none / not permitted).</summary>
-    public static Task<List<string>> ListAsync(string host, CancellationToken ct = default) =>
+    /// <summary>Returns the visible disk-share names of a host and how the enumeration went.
+    /// NOTE: NetShareEnum is a blocking native call that ignores cancellation – the caller should
+    /// race it against a timeout so the UI never hangs on a slow/unresponsive server.</summary>
+    public static Task<ShareListResult> ListAsync(string host, CancellationToken ct = default) =>
         Task.Run(() =>
         {
             var shares = new List<string>();
             int resume = 0;
             int rc = NetShareEnum($@"\\{host}", 1, out var buffer, MaxPreferredLength,
                 out int read, out _, ref resume);
-            if (rc != 0 || buffer == IntPtr.Zero) return shares;
+            if (rc == ErrorAccessDenied) return new ShareListResult(ShareListStatus.AccessDenied, shares);
+            if (rc != 0 || buffer == IntPtr.Zero) return new ShareListResult(ShareListStatus.Failed, shares);
 
             try
             {
@@ -56,6 +67,6 @@ public static class SmbShares
                 NetApiBufferFree(buffer);
             }
 
-            return shares;
+            return new ShareListResult(ShareListStatus.Ok, shares);
         }, ct);
 }

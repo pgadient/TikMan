@@ -182,7 +182,8 @@ public partial class MainWindow : Window
     private void Scan_Click(object sender, RoutedEventArgs e)
     {
         var known = _devices.Select(d => d.Model).ToList();
-        var dialog = new ScanWindow(known, _appData.DefaultUsername, _appData.DefaultEncryptedPassword) { Owner = this };
+        var dialog = new ScanWindow(known, _appData.DefaultUsername, _appData.DefaultEncryptedPassword,
+            _appData.DefaultIgnoreCertErrors) { Owner = this };
         if (dialog.ShowDialog() == true)
         {
             foreach (var device in dialog.NewDevices)
@@ -199,7 +200,7 @@ public partial class MainWindow : Window
 
     private void AddDevice_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new DeviceEditWindow((Device?)null) { Owner = this };
+        var dialog = new DeviceEditWindow((Device?)null, _appData.DefaultIgnoreCertErrors) { Owner = this };
         if (dialog.ShowDialog() == true && dialog.Result is { } device)
         {
             var vm = new DeviceViewModel(device) { IsSelected = MainSelectAll.IsChecked == true };

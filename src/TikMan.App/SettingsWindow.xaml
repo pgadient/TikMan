@@ -73,6 +73,9 @@
             </ComboBox>
         </StackPanel>
 
+        <CheckBox x:Name="IgnoreCertCheck" Margin="0,12,0,0" Content="{loc:Loc Set_IgnoreCert}"/>
+        <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_IgnoreCertHint}"/>
+
         <CheckBox x:Name="PersistListCheck" Margin="0,12,0,0" Content="{loc:Loc Set_PersistList}"/>
         <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_PersistHint}"/>
 

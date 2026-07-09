@@ -74,12 +74,12 @@ public static class BackupService
         string localPath, IProgress<string>? log, CancellationToken ct)
     {
         log?.Report($"Downloading {RemoteFile} via SSH/SCP from {host}:{port}…");
-        await Task.Run(() =>
+        var work = Task.Run(() =>
         {
             var info = new ConnectionInfo(host, port, username,
                 new PasswordAuthenticationMethod(username, password))
             {
-                Timeout = TimeSpan.FromSeconds(20),
+                Timeout = TimeSpan.FromSeconds(12),
             };
             using var scp = new ScpClient(info);
             try
@@ -102,6 +102,16 @@ public static class BackupService
             {
                 if (scp.IsConnected) scp.Disconnect();
             }
-        }, ct).ConfigureAwait(false);
+        }, ct);
+
+        // Hard backstop so a stalled SSH handshake can't hang the app on "connecting".
+        try
+        {
+            await work.WaitAsync(TimeSpan.FromSeconds(45), ct).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            throw new RouterOsApiException(0, $"SSH connection to {host}:{port} timed out.");
+        }
     }
 }

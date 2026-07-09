@@ -102,19 +102,14 @@ public class DeviceViewModel : INotifyPropertyChanged
     {
         get
         {
-            var list = new List<ProtocolVm>();
-            if (Model.Vendor == DeviceVendor.MikroTik)
+            var hostPart = Model.Host.Contains(':') && !Model.Host.StartsWith('[') ? $"[{Model.Host}]" : Model.Host;
+            // Both web schemes are offered (a device usually serves both); double-click opens either.
+            return new List<ProtocolVm>
             {
-                var scheme = Model.UseHttps ? "https" : "http";
-                var hostPart = Model.Host.Contains(':') && !Model.Host.StartsWith('[') ? $"[{Model.Host}]" : Model.Host;
-                list.Add(new ProtocolVm(scheme, $"{scheme}://{hostPart}:{Model.Port}/"));
-                list.Add(new ProtocolVm("ssh", ""));
-            }
-            else // TP-Link: SSH only
-            {
-                list.Add(new ProtocolVm("ssh", ""));
-            }
-            return list;
+                new("http", $"http://{hostPart}/"),
+                new("https", $"https://{hostPart}/"),
+                new("ssh", ""),
+            };
         }
     }
 

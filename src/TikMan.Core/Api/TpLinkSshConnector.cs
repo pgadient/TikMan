@@ -18,12 +18,12 @@ public static class TpLinkSshConnector
     public static async Task<DeviceFacts> GetFactsAsync(Device device, string password, CancellationToken ct = default)
     {
         var port = device.Port is > 0 and <= 65535 ? device.Port : 22;
-        return await Task.Run(() =>
+        var work = Task.Run(() =>
         {
             var info = new ConnectionInfo(device.Host, port, device.Username,
                 new PasswordAuthenticationMethod(device.Username, password))
             {
-                Timeout = TimeSpan.FromSeconds(15),
+                Timeout = TimeSpan.FromSeconds(10),
             };
             using var ssh = new SshClient(info);
             try
@@ -44,7 +44,18 @@ public static class TpLinkSshConnector
             {
                 if (ssh.IsConnected) ssh.Disconnect();
             }
-        }, ct).ConfigureAwait(false);
+        }, ct);
+
+        // Hard backstop: SSH.NET's own timeout doesn't always cover a stalled handshake, so never
+        // let the UI hang on "connecting".
+        try
+        {
+            return await work.WaitAsync(TimeSpan.FromSeconds(20), ct).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            throw new RouterOsApiException(0, $"SSH connection to {device.Host}:{port} timed out.");
+        }
     }
 
     /// <summary>Runs the command via a plain exec channel; if the switch only offers an interactive

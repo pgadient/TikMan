@@ -24,6 +24,8 @@ public partial class DeviceEditWindow : Window
     /// is applied to all of them (password only when a new one is entered).</summary>
     public DeviceEditWindow(IReadOnlyList<Device> devices)
     {
+        if (devices is null || devices.Count == 0)
+            throw new ArgumentException("Multi-edit needs at least one device.", nameof(devices));
         InitializeComponent();
         _multi = devices;
         var first = devices[0];
@@ -45,7 +47,7 @@ public partial class DeviceEditWindow : Window
         TestButton.IsEnabled = false; // no single host to test against
     }
 
-    public DeviceEditWindow(Device? existing)
+    public DeviceEditWindow(Device? existing, bool defaultIgnoreCert = true)
     {
         InitializeComponent();
         _existing = existing;
@@ -73,6 +75,7 @@ public partial class DeviceEditWindow : Window
             Title = T("De_TitleAdd");
             ChannelCombo.SelectedIndex = 0; // (Default)
             VendorCombo.SelectedIndex = 0;  // MikroTik
+            IgnoreCertCheck.IsChecked = defaultIgnoreCert;
         }
     }
 

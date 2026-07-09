@@ -95,7 +95,8 @@ public class ScanResultViewModel : INotifyPropertyChanged
 
     private bool _sharesLoaded;
 
-    /// <summary>Enumerates the host's SMB shares once, on first expand.</summary>
+    /// <summary>Enumerates the host's SMB shares once, on first expand. NetShareEnum is a blocking
+    /// native call, so it's raced against a timeout to keep the UI from hanging on a slow server.</summary>
     public async Task LoadSharesAsync()
     {
         if (!HasSmb || _sharesLoaded) return;
@@ -103,9 +104,22 @@ public class ScanResultViewModel : INotifyPropertyChanged
         SharesStatus = T("Sc_SmbLoading");
         try
         {
-            var names = await SmbShares.ListAsync(IpAddress);
-            foreach (var name in names) Shares.Add(new SmbShareVm(IpAddress, name));
-            SharesStatus = names.Count > 0 ? "" : T("Sc_SmbNone");
+            var listTask = SmbShares.ListAsync(IpAddress);
+            if (await Task.WhenAny(listTask, Task.Delay(TimeSpan.FromSeconds(8))) != listTask)
+            {
+                _sharesLoaded = false; // let a re-expand try again
+                SharesStatus = T("Sc_SmbTimeout");
+                return;
+            }
+
+            var result = await listTask;
+            foreach (var name in result.Shares) Shares.Add(new SmbShareVm(IpAddress, name));
+            SharesStatus = result.Status switch
+            {
+                ShareListStatus.AccessDenied => T("Sc_SmbDenied"),
+                _ when result.Shares.Count > 0 => "",
+                _ => T("Sc_SmbNone"),
+            };
         }
         catch
         {
@@ -135,6 +149,7 @@ public partial class ScanWindow : Window
     private readonly List<Device> _knownDevices;
     private readonly string _defaultUsername;
     private readonly string _defaultEncryptedPassword;
+    private readonly bool _defaultIgnoreCert;
     private readonly ObservableCollection<ScanResultViewModel> _results = new();
     private readonly ObservableCollection<ScanResultViewModel> _resultsV6 = new();
     private readonly HashSet<string> _gateways = NetworkInfo.GetDefaultGateways();
@@ -145,12 +160,14 @@ public partial class ScanWindow : Window
     /// <summary>After DialogResult == true: the devices to be created.</summary>
     public List<Device> NewDevices { get; } = new();
 
-    public ScanWindow(List<Device> knownDevices, string defaultUsername, string defaultEncryptedPassword)
+    public ScanWindow(List<Device> knownDevices, string defaultUsername, string defaultEncryptedPassword,
+        bool defaultIgnoreCert = true)
     {
         InitializeComponent();
         _knownDevices = knownDevices;
         _defaultUsername = defaultUsername;
         _defaultEncryptedPassword = defaultEncryptedPassword;
+        _defaultIgnoreCert = defaultIgnoreCert;
         ResultGrid.ItemsSource = _results;
         ResultGridV6.ItemsSource = _resultsV6;
         SubnetBox.Text = GuessLocalSubnet();
@@ -428,7 +445,7 @@ public partial class ScanWindow : Window
                 EncryptedPassword = _defaultEncryptedPassword,
                 UseHttps = true,
                 Port = 443,
-                IgnoreCertErrors = true,
+                IgnoreCertErrors = _defaultIgnoreCert,
             });
         }
         DialogResult = true;
