@@ -366,28 +366,21 @@ public partial class MainWindow : Window
 
     private void DeviceFilterBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyDeviceFilter();
 
-    private void ViewMode_Changed(object sender, SelectionChangedEventArgs e)
+    /// <summary>Toggles whether each device's IPv4/IPv6 addresses are shown combined in one row.</summary>
+    private void Combine_Changed(object sender, RoutedEventArgs e)
     {
-        if (IsLoaded) ApplyDeviceFilter();
+        DeviceViewModel.CombineAddresses = CombineCheck.IsChecked == true;
+        foreach (var d in _devices) d.RefreshAddressDisplay();
     }
 
     private void ApplyDeviceFilter()
     {
         var view = CollectionViewSource.GetDefaultView(_devices);
         var tokens = DeviceFilterBox.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var mode = (ViewModeCombo?.SelectedItem as ComboBoxItem)?.Tag as string ?? "all";
-        view.Filter = tokens.Length == 0 && mode == "all"
+        view.Filter = tokens.Length == 0
             ? null
-            : obj => obj is DeviceViewModel d && MatchesViewMode(d, mode) && (tokens.Length == 0 || DeviceMatchesFilter(d, tokens));
+            : obj => obj is DeviceViewModel d && DeviceMatchesFilter(d, tokens);
     }
-
-    /// <summary>View filter: combined (all), IPv4-only, or IPv6-only (by the device's addresses).</summary>
-    private static bool MatchesViewMode(DeviceViewModel d, string mode) => mode switch
-    {
-        "v4" => d.HasIpv4,
-        "v6" => d.HasIpv6,
-        _ => true,
-    };
 
     private static bool DeviceMatchesFilter(DeviceViewModel d, string[] tokens)
     {

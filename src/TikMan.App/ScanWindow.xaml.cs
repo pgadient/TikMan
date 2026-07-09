@@ -453,7 +453,8 @@ public partial class ScanWindow : Window
     private static bool IsIpv4(string address) =>
         IPAddress.TryParse(address, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork;
 
-    /// <summary>Returns the /24 of the primary local IPv4 address as a suggestion.</summary>
+    /// <summary>Suggests the local network as CIDR, using the interface's real subnet mask
+    /// (prefix length) — e.g. 192.168.8.0/22 for a /22 LAN, not a hard-coded /24.</summary>
     private static string GuessLocalSubnet()
     {
         foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
@@ -463,10 +464,21 @@ public partial class ScanWindow : Window
             foreach (var ua in nic.GetIPProperties().UnicastAddresses)
             {
                 if (ua.Address.AddressFamily != AddressFamily.InterNetwork) continue;
-                var bytes = ua.Address.GetAddressBytes();
-                return $"{bytes[0]}.{bytes[1]}.{bytes[2]}.0/24";
+                int prefix = ua.PrefixLength;
+                if (prefix is < 16 or > 32) prefix = 24; // keep the scan within a sane size
+                return $"{NetworkAddress(ua.Address, prefix)}/{prefix}";
             }
         }
         return "192.168.1.0/24";
+    }
+
+    /// <summary>Zeroes the host bits of an IPv4 address for the given prefix, giving the network address.</summary>
+    private static string NetworkAddress(IPAddress ip, int prefix)
+    {
+        var b = ip.GetAddressBytes();
+        uint addr = ((uint)b[0] << 24) | ((uint)b[1] << 16) | ((uint)b[2] << 8) | b[3];
+        uint mask = prefix == 0 ? 0u : uint.MaxValue << (32 - prefix);
+        uint net = addr & mask;
+        return $"{(net >> 24) & 0xFF}.{(net >> 16) & 0xFF}.{(net >> 8) & 0xFF}.{net & 0xFF}";
     }
 }

@@ -68,9 +68,19 @@ public class DeviceViewModel : INotifyPropertyChanged
 
     public string Host => Model.Host;
 
-    /// <summary>Both addresses of the device shown together (primary + other-family), e.g.
-    /// "192.168.1.5 · fe80::1"; just the primary when there is no alternate.</summary>
-    public string AddressesDisplay => Model.AltAddress.Length > 0 ? $"{Model.Host}  ·  {Model.AltAddress}" : Model.Host;
+    /// <summary>When on (default), a device's IPv4 and IPv6 addresses are shown together in one row;
+    /// off shows only the primary address. Toggled by the checkbox in the main view.</summary>
+    public static bool CombineAddresses { get; set; } = true;
+
+    /// <summary>The address(es) shown in the list: primary + other-family combined when
+    /// <see cref="CombineAddresses"/> is on and an alternate exists, otherwise just the primary.</summary>
+    public string AddressesDisplay => CombineAddresses && Model.AltAddress.Length > 0
+        ? $"{Model.Host}  ·  {Model.AltAddress}"
+        : Model.Host;
+
+    /// <summary>Raises a change notification for <see cref="AddressesDisplay"/> (after the combine
+    /// toggle flips).</summary>
+    public void RefreshAddressDisplay() => Notify(nameof(AddressesDisplay));
 
     /// <summary>Whether the device has an IPv4 / IPv6 address (across Host + AltAddress) – drives the
     /// main-page view filter (Combined / IPv4 / IPv6).</summary>
