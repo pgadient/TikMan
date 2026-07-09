@@ -16,7 +16,7 @@ public static class SubnetScanner
     public static readonly (int Port, string Name)[] ServicePorts =
     {
         (21, "ftp"), (22, "ssh"), (23, "telnet"), (25, "smtp"), (53, "dns"),
-        (80, "http"), (143, "imap"), (443, "https"), (445, "smb"), (465, "smtps"),
+        (80, "http"), (139, "netbios"), (143, "imap"), (443, "https"), (445, "smb"), (465, "smtps"),
         (587, "submission"), (873, "rsync"), (990, "ftps"), (993, "imaps"),
         (8080, "http-alt"), (8291, "winbox"), (8728, "api"), (8729, "api-ssl"),
     };
@@ -136,7 +136,7 @@ public static class SubnetScanner
     {
         using var client = new TcpClient();
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(600);
+        cts.CancelAfter(1000); // a busy file server can be slow to accept – 600ms missed some
         try
         {
             await client.ConnectAsync(ip, port, cts.Token).ConfigureAwait(false);

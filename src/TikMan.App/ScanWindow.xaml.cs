@@ -35,7 +35,7 @@ public class ScanResultViewModel : INotifyPropertyChanged
     public string Services => string.Join(", ", Discovered.OpenPorts.Select(SubnetScanner.ServiceName));
     /// <summary>Guessed device kind from vendor + open ports (shown in the "Type" column).</summary>
     public string DeviceType => DeviceViewModel.DeviceKindText(DeviceClassifier.Guess(Vendor, Discovered.OpenPorts));
-    public bool HasSmb => Discovered.OpenPorts.Contains(445);
+    public bool HasSmb => Discovered.OpenPorts.Contains(445) || Discovered.OpenPorts.Contains(139);
     public string Board => Discovered.Board;
     public string Version => Discovered.Version;
     public string Source => Discovered.Source;
