@@ -5,6 +5,8 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 using TikMan.Core.Discovery;
 using TikMan.Core.Models;
 using TikMan.Core.Storage;
@@ -31,6 +33,8 @@ public class ScanResultViewModel : INotifyPropertyChanged
     public string Vendor => OuiLookup.Lookup(Discovered.MacAddress);
     /// <summary>Open ports rendered as service names, e.g. "ssh, http, smb".</summary>
     public string Services => string.Join(", ", Discovered.OpenPorts.Select(SubnetScanner.ServiceName));
+    /// <summary>Guessed device kind from vendor + open ports (shown in the "Type" column).</summary>
+    public string DeviceType => DeviceViewModel.DeviceKindText(DeviceClassifier.Guess(Vendor, Discovered.OpenPorts));
     public bool HasSmb => Discovered.OpenPorts.Contains(445);
     public string Board => Discovered.Board;
     public string Version => Discovered.Version;
@@ -182,6 +186,28 @@ public partial class ScanWindow : Window
     {
         if (ResultGrid.SelectedItem is ScanResultViewModel { HasSmb: true } vm)
             _ = vm.LoadSharesAsync();
+    }
+
+    /// <summary>Double-click on a scan-result cell copies its value to the clipboard.</summary>
+    private void Result_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        var src = e.OriginalSource as DependencyObject;
+        TextBlock? tb = null;
+        while (src is not null and not DataGridCell)
+        {
+            if (tb is null && src is TextBlock t) tb = t;
+            src = VisualTreeHelper.GetParent(src);
+        }
+        if (src is not DataGridCell cell) return;
+        tb ??= cell.Content as TextBlock;
+        if (tb is null || tb.Text.Length == 0) return;
+        try
+        {
+            Clipboard.SetText(tb.Text);
+            var status = ReferenceEquals(sender, ResultGridV6) ? Ipv6StatusText : ScanStatusText;
+            status.Text = T("Msg_Copied");
+        }
+        catch (System.Runtime.InteropServices.ExternalException) { /* clipboard busy */ }
     }
 
     private void Share_Click(object sender, RoutedEventArgs e)

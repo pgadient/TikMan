@@ -44,6 +44,28 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// <summary>Manufacturer resolved offline from the MAC address (empty if unknown).</summary>
     public string Vendor => OuiLookup.Lookup(Model.MacAddress);
 
+    /// <summary>Rough device kind for the "Type" column. A device that answered the RouterOS API
+    /// (has a board name) is a MikroTik router/switch; otherwise it's guessed from the vendor.</summary>
+    public string DeviceType => Board.Length > 0
+        ? T("Dev_Router")
+        : DeviceKindText(DeviceClassifier.Guess(Vendor, Array.Empty<int>()));
+
+    /// <summary>Maps a guessed <see cref="DeviceKind"/> to its localized label ("" when unknown).</summary>
+    public static string DeviceKindText(DeviceKind kind) => kind switch
+    {
+        DeviceKind.Router => T("Dev_Router"),
+        DeviceKind.Switch => T("Dev_Switch"),
+        DeviceKind.AccessPoint => T("Dev_AccessPoint"),
+        DeviceKind.Printer => T("Dev_Printer"),
+        DeviceKind.Nas => T("Dev_Nas"),
+        DeviceKind.Pc => T("Dev_Pc"),
+        DeviceKind.Phone => T("Dev_Phone"),
+        DeviceKind.Camera => T("Dev_Camera"),
+        DeviceKind.IoT => T("Dev_IoT"),
+        DeviceKind.Server => T("Dev_Server"),
+        _ => "",
+    };
+
     private bool _isSelected;
     /// <summary>Ticked in the main list; batch actions (backup/update) act on marked devices.</summary>
     public bool IsSelected { get => _isSelected; set { _isSelected = value; Notify(); } }
@@ -79,7 +101,7 @@ public class DeviceViewModel : INotifyPropertyChanged
     public string Version { get => _version; private set { _version = value; Notify(); } }
 
     private string _board = "";
-    public string Board { get => _board; private set { _board = value; Notify(); } }
+    public string Board { get => _board; private set { _board = value; Notify(); Notify(nameof(DeviceType)); } }
 
     private string _uptime = "";
     public string Uptime { get => _uptime; private set { _uptime = value; Notify(); } }

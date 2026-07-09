@@ -109,6 +109,7 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding DeviceType}" Width="85"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Board}" Binding="{Binding Board}" Width="130"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Version}" Width="110">
                         <DataGridTextColumn.ElementStyle>

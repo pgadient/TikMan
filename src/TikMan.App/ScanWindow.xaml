@@ -37,7 +37,7 @@
                         </StackPanel>
                     </Border>
 
-                    <DataGrid x:Name="ResultGrid" Margin="0,8,0,0"
+                    <DataGrid x:Name="ResultGrid" Margin="0,8,0,0" MouseDoubleClick="Result_MouseDoubleClick"
                               SelectionChanged="ResultGrid_SelectionChanged" RowDetailsVisibilityMode="VisibleWhenSelected">
                         <DataGrid.RowDetailsTemplate>
                             <DataTemplate>
@@ -91,6 +91,7 @@
                             <DataGridTextColumn Header="{loc:Loc Col_Identity}" Binding="{Binding Identity}" Width="160"/>
                             <DataGridTextColumn Header="{loc:Loc Col_Mac}" Binding="{Binding MacAddress}" Width="130"/>
                             <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding Vendor}" Width="100"/>
+                            <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding DeviceType}" Width="85"/>
                             <DataGridTextColumn Header="{loc:Loc Col_Board}" Binding="{Binding Board}" Width="120"/>
                             <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Version}" Width="90"/>
                             <DataGridTextColumn Header="{loc:Loc Col_Source}" Binding="{Binding Source}" Width="60"/>
@@ -115,7 +116,7 @@
                         </StackPanel>
                     </Border>
 
-                    <DataGrid x:Name="ResultGridV6" Margin="0,8,0,0">
+                    <DataGrid x:Name="ResultGridV6" Margin="0,8,0,0" MouseDoubleClick="Result_MouseDoubleClick">
                         <DataGrid.Columns>
                             <DataGridTemplateColumn Width="34" CanUserSort="False">
                                 <DataGridTemplateColumn.Header>
@@ -134,6 +135,7 @@
                             <DataGridTextColumn Header="{loc:Loc Col_Ip}" Binding="{Binding IpAddress}" Width="300"/>
                             <DataGridTextColumn Header="{loc:Loc Col_Mac}" Binding="{Binding MacAddress}" Width="150"/>
                             <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding Vendor}" Width="140"/>
+                            <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding DeviceType}" Width="85"/>
                             <DataGridTextColumn Header="{loc:Loc Col_Source}" Binding="{Binding Source}" Width="60"/>
                             <DataGridTextColumn Header="{loc:Loc Col_Hint}" Binding="{Binding Hint}" Width="*"/>
                         </DataGrid.Columns>
