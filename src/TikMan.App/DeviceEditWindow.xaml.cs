@@ -15,9 +15,34 @@ namespace TikMan.App;
 public partial class DeviceEditWindow : Window
 {
     private readonly Device? _existing;
+    private readonly IReadOnlyList<Device>? _multi;
 
     /// <summary>The created/edited device after OK.</summary>
     public Device? Result { get; private set; }
+
+    /// <summary>Edits many devices at once: name and address stay per-device, everything else below
+    /// is applied to all of them (password only when a new one is entered).</summary>
+    public DeviceEditWindow(IReadOnlyList<Device> devices)
+    {
+        InitializeComponent();
+        _multi = devices;
+        var first = devices[0];
+
+        Title = T("De_TitleEditMulti");
+        MultiBanner.Visibility = Visibility.Visible;
+        RowName.Height = new GridLength(0); // hide Name and Address rows
+        RowHost.Height = new GridLength(0);
+
+        PortBox.Text = first.Port.ToString();
+        HttpsCheck.IsChecked = first.UseHttps;
+        IgnoreCertCheck.IsChecked = first.IgnoreCertErrors;
+        UserBox.Text = first.Username;
+        MonitoringCheck.IsChecked = first.MonitoringEnabled;
+        NotesBox.Text = first.Notes;
+        SelectChannel(first.UpdateChannel);
+        PasswordHint.Visibility = Visibility.Visible;
+        TestButton.IsEnabled = false; // no single host to test against
+    }
 
     public DeviceEditWindow(Device? existing)
     {
@@ -151,6 +176,13 @@ public partial class DeviceEditWindow : Window
 
     private void Ok_Click(object sender, RoutedEventArgs e)
     {
+        if (_multi is not null)
+        {
+            if (ApplyToAll(out var multiError)) DialogResult = true;
+            else ShowTestResult(multiError, ok: false);
+            return;
+        }
+
         var device = BuildDevice(out var error);
         if (device is null)
         {
@@ -159,5 +191,38 @@ public partial class DeviceEditWindow : Window
         }
         Result = device;
         DialogResult = true;
+    }
+
+    /// <summary>Applies the shared settings (everything except name/address) to every selected
+    /// device. The password is only changed when a new one was typed.</summary>
+    private bool ApplyToAll(out string error)
+    {
+        error = "";
+        if (!int.TryParse(PortBox.Text.Trim(), out var port) || port is < 1 or > 65535)
+        {
+            error = T("De_ErrPort");
+            return false;
+        }
+
+        var useHttps = HttpsCheck.IsChecked == true;
+        var ignoreCert = IgnoreCertCheck.IsChecked == true;
+        var user = UserBox.Text.Trim();
+        var monitor = MonitoringCheck.IsChecked == true;
+        var notes = NotesBox.Text.Trim();
+        var channel = (ChannelCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+        var newPassword = PasswordBox.Password.Length > 0 ? CredentialProtector.Protect(PasswordBox.Password) : null;
+
+        foreach (var d in _multi!)
+        {
+            d.Port = port;
+            d.UseHttps = useHttps;
+            d.IgnoreCertErrors = ignoreCert;
+            d.Username = user;
+            d.MonitoringEnabled = monitor;
+            d.Notes = notes;
+            d.UpdateChannel = channel;
+            if (newPassword is not null) d.EncryptedPassword = newPassword;
+        }
+        return true;
     }
 }

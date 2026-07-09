@@ -5,14 +5,16 @@
         Title="{loc:Loc De_TitleEdit}" Width="440" SizeToContent="Height" Icon="pack://application:,,,/TikMan;component/tikman.png"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False">
     <StackPanel Margin="14">
+        <TextBlock x:Name="MultiBanner" Visibility="Collapsed" TextWrapping="Wrap" Margin="0,0,0,10"
+                   FontWeight="SemiBold" Foreground="#B35900" Text="{loc:Loc De_MultiBanner}"/>
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="130"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
-                <RowDefinition Height="32"/>
-                <RowDefinition Height="32"/>
+                <RowDefinition x:Name="RowName" Height="32"/>
+                <RowDefinition x:Name="RowHost" Height="32"/>
                 <RowDefinition Height="32"/>
                 <RowDefinition Height="32"/>
                 <RowDefinition Height="32"/>

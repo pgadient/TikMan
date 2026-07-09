@@ -191,7 +191,7 @@ public partial class MainWindow : Window
 
     private void AddDevice_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new DeviceEditWindow(null) { Owner = this };
+        var dialog = new DeviceEditWindow((Device?)null) { Owner = this };
         if (dialog.ShowDialog() == true && dialog.Result is { } device)
         {
             var vm = new DeviceViewModel(device);
@@ -228,7 +228,12 @@ public partial class MainWindow : Window
 
     private void EditDevice_Click(object sender, RoutedEventArgs e)
     {
-        if (SelectedDevice is not { } vm)
+        // More than one device marked → edit them together (shared settings for all).
+        var marked = _devices.Where(d => d.IsSelected).ToList();
+        if (marked.Count > 1) { EditMultiple(marked); return; }
+
+        var vm = SelectedDevice ?? marked.FirstOrDefault();
+        if (vm is null)
         {
             SetStatus(T("Msg_SelectDeviceFirst"));
             return;
@@ -237,9 +242,22 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog() == true)
         {
             vm.ResetClient();
+            MarkGateways();
             SaveAppData();
-            _ = vm.RefreshAsync();
+            _ = RefreshAndCheckAsync(vm);
         }
+    }
+
+    /// <summary>Edits the settings shared by several marked devices at once.</summary>
+    private void EditMultiple(List<DeviceViewModel> vms)
+    {
+        var dialog = new DeviceEditWindow(vms.Select(v => v.Model).ToList()) { Owner = this };
+        if (dialog.ShowDialog() != true) return;
+        foreach (var vm in vms) vm.ResetClient();
+        MarkGateways();
+        SaveAppData();
+        foreach (var vm in vms) _ = RefreshAndCheckAsync(vm);
+        SetStatus(T("Msg_DevicesUpdated", vms.Count));
     }
 
     private void RemoveDevice_Click(object sender, RoutedEventArgs e)
