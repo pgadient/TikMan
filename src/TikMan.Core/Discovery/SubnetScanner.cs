@@ -9,8 +9,23 @@ namespace TikMan.Core.Discovery;
 /// Also finds non-MikroTik devices; port 8291 (Winbox) is a strong indicator of a MikroTik.</summary>
 public static class SubnetScanner
 {
-    /// <summary>Ports that are checked on each reachable host.</summary>
-    public static readonly int[] DefaultPorts = { 443, 80, 8291, 8728, 22 };
+    /// <summary>TCP service ports probed on each reachable host, with a display name.
+    /// UDP-only services (tftp/dns-udp/snmp/syslog) can't be detected by a TCP connect and are
+    /// intentionally omitted; sftp shares port 22 with ssh, and bind (DNS) shares 53.</summary>
+    public static readonly (int Port, string Name)[] ServicePorts =
+    {
+        (21, "ftp"), (22, "ssh"), (23, "telnet"), (25, "smtp"), (53, "dns"),
+        (80, "http"), (143, "imap"), (443, "https"), (445, "smb"), (465, "smtps"),
+        (587, "submission"), (873, "rsync"), (990, "ftps"), (993, "imaps"),
+        (8080, "http-alt"), (8291, "winbox"), (8728, "api"), (8729, "api-ssl"),
+    };
+
+    private static readonly Dictionary<int, string> PortNames =
+        ServicePorts.ToDictionary(p => p.Port, p => p.Name);
+
+    /// <summary>Service name for a port, or the number as text if unknown.</summary>
+    public static string ServiceName(int port) =>
+        PortNames.TryGetValue(port, out var name) ? name : port.ToString();
 
     public static async Task<List<DiscoveredDevice>> ScanAsync(
         string targets,
@@ -59,12 +74,10 @@ public static class SubnetScanner
         ct.ThrowIfCancellationRequested();
         if (reply.Status != IPStatus.Success) return null;
 
-        var openPorts = new List<int>();
-        foreach (var port in DefaultPorts)
-        {
-            if (await IsPortOpenAsync(ip, port, ct).ConfigureAwait(false))
-                openPorts.Add(port);
-        }
+        // Probe the service ports in parallel (only reached for hosts that answered the ping).
+        var probes = ServicePorts.Select(async sp => (sp.Port, Open: await IsPortOpenAsync(ip, sp.Port, ct).ConfigureAwait(false)));
+        var results = await Task.WhenAll(probes).ConfigureAwait(false);
+        var openPorts = results.Where(r => r.Open).Select(r => r.Port).OrderBy(p => p).ToList();
 
         return new DiscoveredDevice
         {

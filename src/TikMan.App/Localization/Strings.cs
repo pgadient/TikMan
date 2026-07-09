@@ -187,6 +187,7 @@ internal static class Strings
         ["Col_Mac"] = "MAC",
         ["Col_Source"] = "Quelle",
         ["Col_Hint"] = "Hinweis",
+        ["Col_Services"] = "Dienste",
         ["Sc_MndpRunning"] = "MNDP-Discovery läuft (5 Sekunden)…",
         ["Sc_MndpDone"] = "MNDP-Discovery abgeschlossen: {0} MikroTik-Gerät(e) gefunden.",
         ["Sc_MndpBusy"] = "MNDP nicht möglich (Port 5678 belegt? Winbox/The Dude offen?): {0}",
@@ -199,6 +200,9 @@ internal static class Strings
         ["Sc_NoneSelected"] = "Keine Geräte ausgewählt.",
         ["Sc_HintAlreadyAdded"] = "bereits in der Geräteliste",
         ["Sc_HintLikely"] = "vermutlich MikroTik",
+        ["Sc_SmbHeader"] = "SMB-Freigaben:",
+        ["Sc_SmbLoading"] = "lädt…",
+        ["Sc_SmbNone"] = "keine sichtbaren Freigaben",
         ["Sc_HintPorts"] = "Ports: {0}",
 
         // Mass update
@@ -452,6 +456,7 @@ internal static class Strings
         ["Col_Mac"] = "MAC",
         ["Col_Source"] = "Source",
         ["Col_Hint"] = "Hint",
+        ["Col_Services"] = "Services",
         ["Sc_MndpRunning"] = "MNDP discovery running (5 seconds)…",
         ["Sc_MndpDone"] = "MNDP discovery finished: {0} MikroTik device(s) found.",
         ["Sc_MndpBusy"] = "MNDP not possible (port 5678 in use? Winbox/The Dude open?): {0}",
@@ -464,6 +469,9 @@ internal static class Strings
         ["Sc_NoneSelected"] = "No devices selected.",
         ["Sc_HintAlreadyAdded"] = "already in device list",
         ["Sc_HintLikely"] = "probably MikroTik",
+        ["Sc_SmbHeader"] = "SMB shares:",
+        ["Sc_SmbLoading"] = "loading…",
+        ["Sc_SmbNone"] = "no visible shares",
         ["Sc_HintPorts"] = "Ports: {0}",
 
         // Mass update
@@ -718,6 +726,7 @@ internal static class Strings
         ["Col_Mac"] = "MAC",
         ["Col_Source"] = "Quelle",
         ["Col_Hint"] = "Hiiwiis",
+        ["Col_Services"] = "Dienscht",
         ["Sc_MndpRunning"] = "MNDP-Discovery lauft (5 Sekundä)…",
         ["Sc_MndpDone"] = "MNDP-Discovery fertig: {0} MikroTik-Grät gfunde.",
         ["Sc_MndpBusy"] = "MNDP nöd möglich (Port 5678 blegt? Winbox/The Dude offe?): {0}",
@@ -730,6 +739,9 @@ internal static class Strings
         ["Sc_NoneSelected"] = "Kei Grät uswählt.",
         ["Sc_HintAlreadyAdded"] = "scho i de Grätlischtä",
         ["Sc_HintLikely"] = "vermuetlich MikroTik",
+        ["Sc_SmbHeader"] = "SMB-Freigabä:",
+        ["Sc_SmbLoading"] = "ladt…",
+        ["Sc_SmbNone"] = "kei sichtbari Freigabä",
         ["Sc_HintPorts"] = "Ports: {0}",
 
         // Mass update

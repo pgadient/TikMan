@@ -33,7 +33,41 @@
             </DockPanel>
         </Border>
 
-        <DataGrid x:Name="ResultGrid" Margin="0,8,0,0">
+        <DataGrid x:Name="ResultGrid" Margin="0,8,0,0"
+                  SelectionChanged="ResultGrid_SelectionChanged" RowDetailsVisibilityMode="VisibleWhenSelected">
+            <DataGrid.RowDetailsTemplate>
+                <DataTemplate>
+                    <Border Margin="36,2,0,6">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasSmb}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{loc:Loc Sc_SmbHeader}" FontWeight="SemiBold" Foreground="#555555"/>
+                                <TextBlock Text="{Binding SharesStatus}" Foreground="#888888" FontStyle="Italic" Margin="8,0,0,0"/>
+                            </StackPanel>
+                            <ItemsControl ItemsSource="{Binding Shares}" Margin="0,4,0,0">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Content="{Binding Name}" Click="Share_Click" ToolTip="{Binding UncPath}"
+                                                Margin="0,0,8,4" Padding="8,3"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </DataGrid.RowDetailsTemplate>
             <DataGrid.Columns>
                 <DataGridTemplateColumn Width="34" CanUserSort="False">
                     <DataGridTemplateColumn.Header>
@@ -56,6 +90,7 @@
                 <DataGridTextColumn Header="{loc:Loc Col_Board}" Binding="{Binding Board}" Width="120"/>
                 <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Version}" Width="90"/>
                 <DataGridTextColumn Header="{loc:Loc Col_Source}" Binding="{Binding Source}" Width="60"/>
+                <DataGridTextColumn Header="{loc:Loc Col_Services}" Binding="{Binding Services}" Width="200"/>
                 <DataGridTextColumn Header="{loc:Loc Col_Hint}" Binding="{Binding Hint}" Width="*"/>
             </DataGrid.Columns>
         </DataGrid>

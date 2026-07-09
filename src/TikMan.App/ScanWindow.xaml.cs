@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Windows;
+using System.Windows.Controls;
 using TikMan.Core.Discovery;
 using TikMan.Core.Models;
 using TikMan.Core.Storage;
@@ -28,6 +29,9 @@ public class ScanResultViewModel : INotifyPropertyChanged
     public string Identity => Discovered.Identity;
     public string MacAddress => Discovered.MacAddress;
     public string Vendor => OuiLookup.Lookup(Discovered.MacAddress);
+    /// <summary>Open ports rendered as service names, e.g. "ssh, http, smb".</summary>
+    public string Services => string.Join(", ", Discovered.OpenPorts.Select(SubnetScanner.ServiceName));
+    public bool HasSmb => Discovered.OpenPorts.Contains(445);
     public string Board => Discovered.Board;
     public string Version => Discovered.Version;
     public string Source => Discovered.Source;
@@ -38,10 +42,8 @@ public class ScanResultViewModel : INotifyPropertyChanged
         get
         {
             if (AlreadyAdded) return T("Sc_HintAlreadyAdded");
-            var parts = new List<string>();
-            if (Discovered.IsLikelyMikroTik && Discovered.Source == "Scan") parts.Add(T("Sc_HintLikely"));
-            if (Discovered.OpenPorts.Count > 0) parts.Add(T("Sc_HintPorts", string.Join(", ", Discovered.OpenPorts)));
-            return string.Join(" – ", parts);
+            if (Discovered.IsLikelyMikroTik && Discovered.Source == "Scan") return T("Sc_HintLikely");
+            return "";
         }
     }
 
@@ -49,10 +51,50 @@ public class ScanResultViewModel : INotifyPropertyChanged
     public bool IsSelected
     {
         get => _isSelected;
-        set { _isSelected = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected))); }
+        set { _isSelected = value; Notify(nameof(IsSelected)); }
     }
 
+    /// <summary>SMB shares of this host (lazily filled when the row is expanded).</summary>
+    public ObservableCollection<SmbShareVm> Shares { get; } = new();
+
+    private string _sharesStatus = "";
+    public string SharesStatus { get => _sharesStatus; private set { _sharesStatus = value; Notify(nameof(SharesStatus)); } }
+
+    private bool _sharesLoaded;
+
+    /// <summary>Enumerates the host's SMB shares once, on first expand.</summary>
+    public async Task LoadSharesAsync()
+    {
+        if (!HasSmb || _sharesLoaded) return;
+        _sharesLoaded = true;
+        SharesStatus = T("Sc_SmbLoading");
+        try
+        {
+            var names = await SmbShares.ListAsync(IpAddress);
+            foreach (var name in names) Shares.Add(new SmbShareVm(IpAddress, name));
+            SharesStatus = names.Count > 0 ? "" : T("Sc_SmbNone");
+        }
+        catch
+        {
+            SharesStatus = T("Sc_SmbNone");
+        }
+    }
+
+    private void Notify(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     public event PropertyChangedEventHandler? PropertyChanged;
+}
+
+/// <summary>A single SMB share with the UNC path to open in Explorer.</summary>
+public class SmbShareVm
+{
+    public SmbShareVm(string host, string name)
+    {
+        Name = name;
+        UncPath = $@"\\{host}\{name}";
+    }
+
+    public string Name { get; }
+    public string UncPath { get; }
 }
 
 public partial class ScanWindow : Window
@@ -86,6 +128,25 @@ public partial class ScanWindow : Window
     {
         var value = ScanSelectAll.IsChecked == true;
         foreach (var r in _results.Where(r => r.CanSelect)) r.IsSelected = value;
+    }
+
+    private void ResultGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ResultGrid.SelectedItem is ScanResultViewModel { HasSmb: true } vm)
+            _ = vm.LoadSharesAsync();
+    }
+
+    private void Share_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: SmbShareVm share })
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{share.UncPath}\"") { UseShellExecute = true });
+            }
+            catch { /* Explorer not available / path gone */ }
+        }
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e) => await RunMndpAsync();
