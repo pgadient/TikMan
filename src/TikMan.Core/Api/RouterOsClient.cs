@@ -22,7 +22,9 @@ public sealed class RouterOsClient : IDisposable
         _http = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{username}:{password}")));
-        _baseUrl = $"{(useHttps ? "https" : "http")}://{host}:{port}/rest/";
+        // IPv6 literals must be bracketed in a URL (e.g. https://[fe80::1]:443/rest/).
+        var hostPart = host.Contains(':') && !host.StartsWith('[') ? $"[{host}]" : host;
+        _baseUrl = $"{(useHttps ? "https" : "http")}://{hostPart}:{port}/rest/";
     }
 
     public static RouterOsClient For(Device device, string password) =>

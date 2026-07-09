@@ -103,7 +103,9 @@ public partial class ScanWindow : Window
     private readonly string _defaultUsername;
     private readonly string _defaultEncryptedPassword;
     private readonly ObservableCollection<ScanResultViewModel> _results = new();
+    private readonly ObservableCollection<ScanResultViewModel> _resultsV6 = new();
     private CancellationTokenSource? _cts;
+    private bool _ipv6Running;
 
     /// <summary>After DialogResult == true: the devices to be created.</summary>
     public List<Device> NewDevices { get; } = new();
@@ -115,7 +117,53 @@ public partial class ScanWindow : Window
         _defaultUsername = defaultUsername;
         _defaultEncryptedPassword = defaultEncryptedPassword;
         ResultGrid.ItemsSource = _results;
+        ResultGridV6.ItemsSource = _resultsV6;
         SubnetBox.Text = GuessLocalSubnet();
+    }
+
+    // ----- IPv6 -----
+
+    private async void Ipv6Discover_Click(object sender, RoutedEventArgs e)
+    {
+        if (_ipv6Running) return;
+        _ipv6Running = true;
+        Ipv6Button.IsEnabled = false;
+        Ipv6Progress.Visibility = Visibility.Visible;
+        Ipv6StatusText.Text = T("Sc_Ipv6Running");
+        try
+        {
+            var found = await Ipv6Discovery.DiscoverAsync(new Progress<DiscoveredDevice>(AddV6Result));
+            Ipv6StatusText.Text = T("Sc_Ipv6Done", found.Count);
+        }
+        catch (Exception ex)
+        {
+            Ipv6StatusText.Text = T("Sc_Ipv6Error", ex.Message);
+        }
+        finally
+        {
+            Ipv6Progress.Visibility = Visibility.Collapsed;
+            Ipv6Button.IsEnabled = true;
+            _ipv6Running = false;
+        }
+    }
+
+    private void AddV6Result(DiscoveredDevice discovered)
+    {
+        if (_resultsV6.Any(r => r.IpAddress == discovered.IpAddress)) return;
+        bool known = _knownDevices.Any(d => d.Host == discovered.IpAddress);
+        _resultsV6.Add(new ScanResultViewModel(discovered, known));
+    }
+
+    private void Ipv6Clear_Click(object sender, RoutedEventArgs e)
+    {
+        _resultsV6.Clear();
+        Ipv6StatusText.Text = T("Sc_Ipv6Intro");
+    }
+
+    private void ScanSelectAllV6_Changed(object sender, RoutedEventArgs e)
+    {
+        var value = ScanSelectAllV6.IsChecked == true;
+        foreach (var r in _resultsV6.Where(r => r.CanSelect)) r.IsSelected = value;
     }
 
     private void Clear_Click(object sender, RoutedEventArgs e)
@@ -270,7 +318,7 @@ public partial class ScanWindow : Window
 
     private void Add_Click(object sender, RoutedEventArgs e)
     {
-        var selected = _results.Where(r => r.IsSelected && !r.AlreadyAdded).ToList();
+        var selected = _results.Concat(_resultsV6).Where(r => r.IsSelected && !r.AlreadyAdded).ToList();
         if (selected.Count == 0)
         {
             ScanStatusText.Text = T("Sc_NoneSelected");
