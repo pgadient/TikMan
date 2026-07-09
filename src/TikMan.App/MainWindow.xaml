@@ -274,6 +274,34 @@
                         </StackPanel>
                         <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#777777" MaxWidth="620" HorizontalAlignment="Left"
                                    Text="{loc:Loc Det_BackupDesc}"/>
+
+                        <StackPanel Margin="0,14,0,0">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasSmb}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{loc:Loc Sc_SmbHeader}" FontWeight="SemiBold" Foreground="#555555"/>
+                                <TextBlock Text="{Binding SharesStatus}" Foreground="#888888" FontStyle="Italic" Margin="8,0,0,0"/>
+                            </StackPanel>
+                            <ItemsControl ItemsSource="{Binding Shares}" Margin="0,4,0,0">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Content="{Binding Name}" Click="Share_Click" ToolTip="{Binding UncPath}"
+                                                Margin="0,0,8,4" Padding="8,3"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
                     </StackPanel>
                 </TabItem>
 

@@ -31,6 +31,50 @@ public class DeviceViewModel : INotifyPropertyChanged
     public ObservableCollection<ResourceSnapshot> History { get; } = new();
     public ObservableCollection<LogEntry> Logs { get; } = new();
 
+    /// <summary>True when this device exposed an SMB share port when scanned – the Details tab then
+    /// offers share browsing.</summary>
+    public bool HasSmb => Model.HasSmb;
+
+    /// <summary>SMB shares of this host (lazily filled when the device is selected).</summary>
+    public ObservableCollection<SmbShareVm> Shares { get; } = new();
+
+    private string _sharesStatus = "";
+    public string SharesStatus { get => _sharesStatus; private set { _sharesStatus = value; Notify(); } }
+    private bool _sharesLoaded;
+
+    /// <summary>Enumerates the device's SMB shares once (raced against a timeout so a slow/locked
+    /// server can't hang the UI). A password-protected server that isn't already authenticated
+    /// answers with access-denied.</summary>
+    public async Task LoadSharesAsync()
+    {
+        if (!HasSmb || _sharesLoaded) return;
+        _sharesLoaded = true;
+        SharesStatus = T("Sc_SmbLoading");
+        try
+        {
+            var listTask = SmbShares.ListAsync(Host);
+            if (await Task.WhenAny(listTask, Task.Delay(TimeSpan.FromSeconds(8))) != listTask)
+            {
+                _sharesLoaded = false;
+                SharesStatus = T("Sc_SmbTimeout");
+                return;
+            }
+
+            var result = await listTask;
+            foreach (var name in result.Shares) Shares.Add(new SmbShareVm(Host, name));
+            SharesStatus = result.Status switch
+            {
+                ShareListStatus.AccessDenied => T("Sc_SmbDenied"),
+                _ when result.Shares.Count > 0 => "",
+                _ => T("Sc_SmbNone"),
+            };
+        }
+        catch
+        {
+            SharesStatus = T("Sc_SmbNone");
+        }
+    }
+
     /// <summary>Rows of the "Available updates" tab: latest version per channel.</summary>
     public ObservableCollection<ChannelUpdateVm> AvailableUpdates { get; } = new();
     private bool _availableLoaded;

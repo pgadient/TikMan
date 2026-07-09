@@ -440,6 +440,7 @@ public partial class ScanWindow : Window
                 Name = primary.Identity.Length > 0 ? primary.Identity : primary.IpAddress,
                 Host = primary.IpAddress,
                 AltAddress = alt?.IpAddress ?? "",
+                HasSmb = group.Any(r => r.HasSmb),
                 MacAddress = primary.MacAddress.Length > 0 ? primary.MacAddress : (alt?.MacAddress ?? ""),
                 Username = _defaultUsername,
                 EncryptedPassword = _defaultEncryptedPassword,

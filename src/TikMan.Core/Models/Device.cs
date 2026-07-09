@@ -30,6 +30,9 @@ public class Device
     /// <summary>DPAPI-encrypted (Base64), never plaintext.</summary>
     public string EncryptedPassword { get; set; } = "";
     public bool MonitoringEnabled { get; set; } = true;
+    /// <summary>Whether an SMB/Windows file-share port was seen when this device was scanned – lets
+    /// the main view offer share browsing without re-probing.</summary>
+    public bool HasSmb { get; set; }
     public string MacAddress { get; set; } = "";
     public string Notes { get; set; } = "";
     /// <summary>Preferred RouterOS update channel for this device. Empty = use the global default

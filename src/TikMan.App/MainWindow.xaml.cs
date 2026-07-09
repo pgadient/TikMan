@@ -399,6 +399,7 @@ public partial class MainWindow : Window
             // Initial log load on first selection of a device (Refresh logs reloads later).
             if (vm.Logs.Count == 0) _ = LoadLogsAsync(vm);
             _ = vm.LoadAvailableUpdatesAsync(); // fill the "Available updates" tab
+            _ = vm.LoadSharesAsync();           // fill the SMB shares in the Details tab
         }
     }
 
@@ -627,6 +628,20 @@ public partial class MainWindow : Window
     }
 
     private void SetStatus(string text) => StatusText.Text = text;
+
+    /// <summary>Opens an SMB share (\\host\share) in Windows Explorer.</summary>
+    private void Share_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: SmbShareVm share })
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{share.UncPath}\"") { UseShellExecute = true });
+            }
+            catch { /* Explorer not available / path gone */ }
+        }
+    }
 
     /// <summary>Opens the TP-Link/Omada firmware download page for the selected switch in the browser.</summary>
     private void OpenFirmwarePage_Click(object sender, RoutedEventArgs e)
