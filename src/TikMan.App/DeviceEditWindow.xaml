@@ -7,6 +7,14 @@
     <StackPanel Margin="14">
         <TextBlock x:Name="MultiBanner" Visibility="Collapsed" TextWrapping="Wrap" Margin="0,0,0,10"
                    FontWeight="SemiBold" Foreground="#B35900" Text="{loc:Loc De_MultiBanner}"/>
+        <StackPanel x:Name="VendorPanel" Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBlock Width="130" VerticalAlignment="Center" Text="{loc:Loc De_Vendor}"/>
+            <ComboBox x:Name="VendorCombo" Width="200" Height="24" VerticalContentAlignment="Center"
+                      SelectedValuePath="Tag" SelectionChanged="VendorCombo_SelectionChanged">
+                <ComboBoxItem Tag="MikroTik" Content="MikroTik (RouterOS)"/>
+                <ComboBoxItem Tag="TpLink" Content="TP-Link (SSH)"/>
+            </ComboBox>
+        </StackPanel>
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="130"/>
@@ -21,7 +29,7 @@
                 <RowDefinition Height="32"/>
                 <RowDefinition Height="32"/>
                 <RowDefinition Height="32"/>
-                <RowDefinition Height="32"/>
+                <RowDefinition x:Name="RowChannel" Height="32"/>
             </Grid.RowDefinitions>
 
             <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc De_Name}"/>
@@ -64,6 +72,17 @@
                 <ComboBoxItem Tag="development">development</ComboBoxItem>
             </ComboBox>
         </Grid>
+
+        <StackPanel x:Name="TpLinkPanel" Visibility="Collapsed" Margin="0,6,0,0">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Width="130" VerticalAlignment="Center" Text="{loc:Loc De_Model}"/>
+                <TextBox x:Name="ModelBox" Width="170" Height="24" VerticalContentAlignment="Center"/>
+                <TextBlock VerticalAlignment="Center" Margin="14,0,4,0" Text="{loc:Loc De_HwRev}"/>
+                <TextBox x:Name="HwRevBox" Width="60" Height="24" VerticalContentAlignment="Center"/>
+            </StackPanel>
+            <TextBlock Margin="130,2,0,0" Foreground="#777777" FontSize="11" TextWrapping="Wrap"
+                       Text="{loc:Loc De_TpLinkHint}"/>
+        </StackPanel>
 
         <TextBlock x:Name="PasswordHint" Foreground="#777777" FontSize="11" Margin="130,2,0,0"
                    Text="{loc:Loc De_PwHint}" Visibility="Collapsed"/>

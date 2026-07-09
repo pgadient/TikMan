@@ -38,7 +38,7 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// channel (read-only, from the public MikroTik upgrade server). Loaded once, on first view.</summary>
     public async Task LoadAvailableUpdatesAsync(CancellationToken ct = default)
     {
-        if (_availableLoaded) return;
+        if (_availableLoaded || Model.Vendor != DeviceVendor.MikroTik) return;
         _availableLoaded = true;
         var installed = StripChannelSuffix(Version);
         foreach (var channel in AllChannels)
@@ -68,11 +68,21 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// <summary>Manufacturer resolved offline from the MAC address (empty if unknown).</summary>
     public string Vendor => OuiLookup.Lookup(Model.MacAddress);
 
-    /// <summary>Rough device kind for the "Type" column. A device that answered the RouterOS API
-    /// (has a board name) is a MikroTik router/switch; otherwise it's guessed from the vendor.</summary>
-    public string DeviceType => Board.Length > 0
-        ? T("Dev_Router")
-        : DeviceKindText(DeviceClassifier.Guess(Vendor, Array.Empty<int>()));
+    /// <summary>Rough device kind for the "Type" column. TP-Link devices are switches; a device
+    /// that answered the RouterOS API (has a board name) is a MikroTik router; otherwise guessed.</summary>
+    public string DeviceType => Model.Vendor == DeviceVendor.TpLink
+        ? T("Dev_Switch")
+        : Board.Length > 0
+            ? T("Dev_Router")
+            : DeviceKindText(DeviceClassifier.Guess(Vendor, Array.Empty<int>()));
+
+    /// <summary>True for TP-Link switches (SSH connector, firmware page instead of channels).</summary>
+    public bool IsTpLink => Model.Vendor == DeviceVendor.TpLink;
+
+    /// <summary>TP-Link: the Omada download page URL for this model/revision ("" otherwise).</summary>
+    public string FirmwarePageUrl => Model.Vendor == DeviceVendor.TpLink
+        ? OmadaSupport.FirmwarePageUrl(Model.Model, Model.HardwareRevision)
+        : "";
 
     /// <summary>Maps a guessed <see cref="DeviceKind"/> to its localized label ("" when unknown).</summary>
     public static string DeviceKindText(DeviceKind kind) => kind switch
@@ -214,6 +224,7 @@ public class DeviceViewModel : INotifyPropertyChanged
     public async Task<bool> RefreshAsync(CancellationToken ct = default)
     {
         if (IsRefreshing) return Status == DeviceStatus.Online;
+        if (Model.Vendor == DeviceVendor.TpLink) return await RefreshTpLinkAsync(ct);
         IsRefreshing = true;
         try
         {
@@ -260,8 +271,38 @@ public class DeviceViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Refreshes a TP-Link switch over SSH (no REST API): reads firmware + model via
+    /// <c>show system-info</c>. CPU/RAM aren't collected for these devices.</summary>
+    private async Task<bool> RefreshTpLinkAsync(CancellationToken ct)
+    {
+        IsRefreshing = true;
+        try
+        {
+            var facts = await TpLinkSshConnector.GetFactsAsync(
+                Model, CredentialProtector.Unprotect(Model.EncryptedPassword), ct);
+            Version = facts.FirmwareVersion;
+            Board = facts.Model.Length > 0 ? facts.Model : Model.Model;
+            Status = DeviceStatus.Online;
+            LastError = "";
+            HadTlsError = false;
+            return true;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            Status = DeviceStatus.Offline;
+            LastError = Shorten(ex);
+            return false;
+        }
+        finally
+        {
+            IsRefreshing = false;
+        }
+    }
+
     public async Task<bool> LoadLogsAsync(int maxEntries, CancellationToken ct = default)
     {
+        if (Model.Vendor != DeviceVendor.MikroTik) { Logs.Clear(); return true; } // no RouterOS log on non-MikroTik
         try
         {
             var entries = await Client.GetLogAsync(maxEntries, ct);
@@ -281,6 +322,7 @@ public class DeviceViewModel : INotifyPropertyChanged
 
     public async Task<bool> CheckUpdateAsync(CancellationToken ct = default)
     {
+        if (Model.Vendor != DeviceVendor.MikroTik) return false; // RouterOS-only update check
         try
         {
             var info = await Client.CheckForUpdatesAsync(ct);
@@ -301,6 +343,7 @@ public class DeviceViewModel : INotifyPropertyChanged
 
     public async Task<bool> SetChannelAsync(string channel, CancellationToken ct = default)
     {
+        if (Model.Vendor != DeviceVendor.MikroTik) return false; // RouterOS-only
         try
         {
             var info = await Client.SetChannelAndCheckAsync(channel, ct);

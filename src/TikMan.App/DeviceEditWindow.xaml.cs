@@ -30,6 +30,7 @@ public partial class DeviceEditWindow : Window
 
         Title = T("De_TitleEditMulti");
         MultiBanner.Visibility = Visibility.Visible;
+        VendorPanel.Visibility = Visibility.Collapsed; // vendor/model stay per-device in a bulk edit
         RowName.Height = new GridLength(0); // hide Name and Address rows
         RowHost.Height = new GridLength(0);
 
@@ -61,13 +62,30 @@ public partial class DeviceEditWindow : Window
             MonitoringCheck.IsChecked = existing.MonitoringEnabled;
             NotesBox.Text = existing.Notes;
             SelectChannel(existing.UpdateChannel);
+            ModelBox.Text = existing.Model;
+            HwRevBox.Text = existing.HardwareRevision;
+            VendorCombo.SelectedValue = existing.Vendor.ToString();
+            if (VendorCombo.SelectedValue is null) VendorCombo.SelectedIndex = 0;
             PasswordHint.Visibility = Visibility.Visible;
         }
         else
         {
             Title = T("De_TitleAdd");
             ChannelCombo.SelectedIndex = 0; // (Default)
+            VendorCombo.SelectedIndex = 0;  // MikroTik
         }
+    }
+
+    /// <summary>Toggles the vendor-specific fields: TP-Link shows model/revision and hides the
+    /// RouterOS update channel; the default port follows (443 HTTPS ↔ 22 SSH).</summary>
+    private void VendorCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (TpLinkPanel is null) return; // fires before the visual tree exists
+        var tpLink = (VendorCombo.SelectedValue as string) == nameof(DeviceVendor.TpLink);
+        TpLinkPanel.Visibility = tpLink ? Visibility.Visible : Visibility.Collapsed;
+        RowChannel.Height = tpLink ? new GridLength(0) : new GridLength(32);
+        if (tpLink && PortBox.Text is "443") { HttpsCheck.IsChecked = false; PortBox.Text = "22"; }
+        else if (!tpLink && PortBox.Text is "22") { HttpsCheck.IsChecked = true; PortBox.Text = "443"; }
     }
 
     private void SelectChannel(string channel)
@@ -112,6 +130,9 @@ public partial class DeviceEditWindow : Window
         device.MonitoringEnabled = MonitoringCheck.IsChecked == true;
         device.Notes = NotesBox.Text.Trim();
         device.UpdateChannel = (ChannelCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+        device.Vendor = Enum.TryParse<DeviceVendor>(VendorCombo.SelectedValue as string, out var vendor) ? vendor : DeviceVendor.MikroTik;
+        device.Model = ModelBox.Text.Trim();
+        device.HardwareRevision = HwRevBox.Text.Trim();
 
         if (PasswordBox.Password.Length > 0 || _existing is null)
             device.EncryptedPassword = CredentialProtector.Protect(PasswordBox.Password);
@@ -132,6 +153,14 @@ public partial class DeviceEditWindow : Window
         ShowTestResult(T("De_Connecting"), ok: true);
         try
         {
+            if (device.Vendor == DeviceVendor.TpLink)
+            {
+                var facts = await TpLinkSshConnector.GetFactsAsync(device, CredentialProtector.Unprotect(device.EncryptedPassword));
+                ShowTestResult(T("De_TestOkTp", facts.Model, facts.HardwareVersion, facts.FirmwareVersion), ok: true);
+                if (NameBox.Text.Trim().Length == 0 && facts.Name.Length > 0) NameBox.Text = facts.Name;
+                return;
+            }
+
             using var client = RouterOsClient.For(device, CredentialProtector.Unprotect(device.EncryptedPassword));
             var resource = await client.GetSystemResourceAsync();
             var identity = await client.GetIdentityAsync();

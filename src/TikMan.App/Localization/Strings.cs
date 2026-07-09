@@ -172,6 +172,12 @@ internal static class Strings
         ["De_HttpHint"] = "\n💡 Das Gerät antwortet aber via HTTP (Port 80): Entweder den Haken bei HTTPS entfernen, oder auf dem Gerät www-ssl ein Zertifikat zuweisen (Rezept im README).",
         ["De_ErrAddressEmpty"] = "Adresse darf nicht leer sein.",
         ["De_ErrPort"] = "Ungültiger Port.",
+        ["De_Vendor"] = "Typ / Vendor:",
+        ["De_Model"] = "Modell:",
+        ["De_HwRev"] = "HW-Rev.:",
+        ["De_TpLinkHint"] = "TP-Link wird per SSH abgefragt (Port = SSH-Port). Modell/Revision füllen die Firmware-Seite, z. B. tl-sg2008 / v3.",
+        ["De_TestOkTp"] = "✔ Verbunden: {0}, HW {1}, Firmware {2}",
+        ["Det_FirmwarePage"] = "🌐 Firmware-Seite…",
 
         // Scan
         ["Sc_Title"] = "Netzwerk scannen",
@@ -472,6 +478,12 @@ internal static class Strings
         ["De_HttpHint"] = "\n💡 The device does answer via HTTP (port 80): either untick HTTPS, or assign a certificate to www-ssl on the device (recipe in the README).",
         ["De_ErrAddressEmpty"] = "Address must not be empty.",
         ["De_ErrPort"] = "Invalid port.",
+        ["De_Vendor"] = "Type / vendor:",
+        ["De_Model"] = "Model:",
+        ["De_HwRev"] = "HW rev.:",
+        ["De_TpLinkHint"] = "TP-Link is queried over SSH (port = SSH port). Model/revision drive the firmware page, e.g. tl-sg2008 / v3.",
+        ["De_TestOkTp"] = "✔ Connected: {0}, HW {1}, firmware {2}",
+        ["Det_FirmwarePage"] = "🌐 Firmware page…",
 
         // Scan
         ["Sc_Title"] = "Scan network",
@@ -773,6 +785,12 @@ internal static class Strings
         ["De_HttpHint"] = "\n💡 S Grät antwortet aber via HTTP (Port 80): Entweder de Haggä bi HTTPS ewägtue, oder am Grät em www-ssl es Zertifikat zuewiise (Rezäpt im README).",
         ["De_ErrAddressEmpty"] = "D Adrässe dörf nöd läär sii.",
         ["De_ErrPort"] = "Ungültigä Port.",
+        ["De_Vendor"] = "Typ / Vendor:",
+        ["De_Model"] = "Modäll:",
+        ["De_HwRev"] = "HW-Rev.:",
+        ["De_TpLinkHint"] = "TP-Link wird per SSH abgfrägt (Port = SSH-Port). Modäll/Revision fülled d Firmware-Sitä, z.B. tl-sg2008 / v3.",
+        ["De_TestOkTp"] = "✔ Verbunde: {0}, HW {1}, Firmware {2}",
+        ["Det_FirmwarePage"] = "🌐 Firmware-Sitä…",
 
         // Scan
         ["Sc_Title"] = "Netzwärk scanne",

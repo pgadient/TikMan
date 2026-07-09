@@ -224,6 +224,7 @@ public partial class MainWindow : Window
     /// API users are never forced into a write).</summary>
     private async Task ApplyChannelAndCheckAsync(DeviceViewModel vm)
     {
+        if (vm.Model.Vendor != DeviceVendor.MikroTik) return; // only RouterOS has channels/REST updates
         await vm.CheckUpdateAsync();
         var channel = vm.Model.UpdateChannel.Length > 0 ? vm.Model.UpdateChannel : _appData.DefaultUpdateChannel;
         if (channel.Length > 0 && !string.Equals(channel, vm.UpdateChannel, StringComparison.OrdinalIgnoreCase))
@@ -611,6 +612,14 @@ public partial class MainWindow : Window
     }
 
     private void SetStatus(string text) => StatusText.Text = text;
+
+    /// <summary>Opens the TP-Link/Omada firmware download page for the selected switch in the browser.</summary>
+    private void OpenFirmwarePage_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedDevice is not { FirmwarePageUrl: { Length: > 0 } url }) return;
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch { /* no browser / blocked */ }
+    }
 
     // ----- Public IP -----
 

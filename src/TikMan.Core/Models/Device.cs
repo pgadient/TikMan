@@ -1,9 +1,23 @@
 namespace TikMan.Core.Models;
 
+/// <summary>How TikMan talks to a device. MikroTik uses the RouterOS REST API; TP-Link managed
+/// switches have no REST API, so we query them over SSH (per-vendor connector).</summary>
+public enum DeviceVendor
+{
+    MikroTik,
+    TpLink,
+}
+
 /// <summary>Persisted configuration of a monitored device.</summary>
 public class Device
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    /// <summary>Which connector to use. Determines REST (MikroTik) vs SSH (TP-Link).</summary>
+    public DeviceVendor Vendor { get; set; } = DeviceVendor.MikroTik;
+    /// <summary>TP-Link: model slug for the firmware page, e.g. "tl-sg2008".</summary>
+    public string Model { get; set; } = "";
+    /// <summary>TP-Link: hardware revision for the firmware page, e.g. "v3".</summary>
+    public string HardwareRevision { get; set; } = "";
     public string Name { get; set; } = "";
     public string Host { get; set; } = "";
     public int Port { get; set; } = 443;

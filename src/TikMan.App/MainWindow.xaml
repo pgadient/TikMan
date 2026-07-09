@@ -229,6 +229,18 @@
                             <Button Style="{StaticResource ToolButton}" Click="EditDevice_Click" Content="{loc:Loc Det_Edit}"/>
                             <Button Style="{StaticResource ToolButton}" Click="BackupSingle_Click" Content="{loc:Loc Det_BackupRsc}"/>
                             <Button Style="{StaticResource ToolButton}" Click="BinaryBackupSingle_Click" Content="{loc:Loc Det_BackupFull}"/>
+                            <Button Click="OpenFirmwarePage_Click" Content="{loc:Loc Det_FirmwarePage}">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource ToolButton}">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsTpLink}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
                         </StackPanel>
                         <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#777777" MaxWidth="620" HorizontalAlignment="Left"
                                    Text="{loc:Loc Det_BackupDesc}"/>
