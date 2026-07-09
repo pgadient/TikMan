@@ -13,6 +13,10 @@ public class AppData
     public AppLanguage Language { get; set; } = AppLanguage.System;
     public BackupMethod BackupMethod { get; set; } = BackupMethod.Auto;
     public int SshPort { get; set; } = 22;
+    /// <summary>Default username offered for devices added from a scan.</summary>
+    public string DefaultUsername { get; set; } = "admin";
+    /// <summary>Default password (DPAPI-encrypted) for devices added from a scan.</summary>
+    public string DefaultEncryptedPassword { get; set; } = "";
     public List<Device> Devices { get; set; } = new();
 }
 

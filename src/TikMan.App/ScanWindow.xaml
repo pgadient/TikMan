@@ -14,6 +14,7 @@
                     <TextBox x:Name="SubnetBox" Width="160" VerticalContentAlignment="Center" Height="26"/>
                     <Button x:Name="ScanButton" Padding="10,5" Margin="8,0,0,0" Click="ScanSubnet_Click" Content="{loc:Loc Sc_ScanBtn}"/>
                     <Button x:Name="StopButton" Padding="10,5" Margin="8,0,0,0" IsEnabled="False" Click="Stop_Click" Content="{loc:Loc Sc_Stop}"/>
+                    <Button x:Name="ClearButton" Padding="10,5" Margin="8,0,0,0" Click="Clear_Click" Content="{loc:Loc Sc_Clear}"/>
                 </StackPanel>
                 <ProgressBar x:Name="ScanProgress" Height="6" Margin="0,8,0,0" Visibility="Collapsed"/>
                 <TextBlock x:Name="ScanStatusText" Margin="0,6,0,0" Foreground="#666666" Text="{loc:Loc Sc_Intro}"/>
@@ -22,13 +23,8 @@
 
         <Border DockPanel.Dock="Bottom" Background="#F7F7F7" BorderBrush="#DDDDDD" BorderThickness="1" Padding="8" Margin="0,8,0,0" CornerRadius="3">
             <DockPanel>
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
-                    <TextBlock VerticalAlignment="Center" Text="{loc:Loc Sc_DefaultCreds}"/>
-                    <TextBlock VerticalAlignment="Center" Margin="12,0,4,0" Text="{loc:Loc Sc_User}"/>
-                    <TextBox x:Name="DefaultUserBox" Width="100" VerticalContentAlignment="Center" Height="26" Text="admin"/>
-                    <TextBlock VerticalAlignment="Center" Margin="10,0,4,0" Text="{loc:Loc Sc_Password}"/>
-                    <PasswordBox x:Name="DefaultPasswordBox" Width="140" VerticalContentAlignment="Center" Height="26"/>
-                </StackPanel>
+                <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Foreground="#777777"
+                           TextWrapping="Wrap" Text="{loc:Loc Sc_CredsHint}"/>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button x:Name="AddButton" Padding="14,6" FontWeight="SemiBold" Click="Add_Click" Content="{loc:Loc Sc_AddSelected}"/>
                     <Button Padding="14,6" Margin="8,0,0,0" IsCancel="True" Content="{loc:Loc Sc_Close}"/>

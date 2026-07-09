@@ -22,6 +22,7 @@ public partial class SettingsWindow : Window
         LanguageCombo.SelectedValue = data.Language.ToString();
         BackupMethodCombo.SelectedValue = data.BackupMethod.ToString();
         SshPortBox.Text = data.SshPort.ToString();
+        DefaultUserBox.Text = data.DefaultUsername;
         _ready = true;
     }
 
@@ -40,6 +41,10 @@ public partial class SettingsWindow : Window
             _data.BackupMethod = method;
         if (int.TryParse(SshPortBox.Text.Trim(), out var port) && port is >= 1 and <= 65535)
             _data.SshPort = port;
+
+        _data.DefaultUsername = DefaultUserBox.Text.Trim();
+        if (DefaultPasswordBox.Password.Length > 0)
+            _data.DefaultEncryptedPassword = CredentialProtector.Protect(DefaultPasswordBox.Password);
 
         DialogResult = true;
     }

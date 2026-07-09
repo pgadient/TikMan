@@ -37,6 +37,9 @@ public class DeviceViewModel : INotifyPropertyChanged
     public string Host => Model.Host;
     public string ConnectionDisplay => $"{(Model.UseHttps ? "https" : "http")}://{Model.Host}:{Model.Port}";
 
+    /// <summary>Transport used for the REST API of this device (shown as a column).</summary>
+    public string TransportDisplay => Model.UseHttps ? "HTTPS" : "HTTP";
+
     private DeviceStatus _status = DeviceStatus.Unknown;
     public DeviceStatus Status
     {

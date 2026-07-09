@@ -122,7 +122,7 @@ public partial class MainWindow : Window
     private void Scan_Click(object sender, RoutedEventArgs e)
     {
         var known = _devices.Select(d => d.Model).ToList();
-        var dialog = new ScanWindow(known) { Owner = this };
+        var dialog = new ScanWindow(known, _appData.DefaultUsername, _appData.DefaultEncryptedPassword) { Owner = this };
         if (dialog.ShowDialog() == true)
         {
             foreach (var device in dialog.NewDevices)
@@ -194,6 +194,11 @@ public partial class MainWindow : Window
             SetStatus(T("Msg_SelectDeviceFirst"));
             return;
         }
+        await LoadLogsAsync(vm);
+    }
+
+    private async Task LoadLogsAsync(DeviceViewModel vm)
+    {
         int max = LogCountCombo.SelectedItem is ComboBoxItem { Tag: string tag } && int.TryParse(tag, out var n) ? n : 100;
         SetStatus(T("Msg_LoadingLogs", vm.Name));
         var ok = await vm.LoadLogsAsync(max);
@@ -205,6 +210,9 @@ public partial class MainWindow : Window
     {
         ApplyLogFilter();
         SyncChannelCombo();
+        // Initial log load on first selection of a device (Refresh logs reloads later).
+        if (SelectedDevice is { } vm && vm.Logs.Count == 0)
+            _ = LoadLogsAsync(vm);
     }
 
     private bool _syncingChannel;

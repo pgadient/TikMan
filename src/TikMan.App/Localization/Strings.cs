@@ -33,12 +33,12 @@ internal static class Strings
 
         // Tabs
         ["Tab_Logs"] = "Logs",
-        ["Tab_Monitoring"] = "Monitoring",
+        ["Tab_Monitoring"] = "CPU / RAM-Auslastung",
         ["Tab_Update"] = "Update",
         ["Tab_Details"] = "Details",
 
         // Logs
-        ["Logs_Load"] = "🔄 Logs laden",
+        ["Logs_Load"] = "🔄 Logs aktualisieren",
         ["Logs_Count"] = "Anzahl:",
         ["Logs_All"] = "alle",
         ["Logs_Filter"] = "Filter:",
@@ -48,6 +48,10 @@ internal static class Strings
 
         // Monitoring
         ["Chart_NoData"] = "Noch keine Messwerte – Gerät wird beim nächsten Abfragen erfasst.",
+        ["Col_Protocol"] = "Protokoll",
+        ["Sc_Clear"] = "🗑️ Leeren",
+        ["Sc_CredsHint"] = "Neue Geräte verwenden die Standard-Zugangsdaten aus den Einstellungen.",
+        ["Set_DefaultPwHint"] = "Leer lassen = aktuelles Passwort behalten.",
 
         // Gerätestatus / kurze Update-Status
         ["St_Online"] = "Online",
@@ -272,12 +276,12 @@ internal static class Strings
 
         // Tabs
         ["Tab_Logs"] = "Logs",
-        ["Tab_Monitoring"] = "Monitoring",
+        ["Tab_Monitoring"] = "CPU / memory load",
         ["Tab_Update"] = "Update",
         ["Tab_Details"] = "Details",
 
         // Logs
-        ["Logs_Load"] = "🔄 Load logs",
+        ["Logs_Load"] = "🔄 Refresh logs",
         ["Logs_Count"] = "Count:",
         ["Logs_All"] = "all",
         ["Logs_Filter"] = "Filter:",
@@ -287,6 +291,10 @@ internal static class Strings
 
         // Monitoring
         ["Chart_NoData"] = "No samples yet – the device is recorded on the next refresh.",
+        ["Col_Protocol"] = "Protocol",
+        ["Sc_Clear"] = "🗑️ Clear",
+        ["Sc_CredsHint"] = "New devices use the default credentials from Settings.",
+        ["Set_DefaultPwHint"] = "Leave empty to keep the current password.",
 
         // Device status / short update status
         ["St_Online"] = "Online",
@@ -512,12 +520,12 @@ internal static class Strings
 
         // Tabs
         ["Tab_Logs"] = "Logs",
-        ["Tab_Monitoring"] = "Monitoring",
+        ["Tab_Monitoring"] = "CPU / RAM-Lascht",
         ["Tab_Update"] = "Update",
         ["Tab_Details"] = "Details",
 
         // Logs
-        ["Logs_Load"] = "🔄 Logs lade",
+        ["Logs_Load"] = "🔄 Logs aktualisiere",
         ["Logs_Count"] = "Aazahl:",
         ["Logs_All"] = "alli",
         ["Logs_Filter"] = "Filter:",
@@ -527,6 +535,10 @@ internal static class Strings
 
         // Monitoring
         ["Chart_NoData"] = "Na kei Mässwärt – s Grät wird bim nächschtä Abfrage erfasst.",
+        ["Col_Protocol"] = "Protokoll",
+        ["Sc_Clear"] = "🗑️ Lääre",
+        ["Sc_CredsHint"] = "Nöii Grät bruuched d Standard-Zugangsdatä us de Iistellige.",
+        ["Set_DefaultPwHint"] = "Läär lah = aktuells Passwort behalte.",
 
         // Grätstatus / churzi Update-Status
         ["St_Online"] = "Online",

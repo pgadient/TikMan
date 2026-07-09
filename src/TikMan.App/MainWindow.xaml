@@ -65,6 +65,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="{loc:Loc Col_Name}" Binding="{Binding Name}" Width="170"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Address}" Binding="{Binding Host}" Width="120"/>
+                    <DataGridTextColumn Header="{loc:Loc Col_Protocol}" Binding="{Binding TransportDisplay}" Width="70"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Board}" Binding="{Binding Board}" Width="130"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Version}" Width="110"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Latest}" Binding="{Binding LatestVersion}" Width="80">
@@ -103,7 +104,7 @@
                             <StackPanel Orientation="Horizontal">
                                 <Button Style="{StaticResource ToolButton}" Click="RefreshLogs_Click" Content="{loc:Loc Logs_Load}"/>
                                 <TextBlock VerticalAlignment="Center" Margin="12,0,4,0" Text="{loc:Loc Logs_Count}"/>
-                                <ComboBox x:Name="LogCountCombo" Width="80" SelectedIndex="1">
+                                <ComboBox x:Name="LogCountCombo" Width="80" SelectedIndex="0">
                                     <ComboBoxItem Tag="100">100</ComboBoxItem>
                                     <ComboBoxItem Tag="500">500</ComboBoxItem>
                                     <ComboBoxItem Tag="0" Content="{loc:Loc Logs_All}"/>

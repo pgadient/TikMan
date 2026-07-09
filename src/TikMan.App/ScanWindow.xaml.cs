@@ -57,18 +57,28 @@ public class ScanResultViewModel : INotifyPropertyChanged
 public partial class ScanWindow : Window
 {
     private readonly List<Device> _knownDevices;
+    private readonly string _defaultUsername;
+    private readonly string _defaultEncryptedPassword;
     private readonly ObservableCollection<ScanResultViewModel> _results = new();
     private CancellationTokenSource? _cts;
 
     /// <summary>After DialogResult == true: the devices to be created.</summary>
     public List<Device> NewDevices { get; } = new();
 
-    public ScanWindow(List<Device> knownDevices)
+    public ScanWindow(List<Device> knownDevices, string defaultUsername, string defaultEncryptedPassword)
     {
         InitializeComponent();
         _knownDevices = knownDevices;
+        _defaultUsername = defaultUsername;
+        _defaultEncryptedPassword = defaultEncryptedPassword;
         ResultGrid.ItemsSource = _results;
         SubnetBox.Text = GuessLocalSubnet();
+    }
+
+    private void Clear_Click(object sender, RoutedEventArgs e)
+    {
+        _results.Clear();
+        ScanStatusText.Text = T("Sc_Intro");
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e) => await RunMndpAsync();
@@ -199,7 +209,6 @@ public partial class ScanWindow : Window
             return;
         }
 
-        var encryptedPassword = CredentialProtector.Protect(DefaultPasswordBox.Password);
         foreach (var result in selected)
         {
             NewDevices.Add(new Device
@@ -207,8 +216,8 @@ public partial class ScanWindow : Window
                 Name = result.Identity.Length > 0 ? result.Identity : result.IpAddress,
                 Host = result.IpAddress,
                 MacAddress = result.MacAddress,
-                Username = DefaultUserBox.Text.Trim(),
-                EncryptedPassword = encryptedPassword,
+                Username = _defaultUsername,
+                EncryptedPassword = _defaultEncryptedPassword,
                 UseHttps = true,
                 Port = 443,
                 IgnoreCertErrors = true,
