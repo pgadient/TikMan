@@ -17,7 +17,7 @@
             </DockPanel>
         </Border>
 
-        <TabControl>
+        <TabControl x:Name="ScanTabs" SelectionChanged="ScanTabs_SelectionChanged">
             <!-- ================= IPv4 ================= -->
             <TabItem Header="IPv4">
                 <DockPanel Margin="4">

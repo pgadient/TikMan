@@ -290,7 +290,14 @@ public partial class MainWindow : Window
 
     private void DeviceGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        // Double-click on a cell copies that cell's value to the clipboard.
+        // Double-click a web protocol (http/https) opens it in the browser…
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is ProtocolVm { IsWeb: true } proto)
+        {
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(proto.Url) { UseShellExecute = true }); }
+            catch { /* no browser / blocked */ }
+            return;
+        }
+        // …otherwise it copies that cell's value to the clipboard.
         if (TryGetCellText(e.OriginalSource as DependencyObject, out var text))
             CopyToClipboard(text);
     }

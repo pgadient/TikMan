@@ -139,7 +139,8 @@ public partial class ScanWindow : Window
     private readonly ObservableCollection<ScanResultViewModel> _resultsV6 = new();
     private readonly HashSet<string> _gateways = NetworkInfo.GetDefaultGateways();
     private CancellationTokenSource? _cts;
-    private bool _ipv6Running;
+    private CancellationTokenSource? _ipv6Cts;
+    private bool _ipv6Started;
 
     /// <summary>After DialogResult == true: the devices to be created.</summary>
     public List<Device> NewDevices { get; } = new();
@@ -157,27 +158,42 @@ public partial class ScanWindow : Window
 
     // ----- IPv6 -----
 
-    private async void Ipv6Discover_Click(object sender, RoutedEventArgs e)
+    private void Ipv6Discover_Click(object sender, RoutedEventArgs e) => _ = StartIpv6DiscoveryAsync();
+
+    /// <summary>Starts continuous IPv6 discovery when the IPv6 tab is first shown (the ND cache fills
+    /// gradually, so a one-shot pass misses hosts). Inner ComboBox/DataGrid selection changes bubble
+    /// here too, hence the source check.</summary>
+    private void ScanTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_ipv6Running) return;
-        _ipv6Running = true;
+        if (e.OriginalSource is not TabControl) return;
+        if (ScanTabs.SelectedIndex == 1 && !_ipv6Started) _ = StartIpv6DiscoveryAsync();
+    }
+
+    private async Task StartIpv6DiscoveryAsync()
+    {
+        _ipv6Started = true;
+        _ipv6Cts?.Cancel();
+        _ipv6Cts = new CancellationTokenSource();
+        var ct = _ipv6Cts.Token;
+
         Ipv6Button.IsEnabled = false;
         Ipv6Progress.Visibility = Visibility.Visible;
         Ipv6StatusText.Text = T("Sc_Ipv6Running");
         try
         {
-            var found = await Ipv6Discovery.DiscoverAsync(new Progress<DiscoveredDevice>(AddV6Result));
-            Ipv6StatusText.Text = T("Sc_Ipv6Done", found.Count);
+            var found = await Ipv6Discovery.DiscoverContinuousAsync(
+                TimeSpan.FromSeconds(15), new Progress<DiscoveredDevice>(AddV6Result), ct);
+            Ipv6StatusText.Text = T("Sc_Ipv6Done", found);
         }
-        catch (Exception ex)
-        {
-            Ipv6StatusText.Text = T("Sc_Ipv6Error", ex.Message);
-        }
+        catch (OperationCanceledException) { /* restarted or window closing */ }
+        catch (Exception ex) { Ipv6StatusText.Text = T("Sc_Ipv6Error", ex.Message); }
         finally
         {
-            Ipv6Progress.Visibility = Visibility.Collapsed;
-            Ipv6Button.IsEnabled = true;
-            _ipv6Running = false;
+            if (!ct.IsCancellationRequested)
+            {
+                Ipv6Progress.Visibility = Visibility.Collapsed;
+                Ipv6Button.IsEnabled = true;
+            }
         }
     }
 
@@ -261,7 +277,11 @@ public partial class ScanWindow : Window
 
     private async void Window_Loaded(object sender, RoutedEventArgs e) => await RunMndpAsync();
 
-    private void Window_Closing(object sender, CancelEventArgs e) => _cts?.Cancel();
+    private void Window_Closing(object sender, CancelEventArgs e)
+    {
+        _cts?.Cancel();
+        _ipv6Cts?.Cancel();
+    }
 
     private async void Mndp_Click(object sender, RoutedEventArgs e) => await RunMndpAsync();
 

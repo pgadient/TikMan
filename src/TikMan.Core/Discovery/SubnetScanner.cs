@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using TikMan.Core.Models;
 
 namespace TikMan.Core.Discovery;
@@ -79,13 +80,56 @@ public static class SubnetScanner
         var results = await Task.WhenAll(probes).ConfigureAwait(false);
         var openPorts = results.Where(r => r.Open).Select(r => r.Port).OrderBy(p => p).ToList();
 
+        // Enrich the bare IP with the MAC (from the ARP cache, populated by the ping above) and a
+        // hostname (reverse DNS). The vendor is then resolved from the MAC in the view.
+        var mac = GetMacFromArp(ip);
+        var identity = await ReverseDnsAsync(ip, ct).ConfigureAwait(false);
+
         return new DiscoveredDevice
         {
             IpAddress = ip.ToString(),
             Source = "Scan",
             OpenPorts = openPorts,
             IsLikelyMikroTik = openPorts.Contains(8291) || openPorts.Contains(8728),
+            MacAddress = mac,
+            Identity = identity,
         };
+    }
+
+    [DllImport("iphlpapi.dll", ExactSpelling = true)]
+    private static extern int SendARP(int destIp, int srcIp, byte[] macAddr, ref uint macAddrLen);
+
+    /// <summary>Reads the MAC of a same-subnet IPv4 host from the ARP table (best-effort, "" if the
+    /// host is off-link or ARP failed). Windows only – SendARP.</summary>
+    private static string GetMacFromArp(IPAddress ip)
+    {
+        if (!OperatingSystem.IsWindows() || ip.AddressFamily != AddressFamily.InterNetwork) return "";
+        try
+        {
+            int dest = BitConverter.ToInt32(ip.GetAddressBytes(), 0);
+            var mac = new byte[6];
+            uint len = (uint)mac.Length;
+            if (SendARP(dest, 0, mac, ref len) != 0 || len < 6) return "";
+            return string.Join(":", mac.Take(6).Select(b => b.ToString("X2")));
+        }
+        catch (DllNotFoundException) { return ""; }
+        catch (EntryPointNotFoundException) { return ""; }
+    }
+
+    /// <summary>Reverse-DNS lookup for a hostname (short form), with a 1s timeout; "" if none.</summary>
+    private static async Task<string> ReverseDnsAsync(IPAddress ip, CancellationToken ct)
+    {
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(1000);
+            var entry = await Dns.GetHostEntryAsync(ip).WaitAsync(timeout.Token).ConfigureAwait(false);
+            var host = entry.HostName;
+            int dot = host.IndexOf('.');
+            return dot > 0 ? host[..dot] : host;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch { return ""; } // timeout / no PTR record / DNS unavailable
     }
 
     private static async Task<bool> IsPortOpenAsync(IPAddress ip, int port, CancellationToken ct)

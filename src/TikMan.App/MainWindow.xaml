@@ -101,7 +101,34 @@
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="{loc:Loc Col_Name}" Binding="{Binding Name}" Width="170"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Address}" Binding="{Binding Host}" Width="120"/>
-                    <DataGridTextColumn Header="{loc:Loc Col_Protocol}" Binding="{Binding TransportDisplay}" Width="70"/>
+                    <DataGridTemplateColumn Header="{loc:Loc Col_Protocol}" Width="140" SortMemberPath="TransportDisplay">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <ItemsControl ItemsSource="{Binding SupportedProtocols}" VerticalAlignment="Center">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Name}" Margin="0,0,8,0" ToolTip="{Binding Url}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsWeb}" Value="True">
+                                                                <Setter Property="Foreground" Value="#2266CC"/>
+                                                                <Setter Property="TextDecorations" Value="Underline"/>
+                                                                <Setter Property="Cursor" Value="Hand"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridTemplateColumn Header="{loc:Loc Col_Vendor}" Width="100" SortMemberPath="Vendor">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>

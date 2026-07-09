@@ -41,6 +41,11 @@ public class DeviceViewModel : INotifyPropertyChanged
         if (_availableLoaded || Model.Vendor != DeviceVendor.MikroTik) return;
         _availableLoaded = true;
         var installed = StripChannelSuffix(Version);
+
+        // First row: the currently installed firmware version (with its release date).
+        if (installed.Length > 0)
+            AvailableUpdates.Add(new ChannelUpdateVm(T("Upd_InstalledRow"), installed, InstalledReleaseText, isCurrent: true, isInstalled: true));
+
         foreach (var channel in AllChannels)
         {
             var info = await ReleaseInfoClient.GetLatestAsync(channel, ct);
@@ -62,8 +67,30 @@ public class DeviceViewModel : INotifyPropertyChanged
     public string Host => Model.Host;
     public string ConnectionDisplay => $"{(Model.UseHttps ? "https" : "http")}://{Model.Host}:{Model.Port}";
 
-    /// <summary>Transport used for the REST API of this device (shown as a column).</summary>
+    /// <summary>Transport used for the REST API of this device (used by the filter).</summary>
     public string TransportDisplay => Model.UseHttps ? "HTTPS" : "HTTP";
+
+    /// <summary>Protocols this device speaks, for the "Supported protocols" column. Web entries
+    /// (http/https) carry a URL and open in the browser on double-click.</summary>
+    public IReadOnlyList<ProtocolVm> SupportedProtocols
+    {
+        get
+        {
+            var list = new List<ProtocolVm>();
+            if (Model.Vendor == DeviceVendor.MikroTik)
+            {
+                var scheme = Model.UseHttps ? "https" : "http";
+                var hostPart = Model.Host.Contains(':') && !Model.Host.StartsWith('[') ? $"[{Model.Host}]" : Model.Host;
+                list.Add(new ProtocolVm(scheme, $"{scheme}://{hostPart}:{Model.Port}/"));
+                list.Add(new ProtocolVm("ssh", ""));
+            }
+            else // TP-Link: SSH only
+            {
+                list.Add(new ProtocolVm("ssh", ""));
+            }
+            return list;
+        }
+    }
 
     /// <summary>Manufacturer resolved offline from the MAC address (empty if unknown).</summary>
     public string Vendor => OuiLookup.Lookup(Model.MacAddress);
@@ -211,6 +238,7 @@ public class DeviceViewModel : INotifyPropertyChanged
         Notify(nameof(Host));
         Notify(nameof(ConnectionDisplay));
         Notify(nameof(TransportDisplay));
+        Notify(nameof(SupportedProtocols));
     }
 
     /// <summary>Switches this device from HTTPS to plain HTTP (port 80 if it was 443).</summary>
@@ -456,6 +484,15 @@ public class DeviceViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Notify([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+/// <summary>A protocol the device speaks. Web protocols carry a URL (opened on double-click).</summary>
+public class ProtocolVm
+{
+    public ProtocolVm(string name, string url) { Name = name; Url = url; }
+    public string Name { get; }
+    public string Url { get; }
+    public bool IsWeb => Url.Length > 0;
 }
 
 /// <summary>One row in the "Available updates" tab: the newest version of a channel.</summary>

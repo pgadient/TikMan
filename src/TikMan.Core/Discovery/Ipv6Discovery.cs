@@ -33,6 +33,28 @@ public static partial class Ipv6Discovery
         return results;
     }
 
+    /// <summary>Continuously discovers IPv6 neighbours for the given duration: the ND cache fills in
+    /// gradually as neighbours reply to the ff02::1 solicitations, so a single pass misses hosts.
+    /// Repeats poke + read every ~1.2 s and reports each newly seen neighbour once. Returns the total.</summary>
+    public static async Task<int> DiscoverContinuousAsync(
+        TimeSpan duration, IProgress<DiscoveredDevice> onFound, CancellationToken ct = default)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        long endTick = Environment.TickCount64 + (long)duration.TotalMilliseconds;
+        while (true)
+        {
+            await PokeAllNodesAsync(ct).ConfigureAwait(false);
+            foreach (var (ip, mac) in await ReadNeighboursAsync(ct).ConfigureAwait(false))
+            {
+                if (!seen.Add(ip)) continue;
+                onFound.Report(new DiscoveredDevice { IpAddress = ip, MacAddress = mac, Source = "ND" });
+            }
+            if (ct.IsCancellationRequested || Environment.TickCount64 >= endTick) break;
+            await Task.Delay(1200, ct).ConfigureAwait(false);
+        }
+        return seen.Count;
+    }
+
     /// <summary>Pings ff02::1 on every up IPv6 interface so neighbours reply and get cached.</summary>
     private static async Task PokeAllNodesAsync(CancellationToken ct)
     {
