@@ -114,6 +114,8 @@
                             </Style>
                         </DataGridTextColumn.CellStyle>
                     </DataGridTextColumn>
+                    <DataGridTextColumn Header="{loc:Loc Col_InstalledRel}" Binding="{Binding InstalledReleaseText}" Width="95"/>
+                    <DataGridTextColumn Header="{loc:Loc Col_UpdateRel}" Binding="{Binding UpdateReleaseText}" Width="95"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Cpu}" Binding="{Binding CpuText}" Width="55"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Ram}" Binding="{Binding MemoryText}" Width="120"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Uptime}" Binding="{Binding Uptime}" Width="100"/>

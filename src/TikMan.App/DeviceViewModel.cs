@@ -115,6 +115,14 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// <summary>Version and release date of the latest version, e.g. "7.23.1 (2. Juni 2026)".</summary>
     public string LatestReleaseText { get => _latestReleaseText; private set { _latestReleaseText = value; Notify(); } }
 
+    private DateTime? _installedDate;
+    /// <summary>Release date of the currently installed version (from its changelog).</summary>
+    public string InstalledReleaseText => _installedDate is { } d ? d.ToString("yyyy-MM-dd") : "";
+
+    private DateTime? _updateReleaseDate;
+    /// <summary>Release date of the proposed update / latest version (from its changelog).</summary>
+    public string UpdateReleaseText => _updateReleaseDate is { } d ? d.ToString("yyyy-MM-dd") : "";
+
     private bool _updateAvailable;
     public bool UpdateAvailable { get => _updateAvailable; private set { _updateAvailable = value; Notify(); Notify(nameof(VersionIsCurrent)); } }
 
@@ -178,6 +186,7 @@ public class DeviceViewModel : INotifyPropertyChanged
             Status = DeviceStatus.Online;
             LastError = "";
             HadTlsError = false;
+            _ = FetchChangelogDatesAsync(ct); // fire-and-forget; fills the release-date columns
             return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -223,6 +232,7 @@ public class DeviceViewModel : INotifyPropertyChanged
             var info = await Client.CheckForUpdatesAsync(ct);
             ApplyUpdateInfo(info);
             await UpdateReleaseDateAsync(ct);
+            await FetchChangelogDatesAsync(ct);
             LastError = "";
             return true;
         }
@@ -242,6 +252,7 @@ public class DeviceViewModel : INotifyPropertyChanged
             var info = await Client.SetChannelAndCheckAsync(channel, ct);
             ApplyUpdateInfo(info);
             await UpdateReleaseDateAsync(ct);
+            await FetchChangelogDatesAsync(ct);
             LastError = "";
             return true;
         }
@@ -301,6 +312,26 @@ public class DeviceViewModel : INotifyPropertyChanged
         LatestReleaseText = info is { } r
             ? $"{r.Version} ({r.ReleaseDate.ToString("d. MMMM yyyy", GermanCulture)})"
             : LatestVersion;
+    }
+
+    /// <summary>Fills the installed/update release-date columns from the per-version changelogs (cached).</summary>
+    private async Task FetchChangelogDatesAsync(CancellationToken ct)
+    {
+        try
+        {
+            var installed = StripChannelSuffix(Version);
+            if (installed.Length > 0)
+            {
+                var d = await ChangelogClient.GetReleaseDateAsync(installed, ct);
+                if (d != _installedDate) { _installedDate = d; Notify(nameof(InstalledReleaseText)); }
+            }
+            if (LatestVersion.Length > 0)
+            {
+                var d = await ChangelogClient.GetReleaseDateAsync(LatestVersion, ct);
+                if (d != _updateReleaseDate) { _updateReleaseDate = d; Notify(nameof(UpdateReleaseText)); }
+            }
+        }
+        catch (OperationCanceledException) { /* refresh cancelled */ }
     }
 
     private void ApplyUpdateInfo(UpdateInfo info)
