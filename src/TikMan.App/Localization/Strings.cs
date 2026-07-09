@@ -39,6 +39,8 @@ internal static class Strings
 
         // Logs
         ["Logs_Load"] = "🔄 Logs aktualisieren",
+        ["Logs_Auto"] = "Auto (3 s)",
+        ["Filter_Tip"] = "Filtert die Liste – alle eingegebenen Wörter müssen im Eintrag vorkommen.",
         ["Logs_Count"] = "Anzahl:",
         ["Logs_All"] = "alle",
         ["Logs_Filter"] = "Filter:",
@@ -255,6 +257,9 @@ internal static class Strings
         ["Set_BackupInfo"] = "Das binäre .backup lässt sich nicht über die REST-API holen. «Web» spricht MikroTiks WebFig-Protokoll (wie der Browser) – derzeit noch nicht verfügbar, weicht auf SSH aus. «SSH» nutzt den ab Werk aktiven, verschlüsselten SSH-Dienst (SCP). Der reine Config-Export (.rsc) braucht nichts davon und läuft immer über HTTPS.",
         ["Set_Save"] = "Speichern",
         ["Set_Cancel"] = "Abbrechen",
+        ["Set_Reset"] = "Zurücksetzen…",
+        ["Set_ResetConfirm"] = "Alle Einstellungen und Geräte löschen und auf Werkszustand zurücksetzen?\nDie Konfigurationsdatei (Passwörter etc.) wird entfernt. Das kann nicht rückgängig gemacht werden.",
+        ["Set_ResetDone"] = "Auf Werkszustand zurückgesetzt.",
     };
 
     public static readonly Dictionary<string, string> English = new()
@@ -290,6 +295,8 @@ internal static class Strings
 
         // Logs
         ["Logs_Load"] = "🔄 Refresh logs",
+        ["Logs_Auto"] = "Auto (3 s)",
+        ["Filter_Tip"] = "Filters the list – every entered word must appear in the row.",
         ["Logs_Count"] = "Count:",
         ["Logs_All"] = "all",
         ["Logs_Filter"] = "Filter:",
@@ -506,6 +513,9 @@ internal static class Strings
         ["Set_BackupInfo"] = "The binary .backup cannot be fetched through the REST API. «Web» speaks MikroTik's WebFig protocol (like the browser) – currently not yet available, falls back to SSH. «SSH» uses the factory-enabled, encrypted SSH service (SCP). The plain config export (.rsc) needs none of this and always runs over HTTPS.",
         ["Set_Save"] = "Save",
         ["Set_Cancel"] = "Cancel",
+        ["Set_Reset"] = "Reset…",
+        ["Set_ResetConfirm"] = "Delete all settings and devices and reset to defaults?\nThe config file (passwords etc.) is removed. This cannot be undone.",
+        ["Set_ResetDone"] = "Reset to defaults.",
     };
 
     // Swiss German (Zurich-leaning, no official spelling)
@@ -542,6 +552,8 @@ internal static class Strings
 
         // Logs
         ["Logs_Load"] = "🔄 Logs aktualisiere",
+        ["Logs_Auto"] = "Auto (3 s)",
+        ["Filter_Tip"] = "Filteret d Lischtä – alli iigäh Wörter müend im Iitrag vorcho.",
         ["Logs_Count"] = "Aazahl:",
         ["Logs_All"] = "alli",
         ["Logs_Filter"] = "Filter:",
@@ -758,5 +770,8 @@ internal static class Strings
         ["Set_BackupInfo"] = "S binäri .backup chan mä nöd über d REST-API hole. «Web» redt MikroTiks WebFig-Protokoll (wiä de Browser) – zurzit na nöd verfüegbar, wiicht uf SSH us. «SSH» bruucht de ab Werk aktiv, verschlüsslet SSH-Dienscht (SCP). De reini Config-Export (.rsc) bruucht nüt devo und lauft immer über HTTPS.",
         ["Set_Save"] = "Speichere",
         ["Set_Cancel"] = "Abbräche",
+        ["Set_Reset"] = "Zrucksetzä…",
+        ["Set_ResetConfirm"] = "Alli Iistellige und Grät löschä und uf Werkszuestand zrucksetzä?\nD Konfigdatei (Passwörter etc.) wird entfernt. Cha mä nöd rückgängig mache.",
+        ["Set_ResetDone"] = "Uf Werkszuestand zruckgsetzt.",
     };
 }

@@ -10,6 +10,7 @@ public class AppData
     public int Version { get; set; } = 1;
     public int PollIntervalSeconds { get; set; } = 30;
     public bool AutoRefreshEnabled { get; set; } = true;
+    public bool LogAutoRefresh { get; set; } = true;
     public AppLanguage Language { get; set; } = AppLanguage.System;
     public BackupMethod BackupMethod { get; set; } = BackupMethod.Auto;
     public int SshPort { get; set; } = 22;
@@ -55,5 +56,12 @@ public static class DeviceStore
         var tmp = StorageFile + ".tmp";
         File.WriteAllText(tmp, JsonSerializer.Serialize(data, JsonOptions));
         File.Move(tmp, StorageFile, overwrite: true);
+    }
+
+    /// <summary>Deletes the stored config so the next start is like a first run.</summary>
+    public static void DeleteConfig()
+    {
+        foreach (var path in new[] { StorageFile, StorageFile + ".tmp", StorageFile + ".corrupt" })
+            try { if (File.Exists(path)) File.Delete(path); } catch (IOException) { }
     }
 }

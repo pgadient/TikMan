@@ -13,6 +13,9 @@ public partial class SettingsWindow : Window
     private readonly AppLanguage _originalLanguage;
     private bool _ready;
 
+    /// <summary>Set when the user confirmed a reset; the caller wipes the config and reloads defaults.</summary>
+    public bool ResetRequested { get; private set; }
+
     public SettingsWindow(AppData data)
     {
         InitializeComponent();
@@ -31,6 +34,16 @@ public partial class SettingsWindow : Window
         if (!_ready) return;
         if (LanguageCombo.SelectedValue is string tag && Enum.TryParse<AppLanguage>(tag, out var lang))
             LocalizationManager.Instance.Apply(lang); // switch immediately (preview)
+    }
+
+    private void Reset_Click(object sender, RoutedEventArgs e)
+    {
+        var answer = MessageBox.Show(this,
+            LocalizationManager.T("Set_ResetConfirm"),
+            LocalizationManager.T("Set_Reset"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (answer != MessageBoxResult.Yes) return;
+        ResetRequested = true;
+        DialogResult = true;
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)

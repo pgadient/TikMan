@@ -17,6 +17,7 @@ public partial class MainWindow : Window
 {
     private readonly ObservableCollection<DeviceViewModel> _devices = new();
     private readonly DispatcherTimer _pollTimer = new();
+    private readonly DispatcherTimer _logTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     private AppData _appData;
 
     public MainWindow() : this(new AppData()) { }
@@ -27,6 +28,7 @@ public partial class MainWindow : Window
         _appData = appData;
         DeviceGrid.ItemsSource = _devices;
         _pollTimer.Tick += async (_, _) => await RefreshAllAsync(quiet: true);
+        _logTimer.Tick += (_, _) => { if (SelectedDevice is { } vm) _ = LoadLogsAsync(vm, quiet: true); };
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
@@ -36,6 +38,8 @@ public partial class MainWindow : Window
 
         SelectIntervalItem(_appData.PollIntervalSeconds);
         AutoRefreshCheck.IsChecked = _appData.AutoRefreshEnabled;
+        LogAutoRefreshCheck.IsChecked = _appData.LogAutoRefresh;
+        _logTimer.IsEnabled = _appData.LogAutoRefresh;
         ApplyTimerSettings();
 
         if (_devices.Count > 0)
@@ -51,6 +55,7 @@ public partial class MainWindow : Window
         _appData.Devices = _devices.Select(vm => vm.Model).ToList();
         _appData.PollIntervalSeconds = SelectedIntervalSeconds();
         _appData.AutoRefreshEnabled = AutoRefreshCheck.IsChecked == true;
+        _appData.LogAutoRefresh = LogAutoRefreshCheck.IsChecked == true;
         try { DeviceStore.Save(_appData); }
         catch (Exception ex)
         {
@@ -66,7 +71,27 @@ public partial class MainWindow : Window
     private void Settings_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new SettingsWindow(_appData) { Owner = this };
-        if (dialog.ShowDialog() == true) SaveAppData();
+        if (dialog.ShowDialog() != true) return;
+        if (dialog.ResetRequested) ResetToDefaults();
+        else SaveAppData();
+    }
+
+    /// <summary>Wipes the config and returns the app to its first-start state.</summary>
+    private void ResetToDefaults()
+    {
+        _pollTimer.IsEnabled = false;
+        _logTimer.IsEnabled = false;
+        DeviceStore.DeleteConfig();
+        _devices.Clear();
+        _appData = new AppData();
+        Instance.Apply(_appData.Language);
+        SelectIntervalItem(_appData.PollIntervalSeconds);
+        AutoRefreshCheck.IsChecked = _appData.AutoRefreshEnabled;
+        LogAutoRefreshCheck.IsChecked = _appData.LogAutoRefresh;
+        DeviceFilterBox.Text = "";
+        ApplyTimerSettings();
+        _logTimer.IsEnabled = _appData.LogAutoRefresh;
+        SetStatus(T("Set_ResetDone"));
     }
 
     // ----- Queries / Monitoring -----
@@ -218,13 +243,38 @@ public partial class MainWindow : Window
         await LoadLogsAsync(vm);
     }
 
-    private async Task LoadLogsAsync(DeviceViewModel vm)
+    private async Task LoadLogsAsync(DeviceViewModel vm, bool quiet = false)
     {
         int max = LogCountCombo.SelectedItem is ComboBoxItem { Tag: string tag } && int.TryParse(tag, out var n) ? n : 100;
-        SetStatus(T("Msg_LoadingLogs", vm.Name));
+        if (!quiet) SetStatus(T("Msg_LoadingLogs", vm.Name));
         var ok = await vm.LoadLogsAsync(max);
         ApplyLogFilter();
-        SetStatus(ok ? T("Msg_LogsLoaded", vm.Logs.Count, vm.Name) : T("Msg_LogsFailed", vm.Name, vm.LastError));
+        if (!quiet)
+            SetStatus(ok ? T("Msg_LogsLoaded", vm.Logs.Count, vm.Name) : T("Msg_LogsFailed", vm.Name, vm.LastError));
+    }
+
+    private void LogAutoRefresh_Changed(object sender, RoutedEventArgs e) =>
+        _logTimer.IsEnabled = LogAutoRefreshCheck.IsChecked == true;
+
+    // ----- Main list filter -----
+
+    private void DeviceFilterBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyDeviceFilter();
+
+    private void ApplyDeviceFilter()
+    {
+        var view = CollectionViewSource.GetDefaultView(_devices);
+        var tokens = DeviceFilterBox.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        view.Filter = tokens.Length == 0
+            ? null
+            : obj => obj is DeviceViewModel d && DeviceMatchesFilter(d, tokens);
+    }
+
+    private static bool DeviceMatchesFilter(DeviceViewModel d, string[] tokens)
+    {
+        var haystack = string.Join(" ",
+            d.Name, d.Host, d.TransportDisplay, d.Vendor, d.Board, d.Version, d.LatestWithChannel,
+            d.CpuText, d.MemoryText, d.Uptime, d.UpdateChannel, d.StatusText, d.LastError);
+        return tokens.All(t => haystack.Contains(t, StringComparison.OrdinalIgnoreCase));
     }
 
     private void DeviceGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)

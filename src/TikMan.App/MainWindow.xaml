@@ -21,6 +21,9 @@
                     <Button Style="{StaticResource ToolButton}" FontWeight="SemiBold" Click="InstallUpdates_Click" Content="{loc:Loc Tb_InstallUpdates}"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <TextBlock VerticalAlignment="Center" Margin="0,0,3,0" Text="🔎"/>
+                    <TextBox x:Name="DeviceFilterBox" Width="160" VerticalContentAlignment="Center" Height="24" Margin="0,0,8,0"
+                             ToolTip="{loc:Loc Filter_Tip}" TextChanged="DeviceFilterBox_TextChanged"/>
                     <Button Style="{StaticResource ToolButton}" Click="Settings_Click" Content="{loc:Loc Tb_Settings}"/>
                     <Separator Margin="6,2" Width="1" Background="#CCCCCC"/>
                     <CheckBox x:Name="AutoRefreshCheck" VerticalAlignment="Center" Margin="0,0,8,0"
@@ -84,8 +87,22 @@
                     <DataGridTextColumn Header="{loc:Loc Col_Protocol}" Binding="{Binding TransportDisplay}" Width="70"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding Vendor}" Width="100"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Board}" Binding="{Binding Board}" Width="130"/>
-                    <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Version}" Width="110"/>
-                    <DataGridTextColumn Header="{loc:Loc Col_Latest}" Binding="{Binding LatestVersion}" Width="80">
+                    <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Version}" Width="110">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding UpdateAvailable}" Value="True">
+                                        <Setter Property="Foreground" Value="#C63B3B"/>
+                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding VersionIsCurrent}" Value="True">
+                                        <Setter Property="Foreground" Value="#2E9E44"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+                    <DataGridTextColumn Header="{loc:Loc Col_Latest}" Binding="{Binding LatestWithChannel}" Width="130">
                         <DataGridTextColumn.CellStyle>
                             <Style TargetType="DataGridCell">
                                 <Style.Triggers>
@@ -120,6 +137,9 @@
                         <Border DockPanel.Dock="Top" Padding="4" Background="#FAFAFA">
                             <StackPanel Orientation="Horizontal">
                                 <Button Style="{StaticResource ToolButton}" Click="RefreshLogs_Click" Content="{loc:Loc Logs_Load}"/>
+                                <CheckBox x:Name="LogAutoRefreshCheck" VerticalAlignment="Center" Margin="10,0,0,0" IsChecked="True"
+                                          Checked="LogAutoRefresh_Changed" Unchecked="LogAutoRefresh_Changed"
+                                          Content="{loc:Loc Logs_Auto}"/>
                                 <TextBlock VerticalAlignment="Center" Margin="12,0,4,0" Text="{loc:Loc Logs_Count}"/>
                                 <ComboBox x:Name="LogCountCombo" Width="80" SelectedIndex="0">
                                     <ComboBoxItem Tag="100">100</ComboBoxItem>

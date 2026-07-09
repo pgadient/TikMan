@@ -88,10 +88,25 @@ public class DeviceViewModel : INotifyPropertyChanged
     public string MemoryText { get => _memoryText; private set { _memoryText = value; Notify(); } }
 
     private string _latestVersion = "";
-    public string LatestVersion { get => _latestVersion; private set { _latestVersion = value; Notify(); } }
+    public string LatestVersion
+    {
+        get => _latestVersion;
+        private set { _latestVersion = value; Notify(); Notify(nameof(LatestWithChannel)); Notify(nameof(VersionIsCurrent)); }
+    }
 
     private string _updateChannel = "";
-    public string UpdateChannel { get => _updateChannel; private set { _updateChannel = value; Notify(); } }
+    public string UpdateChannel
+    {
+        get => _updateChannel;
+        private set { _updateChannel = value; Notify(); Notify(nameof(LatestWithChannel)); }
+    }
+
+    /// <summary>"Latest" column: version with channel in parentheses, e.g. "7.16.1 (stable)".</summary>
+    public string LatestWithChannel =>
+        _latestVersion.Length > 0 && _updateChannel.Length > 0 ? $"{_latestVersion} ({_updateChannel})" : _latestVersion;
+
+    /// <summary>True once an update check ran and the device is on the latest version (→ green).</summary>
+    public bool VersionIsCurrent => _latestVersion.Length > 0 && !_updateAvailable;
 
     private string _updateStatusText = "";
     public string UpdateStatusText { get => _updateStatusText; private set { _updateStatusText = value; Notify(); } }
@@ -101,7 +116,7 @@ public class DeviceViewModel : INotifyPropertyChanged
     public string LatestReleaseText { get => _latestReleaseText; private set { _latestReleaseText = value; Notify(); } }
 
     private bool _updateAvailable;
-    public bool UpdateAvailable { get => _updateAvailable; private set { _updateAvailable = value; Notify(); } }
+    public bool UpdateAvailable { get => _updateAvailable; private set { _updateAvailable = value; Notify(); Notify(nameof(VersionIsCurrent)); } }
 
     private string _lastError = "";
     public string LastError { get => _lastError; private set { _lastError = value; Notify(); } }

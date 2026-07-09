@@ -64,9 +64,12 @@
 
         <TextBlock Margin="0,12,0,0" TextWrapping="Wrap" Foreground="#777777" Text="{loc:Loc Set_BackupInfo}"/>
 
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-            <Button Padding="14,5" Margin="0,0,8,0" IsDefault="True" Click="Save_Click" Content="{loc:Loc Set_Save}"/>
-            <Button Padding="14,5" IsCancel="True" Content="{loc:Loc Set_Cancel}"/>
-        </StackPanel>
+        <DockPanel Margin="0,16,0,0">
+            <Button DockPanel.Dock="Left" Padding="14,5" Foreground="#B33030" Click="Reset_Click" Content="{loc:Loc Set_Reset}"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Padding="14,5" Margin="0,0,8,0" IsDefault="True" Click="Save_Click" Content="{loc:Loc Set_Save}"/>
+                <Button Padding="14,5" IsCancel="True" Content="{loc:Loc Set_Cancel}"/>
+            </StackPanel>
+        </DockPanel>
     </StackPanel>
 </Window>
