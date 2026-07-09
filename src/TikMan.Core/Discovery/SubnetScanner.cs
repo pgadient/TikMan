@@ -13,12 +13,12 @@ public static class SubnetScanner
     public static readonly int[] DefaultPorts = { 443, 80, 8291, 8728, 22 };
 
     public static async Task<List<DiscoveredDevice>> ScanAsync(
-        string cidr,
+        string targets,
         IProgress<DiscoveredDevice>? onFound = null,
         IProgress<int>? onHostScanned = null,
         CancellationToken ct = default)
     {
-        var addresses = EnumerateHosts(cidr);
+        var addresses = EnumerateTargets(targets);
         var results = new List<DiscoveredDevice>();
         var resultLock = new object();
         using var limiter = new SemaphoreSlim(64);
@@ -48,7 +48,7 @@ public static class SubnetScanner
             .ToList();
     }
 
-    public static int CountHosts(string cidr) => EnumerateHosts(cidr).Count;
+    public static int CountHosts(string targets) => EnumerateTargets(targets).Count;
 
     private static async Task<DiscoveredDevice?> ProbeHostAsync(IPAddress ip, CancellationToken ct)
     {
@@ -89,8 +89,79 @@ public static class SubnetScanner
         catch { return false; }
     }
 
+    private const int MaxHosts = 65536;
+
+    /// <summary>Parses a comma-separated target spec into host addresses. Each part may be a
+    /// CIDR subnet ("192.168.1.0/24"), an IP range ("192.168.1.50-192.168.1.100" or the short
+    /// "192.168.1.50-100"), or a single IP ("192.168.1.42").</summary>
+    public static List<IPAddress> EnumerateTargets(string spec)
+    {
+        var seen = new HashSet<uint>();
+        var result = new List<IPAddress>();
+        foreach (var part in spec.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            foreach (var ip in EnumeratePart(part))
+            {
+                if (seen.Add(ToUInt(ip))) result.Add(ip);
+                if (result.Count > MaxHosts)
+                    throw new ArgumentException($"Too many addresses (> {MaxHosts}) – narrow the range.");
+            }
+        }
+        if (result.Count == 0)
+            throw new ArgumentException("No valid targets – e.g. 192.168.1.0/24, 192.168.1.50-100 or 192.168.1.42");
+
+        result.Sort((a, b) => ToUInt(a).CompareTo(ToUInt(b)));
+        return result;
+    }
+
+    private static IEnumerable<IPAddress> EnumeratePart(string part)
+    {
+        if (part.Contains('/')) return EnumerateCidr(part);
+        if (part.Contains('-')) return EnumerateRange(part);
+        if (IPAddress.TryParse(part, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork)
+            return new[] { ip };
+        throw new ArgumentException($"Invalid target: \"{part}\"");
+    }
+
+    private static List<IPAddress> EnumerateRange(string part)
+    {
+        int dash = part.IndexOf('-');
+        var startStr = part[..dash].Trim();
+        var endStr = part[(dash + 1)..].Trim();
+        if (!IPAddress.TryParse(startStr, out var startIp) || startIp.AddressFamily != AddressFamily.InterNetwork)
+            throw new ArgumentException($"Invalid range start: \"{startStr}\"");
+
+        uint start = ToUInt(startIp);
+        uint end;
+        // NOTE: a bare number like "52" must be treated as a last-octet short form, NOT parsed as
+        // an IP — IPAddress.TryParse("52") would (wrongly) yield 0.0.0.52 and create a huge range.
+        if (endStr.Contains('.'))
+        {
+            if (!IPAddress.TryParse(endStr, out var endIp) || endIp.AddressFamily != AddressFamily.InterNetwork)
+                throw new ArgumentException($"Invalid range end: \"{endStr}\"");
+            end = ToUInt(endIp);
+        }
+        else if (byte.TryParse(endStr, out var lastOctet))
+        {
+            end = (start & 0xFFFFFF00u) | lastOctet; // short form: only the last octet
+        }
+        else
+        {
+            throw new ArgumentException($"Invalid range end: \"{endStr}\"");
+        }
+
+        if (end < start) (start, end) = (end, start);
+        long count = (long)end - start + 1;
+        if (count > MaxHosts)
+            throw new ArgumentException($"Range too large ({count} addresses, max {MaxHosts}) – narrow it down.");
+
+        var list = new List<IPAddress>((int)count);
+        for (uint a = start; a <= end; a++) list.Add(FromUInt(a));
+        return list;
+    }
+
     /// <summary>Parses "192.168.1.0/24" and returns all host addresses (excluding network/broadcast).</summary>
-    private static List<IPAddress> EnumerateHosts(string cidr)
+    private static List<IPAddress> EnumerateCidr(string cidr)
     {
         var parts = cidr.Trim().Split('/');
         if (parts.Length != 2 || !IPAddress.TryParse(parts[0], out var baseIp) ||

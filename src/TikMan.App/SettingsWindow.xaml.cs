@@ -1,5 +1,9 @@
+using System.Diagnostics;
+using System.IO;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Navigation;
 using TikMan.App.Localization;
 using TikMan.Core.Models;
 using TikMan.Core.Storage;
@@ -34,6 +38,35 @@ public partial class SettingsWindow : Window
         if (!_ready) return;
         if (LanguageCombo.SelectedValue is string tag && Enum.TryParse<AppLanguage>(tag, out var lang))
             LocalizationManager.Instance.Apply(lang); // switch immediately (preview)
+    }
+
+    private void Hyperlink_RequestNavigate(object sender, RequestNavigateEventArgs e)
+    {
+        try { Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true }); }
+        catch { /* no default browser / blocked – the URL is visible for manual copy */ }
+        e.Handled = true;
+    }
+
+    private async void OuiDownload_Click(object sender, RoutedEventArgs e)
+    {
+        OuiDownloadButton.IsEnabled = false;
+        OuiStatusText.Text = LocalizationManager.T("Set_OuiDownloading");
+        try
+        {
+            var dest = Path.Combine(AppContext.BaseDirectory, "oui.txt");
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(180) };
+            var bytes = await http.GetByteArrayAsync("https://standards-oui.ieee.org/oui/oui.txt");
+            await File.WriteAllBytesAsync(dest, bytes);
+            OuiStatusText.Text = LocalizationManager.T("Set_OuiDone", dest);
+        }
+        catch (Exception ex)
+        {
+            OuiStatusText.Text = LocalizationManager.T("Set_OuiFailed", ex.Message);
+        }
+        finally
+        {
+            OuiDownloadButton.IsEnabled = true;
+        }
     }
 
     private void Reset_Click(object sender, RoutedEventArgs e)

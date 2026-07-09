@@ -172,6 +172,7 @@ internal static class Strings
         ["Sc_Mndp"] = "📡 MNDP-Discovery (MikroTik im LAN)",
         ["Sc_Subnet"] = "Subnetz:",
         ["Sc_ScanBtn"] = "🔍 Subnetz scannen",
+        ["Sc_TargetsTip"] = "Subnetz (192.168.1.0/24), Bereich (192.168.1.50-100) oder einzelne IP – mehrere mit Komma getrennt.",
         ["Sc_Stop"] = "⏹ Stopp",
         ["Sc_Intro"] = "MNDP findet MikroTik-Geräte per Broadcast; der Subnetz-Scan findet zusätzlich andere Geräte (Ping + Port-Check).",
         ["Sc_DefaultCreds"] = "Standard-Zugangsdaten für neue Geräte:",
@@ -260,6 +261,12 @@ internal static class Strings
         ["Set_Reset"] = "Zurücksetzen…",
         ["Set_ResetConfirm"] = "Alle Einstellungen und Geräte löschen und auf Werkszustand zurücksetzen?\nDie Konfigurationsdatei (Passwörter etc.) wird entfernt. Das kann nicht rückgängig gemacht werden.",
         ["Set_ResetDone"] = "Auf Werkszustand zurückgesetzt.",
+        ["Set_OuiTitle"] = "MAC-Hersteller-Datenbank (OUI)",
+        ["Set_OuiInfo"] = "Die IEEE-Liste ist eingebaut. Für die neueste Version herunterladen – sie wird als oui.txt neben die exe gelegt und beim nächsten Start bevorzugt.",
+        ["Set_OuiDownload"] = "Neueste OUI-Liste herunterladen",
+        ["Set_OuiDownloading"] = "Lädt…",
+        ["Set_OuiDone"] = "Gespeichert: {0} (wirkt beim nächsten Start)",
+        ["Set_OuiFailed"] = "Download fehlgeschlagen: {0}",
     };
 
     public static readonly Dictionary<string, string> English = new()
@@ -428,6 +435,7 @@ internal static class Strings
         ["Sc_Mndp"] = "📡 MNDP discovery (MikroTik on LAN)",
         ["Sc_Subnet"] = "Subnet:",
         ["Sc_ScanBtn"] = "🔍 Scan subnet",
+        ["Sc_TargetsTip"] = "Subnet (192.168.1.0/24), range (192.168.1.50-100) or single IP – separate several with commas.",
         ["Sc_Stop"] = "⏹ Stop",
         ["Sc_Intro"] = "MNDP finds MikroTik devices via broadcast; the subnet scan also finds other devices (ping + port check).",
         ["Sc_DefaultCreds"] = "Default credentials for new devices:",
@@ -516,6 +524,12 @@ internal static class Strings
         ["Set_Reset"] = "Reset…",
         ["Set_ResetConfirm"] = "Delete all settings and devices and reset to defaults?\nThe config file (passwords etc.) is removed. This cannot be undone.",
         ["Set_ResetDone"] = "Reset to defaults.",
+        ["Set_OuiTitle"] = "MAC vendor database (OUI)",
+        ["Set_OuiInfo"] = "The IEEE list is built in. Download the newest version – it is stored as oui.txt next to the exe and preferred on the next start.",
+        ["Set_OuiDownload"] = "Download latest OUI list",
+        ["Set_OuiDownloading"] = "Downloading…",
+        ["Set_OuiDone"] = "Saved: {0} (applies on next start)",
+        ["Set_OuiFailed"] = "Download failed: {0}",
     };
 
     // Swiss German (Zurich-leaning, no official spelling)
@@ -685,6 +699,7 @@ internal static class Strings
         ["Sc_Mndp"] = "📡 MNDP-Discovery (MikroTik im LAN)",
         ["Sc_Subnet"] = "Subnetz:",
         ["Sc_ScanBtn"] = "🔍 Subnetz scanne",
+        ["Sc_TargetsTip"] = "Subnetz (192.168.1.0/24), Bereich (192.168.1.50-100) oder einzelni IP – mehreri mit Komma getrännt.",
         ["Sc_Stop"] = "⏹ Stopp",
         ["Sc_Intro"] = "MNDP findet MikroTik-Grät per Broadcast; de Subnetz-Scan findet zusätzlich anderi Grät (Ping + Port-Check).",
         ["Sc_DefaultCreds"] = "Standard-Zugangsdatä für nöii Grät:",
@@ -773,5 +788,11 @@ internal static class Strings
         ["Set_Reset"] = "Zrucksetzä…",
         ["Set_ResetConfirm"] = "Alli Iistellige und Grät löschä und uf Werkszuestand zrucksetzä?\nD Konfigdatei (Passwörter etc.) wird entfernt. Cha mä nöd rückgängig mache.",
         ["Set_ResetDone"] = "Uf Werkszuestand zruckgsetzt.",
+        ["Set_OuiTitle"] = "MAC-Hersteller-Datebank (OUI)",
+        ["Set_OuiInfo"] = "D IEEE-Lischtä isch iigboue. Für d nöischt Version abälade – sie wird als oui.txt näbä d exe gleit und bim nächschtä Start bevorzugt.",
+        ["Set_OuiDownload"] = "Nöischti OUI-Lischtä abälade",
+        ["Set_OuiDownloading"] = "Ladt…",
+        ["Set_OuiDone"] = "Gspeicheret: {0} (wirkt bim nächschtä Start)",
+        ["Set_OuiFailed"] = "Download fählgschlage: {0}",
     };
 }

@@ -12,4 +12,9 @@
     <PackageReference Include="SSH.NET" Version="2024.1.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Full IEEE OUI list (public), gzip-compressed and bundled for offline vendor lookup. -->
+    <EmbeddedResource Include="Resources\oui.txt.gz" LogicalName="oui.txt.gz" />
+  </ItemGroup>
+
 </Project>

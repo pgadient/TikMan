@@ -11,7 +11,8 @@
                 <StackPanel Orientation="Horizontal">
                     <Button x:Name="MndpButton" Padding="10,5" Click="Mndp_Click" Content="{loc:Loc Sc_Mndp}"/>
                     <TextBlock VerticalAlignment="Center" Margin="20,0,6,0" Text="{loc:Loc Sc_Subnet}"/>
-                    <TextBox x:Name="SubnetBox" Width="160" VerticalContentAlignment="Center" Height="26"/>
+                    <TextBox x:Name="SubnetBox" Width="230" VerticalContentAlignment="Center" Height="26"
+                             ToolTip="{loc:Loc Sc_TargetsTip}"/>
                     <Button x:Name="ScanButton" Padding="10,5" Margin="8,0,0,0" Click="ScanSubnet_Click" Content="{loc:Loc Sc_ScanBtn}"/>
                     <Button x:Name="StopButton" Padding="10,5" Margin="8,0,0,0" IsEnabled="False" Click="Stop_Click" Content="{loc:Loc Sc_Stop}"/>
                     <Button x:Name="ClearButton" Padding="10,5" Margin="8,0,0,0" Click="Clear_Click" Content="{loc:Loc Sc_Clear}"/>

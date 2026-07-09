@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.IO.Compression;
+using System.Reflection;
 
 namespace TikMan.Core.Discovery;
 
@@ -29,10 +31,33 @@ public static class OuiLookup
     public static string Lookup(string mac)
     {
         if (Interlocked.CompareExchange(ref _fileLoaded, 1, 0) == 0)
-            TryLoadFile();
+        {
+            TryLoadEmbedded();                              // full IEEE list bundled into the assembly (gzip)
+            foreach (var kv in BuiltIn) Db[kv.Key] = kv.Value; // friendly names (e.g. "MikroTik") win over raw IEEE
+            TryLoadFile();                                  // optional newer oui.txt provided by the user wins last
+        }
 
         var prefix = NormalizePrefix(mac);
         return prefix.Length == 6 && Db.TryGetValue(prefix, out var vendor) ? vendor : "";
+    }
+
+    /// <summary>Loads the full IEEE OUI list embedded as a gzip resource (oui.txt.gz).</summary>
+    private static void TryLoadEmbedded()
+    {
+        try
+        {
+            using var raw = Assembly.GetExecutingAssembly().GetManifestResourceStream("oui.txt.gz");
+            if (raw is null) return;
+            using var gz = new GZipStream(raw, CompressionMode.Decompress);
+            using var reader = new StreamReader(gz);
+            string? line;
+            while ((line = reader.ReadLine()) is not null)
+                ParseLine(line);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException)
+        {
+            // fall back to the built-in MikroTik set
+        }
     }
 
     private static string NormalizePrefix(string mac)

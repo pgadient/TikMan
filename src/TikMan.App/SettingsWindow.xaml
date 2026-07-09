@@ -64,6 +64,19 @@
 
         <TextBlock Margin="0,12,0,0" TextWrapping="Wrap" Foreground="#777777" Text="{loc:Loc Set_BackupInfo}"/>
 
+        <Separator Margin="0,14,0,0"/>
+        <TextBlock Margin="0,10,0,0" FontWeight="SemiBold" Text="{loc:Loc Set_OuiTitle}"/>
+        <TextBlock Margin="0,2,0,0" TextWrapping="Wrap" Foreground="#777777" Text="{loc:Loc Set_OuiInfo}"/>
+        <TextBlock Margin="0,4,0,0">
+            <Hyperlink NavigateUri="https://standards-oui.ieee.org/oui/oui.txt" RequestNavigate="Hyperlink_RequestNavigate">
+                https://standards-oui.ieee.org/oui/oui.txt
+            </Hyperlink>
+        </TextBlock>
+        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+            <Button x:Name="OuiDownloadButton" Padding="10,4" Click="OuiDownload_Click" Content="{loc:Loc Set_OuiDownload}"/>
+            <TextBlock x:Name="OuiStatusText" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="#777777" TextTrimming="CharacterEllipsis"/>
+        </StackPanel>
+
         <DockPanel Margin="0,16,0,0">
             <Button DockPanel.Dock="Left" Padding="14,5" Foreground="#B33030" Click="Reset_Click" Content="{loc:Loc Set_Reset}"/>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
