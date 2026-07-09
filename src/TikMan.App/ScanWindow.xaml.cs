@@ -45,10 +45,39 @@ public class ScanResultViewModel : INotifyPropertyChanged
     {
         get
         {
-            if (AlreadyAdded) return T("Sc_HintAlreadyAdded");
-            if (Discovered.IsLikelyMikroTik && Discovered.Source == "Scan") return T("Sc_HintLikely");
-            return "";
+            var parts = new List<string>();
+            if (AlreadyAdded) parts.Add(T("Sc_HintAlreadyAdded"));
+            else if (Discovered.IsLikelyMikroTik && Discovered.Source == "Scan") parts.Add(T("Sc_HintLikely"));
+            if (IsGateway) parts.Add(T("Sc_GatewayModel", GatewayModel.Length > 0 ? GatewayModel : T("Val_Na")));
+            else if (GatewayModel.Length > 0) parts.Add(GatewayModel);
+            if (WebServer.Length > 0) parts.Add(T("Sc_HintWebServer", WebServer));
+            return string.Join(" · ", parts);
         }
+    }
+
+    private bool _isGateway;
+    /// <summary>True when this host is the local default gateway (its model is then highlighted).</summary>
+    public bool IsGateway { get => _isGateway; set { if (_isGateway != value) { _isGateway = value; Notify(nameof(Hint)); } } }
+
+    private string _webServer = "";
+    /// <summary>HTTP Server header (nginx, IIS, …); filled by the async fingerprint probe.</summary>
+    public string WebServer { get => _webServer; private set { _webServer = value; Notify(nameof(Hint)); } }
+
+    private string _gatewayModel = "";
+    /// <summary>Gateway/router product name pulled from the web UI title, or "".</summary>
+    public string GatewayModel { get => _gatewayModel; private set { _gatewayModel = value; Notify(nameof(Hint)); } }
+
+    private bool _httpProbed;
+
+    /// <summary>Fingerprints the web interface once (Server header + gateway model) for web hosts.</summary>
+    public async Task ProbeHttpAsync()
+    {
+        if (_httpProbed) return;
+        if (!Discovered.OpenPorts.Contains(80) && !Discovered.OpenPorts.Contains(443)) return;
+        _httpProbed = true;
+        var info = await HttpFingerprint.ProbeAsync(IpAddress);
+        WebServer = info.WebServer;
+        GatewayModel = info.Model;
     }
 
     private bool _isSelected;
@@ -108,6 +137,7 @@ public partial class ScanWindow : Window
     private readonly string _defaultEncryptedPassword;
     private readonly ObservableCollection<ScanResultViewModel> _results = new();
     private readonly ObservableCollection<ScanResultViewModel> _resultsV6 = new();
+    private readonly HashSet<string> _gateways = NetworkInfo.GetDefaultGateways();
     private CancellationTokenSource? _cts;
     private bool _ipv6Running;
 
@@ -155,7 +185,9 @@ public partial class ScanWindow : Window
     {
         if (_resultsV6.Any(r => r.IpAddress == discovered.IpAddress)) return;
         bool known = _knownDevices.Any(d => d.Host == discovered.IpAddress);
-        _resultsV6.Add(new ScanResultViewModel(discovered, known));
+        var vm = new ScanResultViewModel(discovered, known) { IsGateway = _gateways.Contains(discovered.IpAddress) };
+        _resultsV6.Add(vm);
+        _ = vm.ProbeHttpAsync();
     }
 
     private void Ipv6Clear_Click(object sender, RoutedEventArgs e)
@@ -339,7 +371,9 @@ public partial class ScanWindow : Window
         bool known = _knownDevices.Any(d =>
             d.Host == discovered.IpAddress ||
             (discovered.MacAddress != "" && string.Equals(d.MacAddress, discovered.MacAddress, StringComparison.OrdinalIgnoreCase)));
-        _results.Add(new ScanResultViewModel(discovered, known));
+        var vm = new ScanResultViewModel(discovered, known) { IsGateway = _gateways.Contains(discovered.IpAddress) };
+        _results.Add(vm);
+        _ = vm.ProbeHttpAsync();
     }
 
     private void Add_Click(object sender, RoutedEventArgs e)

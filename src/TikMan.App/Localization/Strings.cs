@@ -220,6 +220,9 @@ internal static class Strings
         ["Sc_SmbLoading"] = "lädt…",
         ["Sc_SmbNone"] = "keine sichtbaren Freigaben",
         ["Sc_HintPorts"] = "Ports: {0}",
+        ["Sc_GatewayModel"] = "Gateway: {0}",
+        ["Sc_HintWebServer"] = "Web: {0}",
+        ["Val_Na"] = "k. A.",
 
         // Mass update
         ["Ua_Title"] = "Updates installieren",
@@ -507,6 +510,9 @@ internal static class Strings
         ["Sc_SmbLoading"] = "loading…",
         ["Sc_SmbNone"] = "no visible shares",
         ["Sc_HintPorts"] = "Ports: {0}",
+        ["Sc_GatewayModel"] = "Gateway: {0}",
+        ["Sc_HintWebServer"] = "Web: {0}",
+        ["Val_Na"] = "n/a",
 
         // Mass update
         ["Ua_Title"] = "Install updates",
@@ -795,6 +801,9 @@ internal static class Strings
         ["Sc_SmbLoading"] = "ladt…",
         ["Sc_SmbNone"] = "kei sichtbari Freigabä",
         ["Sc_HintPorts"] = "Ports: {0}",
+        ["Sc_GatewayModel"] = "Gateway: {0}",
+        ["Sc_HintWebServer"] = "Web: {0}",
+        ["Val_Na"] = "k. A.",
 
         // Mass update
         ["Ua_Title"] = "Updates installiere",
