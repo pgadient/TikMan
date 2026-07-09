@@ -27,6 +27,7 @@ public class ScanResultViewModel : INotifyPropertyChanged
     public string IpAddress => Discovered.IpAddress;
     public string Identity => Discovered.Identity;
     public string MacAddress => Discovered.MacAddress;
+    public string Vendor => OuiLookup.Lookup(Discovered.MacAddress);
     public string Board => Discovered.Board;
     public string Version => Discovered.Version;
     public string Source => Discovered.Source;

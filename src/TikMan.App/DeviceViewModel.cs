@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Windows.Media;
 using TikMan.App.Localization;
 using TikMan.Core.Api;
+using TikMan.Core.Discovery;
 using TikMan.Core.Models;
 using TikMan.Core.Storage;
 using static TikMan.App.Localization.LocalizationManager;
@@ -39,6 +40,9 @@ public class DeviceViewModel : INotifyPropertyChanged
 
     /// <summary>Transport used for the REST API of this device (shown as a column).</summary>
     public string TransportDisplay => Model.UseHttps ? "HTTPS" : "HTTP";
+
+    /// <summary>Manufacturer resolved offline from the MAC address (empty if unknown).</summary>
+    public string Vendor => OuiLookup.Lookup(Model.MacAddress);
 
     private bool _isSelected;
     /// <summary>Ticked in the main list; batch actions (backup/update) act on marked devices.</summary>
@@ -108,6 +112,9 @@ public class DeviceViewModel : INotifyPropertyChanged
     private RouterOsClient Client =>
         _client ??= RouterOsClient.For(Model, CredentialProtector.Unprotect(Model.EncryptedPassword));
 
+    /// <summary>True if the last refresh failed with a TLS/HTTPS handshake problem.</summary>
+    public bool HadTlsError { get; private set; }
+
     /// <summary>Call this after changes to host/port/credentials.</summary>
     public void ResetClient()
     {
@@ -116,6 +123,15 @@ public class DeviceViewModel : INotifyPropertyChanged
         Notify(nameof(Name));
         Notify(nameof(Host));
         Notify(nameof(ConnectionDisplay));
+        Notify(nameof(TransportDisplay));
+    }
+
+    /// <summary>Switches this device from HTTPS to plain HTTP (port 80 if it was 443).</summary>
+    public void SwitchToHttp()
+    {
+        Model.UseHttps = false;
+        if (Model.Port == 443) Model.Port = 80;
+        ResetClient();
     }
 
     public async Task<bool> RefreshAsync(CancellationToken ct = default)
@@ -146,6 +162,7 @@ public class DeviceViewModel : INotifyPropertyChanged
 
             Status = DeviceStatus.Online;
             LastError = "";
+            HadTlsError = false;
             return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -156,6 +173,7 @@ public class DeviceViewModel : INotifyPropertyChanged
         {
             Status = DeviceStatus.Offline;
             LastError = Shorten(ex);
+            HadTlsError = ErrorText.IsTlsProblem(ex);
             return false;
         }
         finally

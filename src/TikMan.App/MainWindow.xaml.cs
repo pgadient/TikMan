@@ -79,11 +79,32 @@ public partial class MainWindow : Window
         if (!quiet) SetStatus(T("Msg_Querying", targets.Count));
         await Task.WhenAll(targets.Select(d => d.RefreshAsync()));
 
+        // Offer an HTTP fallback for devices whose HTTPS handshake failed (only on manual refresh).
+        if (!quiet)
+            await OfferHttpFallbackAsync(targets.Where(d => d.Model.UseHttps && d.HadTlsError).ToList());
+
         var online = targets.Count(d => d.Status == DeviceStatus.Online);
         var text = T("Msg_OnlineSummary", DateTime.Now.ToString("HH:mm:ss"), online, targets.Count);
         if (targets.Count(d => d.UpdateAvailable) is > 0 and var n)
             text += T("Msg_UpdatesAvailableSuffix", n);
         SetStatus(text);
+    }
+
+    /// <summary>Asks whether to retry HTTPS-failed devices over plain HTTP (with a clear-text warning),
+    /// then switches and re-queries the ones the user agreed to.</summary>
+    private async Task OfferHttpFallbackAsync(List<DeviceViewModel> tlsFailed)
+    {
+        if (tlsFailed.Count == 0) return;
+
+        var answer = MessageBox.Show(this,
+            T("Msg_HttpFallbackPrompt", tlsFailed.Count),
+            T("Msg_HttpFallbackTitle"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (answer != MessageBoxResult.Yes) return;
+
+        foreach (var vm in tlsFailed) vm.SwitchToHttp();
+        SaveAppData();
+        SetStatus(T("Msg_Querying", tlsFailed.Count));
+        await Task.WhenAll(tlsFailed.Select(d => d.RefreshAsync()));
     }
 
     private async void RefreshAll_Click(object sender, RoutedEventArgs e) => await RefreshAllAsync(quiet: false);
