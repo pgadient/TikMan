@@ -29,6 +29,30 @@ public class DeviceViewModel : INotifyPropertyChanged
     public ObservableCollection<ResourceSnapshot> History { get; } = new();
     public ObservableCollection<LogEntry> Logs { get; } = new();
 
+    /// <summary>Rows of the "Available updates" tab: latest version per channel.</summary>
+    public ObservableCollection<ChannelUpdateVm> AvailableUpdates { get; } = new();
+    private bool _availableLoaded;
+    private static readonly string[] AllChannels = { "stable", "long-term", "testing", "development" };
+
+    /// <summary>Fills the "Available updates" tab with the latest version + release date of every
+    /// channel (read-only, from the public MikroTik upgrade server). Loaded once, on first view.</summary>
+    public async Task LoadAvailableUpdatesAsync(CancellationToken ct = default)
+    {
+        if (_availableLoaded) return;
+        _availableLoaded = true;
+        var installed = StripChannelSuffix(Version);
+        foreach (var channel in AllChannels)
+        {
+            var info = await ReleaseInfoClient.GetLatestAsync(channel, ct);
+            AvailableUpdates.Add(new ChannelUpdateVm(
+                channel,
+                info?.Version ?? T("Val_Na"),
+                info is { } r ? r.ReleaseDate.ToString("yyyy-MM-dd") : "",
+                string.Equals(channel, UpdateChannel, StringComparison.OrdinalIgnoreCase),
+                info is { } r2 && r2.Version == installed));
+        }
+    }
+
     public string Name
     {
         get => Model.Name;
@@ -385,4 +409,25 @@ public class DeviceViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Notify([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+/// <summary>One row in the "Available updates" tab: the newest version of a channel.</summary>
+public class ChannelUpdateVm
+{
+    public ChannelUpdateVm(string channel, string version, string releaseDate, bool isCurrent, bool isInstalled)
+    {
+        Channel = channel;
+        Version = version;
+        ReleaseDate = releaseDate;
+        IsCurrent = isCurrent;
+        IsInstalled = isInstalled;
+    }
+
+    public string Channel { get; }
+    public string Version { get; }
+    public string ReleaseDate { get; }
+    /// <summary>The channel this device is set to (row shown bold).</summary>
+    public bool IsCurrent { get; }
+    /// <summary>This channel's newest version equals the installed version.</summary>
+    public bool IsInstalled { get; }
 }

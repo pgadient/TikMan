@@ -19,6 +19,7 @@
                 <RowDefinition Height="32"/>
                 <RowDefinition Height="32"/>
                 <RowDefinition Height="32"/>
+                <RowDefinition Height="32"/>
             </Grid.RowDefinitions>
 
             <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc De_Name}"/>
@@ -50,6 +51,16 @@
 
             <TextBlock Grid.Row="7" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc De_Notes}"/>
             <TextBox x:Name="NotesBox" Grid.Row="7" Grid.Column="1" VerticalContentAlignment="Center" Height="24"/>
+
+            <TextBlock Grid.Row="8" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc De_Channel}"/>
+            <ComboBox x:Name="ChannelCombo" Grid.Row="8" Grid.Column="1" VerticalAlignment="Center" Height="24"
+                      HorizontalAlignment="Left" Width="180">
+                <ComboBoxItem Tag="" Content="{loc:Loc Upd_ChannelDefault}"/>
+                <ComboBoxItem Tag="stable">stable</ComboBoxItem>
+                <ComboBoxItem Tag="long-term">long-term</ComboBoxItem>
+                <ComboBoxItem Tag="testing">testing</ComboBoxItem>
+                <ComboBoxItem Tag="development">development</ComboBoxItem>
+            </ComboBox>
         </Grid>
 
         <TextBlock x:Name="PasswordHint" Foreground="#777777" FontSize="11" Margin="130,2,0,0"

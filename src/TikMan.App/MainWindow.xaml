@@ -228,6 +228,36 @@
                                    Text="{loc:Loc Det_BackupDesc}"/>
                     </StackPanel>
                 </TabItem>
+
+                <TabItem Header="{loc:Loc Tab_Available}">
+                    <DataGrid ItemsSource="{Binding AvailableUpdates}" AutoGenerateColumns="False" IsReadOnly="True"
+                              CanUserAddRows="False" HeadersVisibility="Column" Margin="4">
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="{loc:Loc Upd_Channel}" Binding="{Binding Channel}" Width="160"/>
+                            <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Version}" Width="140">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsInstalled}" Value="True">
+                                                <Setter Property="Foreground" Value="#2E9E44"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="{loc:Loc Col_UpdateRel}" Binding="{Binding ReleaseDate}" Width="140"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </TabItem>
             </TabControl>
         </Grid>
     </DockPanel>

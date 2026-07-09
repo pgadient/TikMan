@@ -62,6 +62,17 @@
                        Text="{loc:Loc Set_DefaultPwHint}"/>
         </Grid>
 
+        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+            <TextBlock Width="150" VerticalAlignment="Center" FontWeight="SemiBold" Text="{loc:Loc Set_DefaultChannel}"/>
+            <ComboBox x:Name="DefaultChannelCombo" Width="180" HorizontalAlignment="Left"
+                      VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag">
+                <ComboBoxItem Tag="stable">stable</ComboBoxItem>
+                <ComboBoxItem Tag="long-term">long-term</ComboBoxItem>
+                <ComboBoxItem Tag="testing">testing</ComboBoxItem>
+                <ComboBoxItem Tag="development">development</ComboBoxItem>
+            </ComboBox>
+        </StackPanel>
+
         <TextBlock Margin="0,12,0,0" TextWrapping="Wrap" Foreground="#777777" Text="{loc:Loc Set_BackupInfo}"/>
 
         <Separator Margin="0,14,0,0"/>

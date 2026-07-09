@@ -15,4 +15,7 @@ public class Device
     public bool MonitoringEnabled { get; set; } = true;
     public string MacAddress { get; set; } = "";
     public string Notes { get; set; } = "";
+    /// <summary>Preferred RouterOS update channel for this device. Empty = use the global default
+    /// (<see cref="Storage.AppData.DefaultUpdateChannel"/>). Only meaningful for MikroTik devices.</summary>
+    public string UpdateChannel { get; set; } = "";
 }

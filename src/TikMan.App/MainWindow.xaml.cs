@@ -203,9 +203,20 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Refreshes a freshly added device, then checks it for updates automatically.</summary>
-    private static async Task RefreshAndCheckAsync(DeviceViewModel vm)
+    private async Task RefreshAndCheckAsync(DeviceViewModel vm)
     {
-        if (await vm.RefreshAsync()) await vm.CheckUpdateAsync();
+        if (await vm.RefreshAsync()) await ApplyChannelAndCheckAsync(vm);
+    }
+
+    /// <summary>Checks a device for updates on its effective channel — its own if set, otherwise the
+    /// global default — switching the router's channel only when it actually differs (so read-only
+    /// API users are never forced into a write).</summary>
+    private async Task ApplyChannelAndCheckAsync(DeviceViewModel vm)
+    {
+        await vm.CheckUpdateAsync();
+        var channel = vm.Model.UpdateChannel.Length > 0 ? vm.Model.UpdateChannel : _appData.DefaultUpdateChannel;
+        if (channel.Length > 0 && !string.Equals(channel, vm.UpdateChannel, StringComparison.OrdinalIgnoreCase))
+            await vm.SetChannelAsync(channel);
     }
 
     /// <summary>Flags devices whose host is the local default gateway (row shown orange).</summary>
@@ -338,9 +349,12 @@ public partial class MainWindow : Window
     private void DeviceGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         ApplyLogFilter();
-        // Initial log load on first selection of a device (Refresh logs reloads later).
-        if (SelectedDevice is { } vm && vm.Logs.Count == 0)
-            _ = LoadLogsAsync(vm);
+        if (SelectedDevice is { } vm)
+        {
+            // Initial log load on first selection of a device (Refresh logs reloads later).
+            if (vm.Logs.Count == 0) _ = LoadLogsAsync(vm);
+            _ = vm.LoadAvailableUpdatesAsync(); // fill the "Available updates" tab
+        }
     }
 
     private void LogFilterBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyLogFilter();
@@ -365,7 +379,7 @@ public partial class MainWindow : Window
     private async Task CheckUpdatesAsync(IReadOnlyList<DeviceViewModel> targets)
     {
         if (targets.Count == 0) return;
-        await Task.WhenAll(targets.Select(d => d.CheckUpdateAsync()));
+        await Task.WhenAll(targets.Select(ApplyChannelAndCheckAsync));
         var available = targets.Count(d => d.UpdateAvailable);
         if (available > 0) SetStatus(T("Msg_UpdatesDoneSome", available));
     }

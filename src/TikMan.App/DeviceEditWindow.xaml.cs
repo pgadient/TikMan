@@ -1,6 +1,8 @@
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using TikMan.Core.Api;
 using TikMan.Core.Models;
@@ -33,12 +35,21 @@ public partial class DeviceEditWindow : Window
             UserBox.Text = existing.Username;
             MonitoringCheck.IsChecked = existing.MonitoringEnabled;
             NotesBox.Text = existing.Notes;
+            SelectChannel(existing.UpdateChannel);
             PasswordHint.Visibility = Visibility.Visible;
         }
         else
         {
             Title = T("De_TitleAdd");
+            ChannelCombo.SelectedIndex = 0; // (Default)
         }
+    }
+
+    private void SelectChannel(string channel)
+    {
+        foreach (var item in ChannelCombo.Items.OfType<ComboBoxItem>())
+            if ((item.Tag as string ?? "") == channel) { ChannelCombo.SelectedItem = item; return; }
+        ChannelCombo.SelectedIndex = 0;
     }
 
     private void HttpsCheck_Changed(object sender, RoutedEventArgs e)
@@ -75,6 +86,7 @@ public partial class DeviceEditWindow : Window
         device.Username = UserBox.Text.Trim();
         device.MonitoringEnabled = MonitoringCheck.IsChecked == true;
         device.Notes = NotesBox.Text.Trim();
+        device.UpdateChannel = (ChannelCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
 
         if (PasswordBox.Password.Length > 0 || _existing is null)
             device.EncryptedPassword = CredentialProtector.Protect(PasswordBox.Password);

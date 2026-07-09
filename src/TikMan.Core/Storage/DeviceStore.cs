@@ -18,6 +18,8 @@ public class AppData
     public string DefaultUsername { get; set; } = "admin";
     /// <summary>Default password (DPAPI-encrypted) for devices added from a scan.</summary>
     public string DefaultEncryptedPassword { get; set; } = "";
+    /// <summary>Update channel used for devices that don't override it themselves.</summary>
+    public string DefaultUpdateChannel { get; set; } = "stable";
     public List<Device> Devices { get; set; } = new();
 }
 
