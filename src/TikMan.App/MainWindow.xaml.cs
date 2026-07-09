@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
+using TikMan.Core.Api;
 using TikMan.Core.Discovery;
 using TikMan.Core.Models;
 using TikMan.Core.Storage;
@@ -38,6 +39,7 @@ public partial class MainWindow : Window
         foreach (var device in _appData.Devices)
             _devices.Add(new DeviceViewModel(device));
         MarkGateways();
+        _ = LoadPublicIpAsync(); // fill the public-IP status field in the background
 
         SelectIntervalItem(_appData.PollIntervalSeconds);
         AutoRefreshCheck.IsChecked = _appData.AutoRefreshEnabled;
@@ -609,4 +611,31 @@ public partial class MainWindow : Window
     }
 
     private void SetStatus(string text) => StatusText.Text = text;
+
+    // ----- Public IP -----
+
+    private (string V4, string V6) _publicIp;
+
+    /// <summary>Looks up the public IPv4/IPv6 address and shows it (clickable) in the status bar.</summary>
+    private async Task LoadPublicIpAsync()
+    {
+        var ip = await PublicIpClient.GetAsync();
+        _publicIp = (ip.V4, ip.V6);
+        var shown = PublicIpParts();
+        PublicIpText.Text = shown.Count > 0 ? "🌐 " + string.Join("  ·  ", shown) : "";
+    }
+
+    private List<string> PublicIpParts()
+    {
+        var parts = new List<string>();
+        if (_publicIp.V4.Length > 0) parts.Add(_publicIp.V4);
+        if (_publicIp.V6.Length > 0) parts.Add(_publicIp.V6);
+        return parts;
+    }
+
+    private void PublicIp_Click(object sender, MouseButtonEventArgs e)
+    {
+        var parts = PublicIpParts();
+        if (parts.Count > 0) CopyToClipboard(string.Join(Environment.NewLine, parts));
+    }
 }

@@ -94,6 +94,7 @@ internal static class Strings
 
         // Status bar / messages (MainWindow)
         ["Status_Ready"] = "Bereit",
+        ["Pub_Tooltip"] = "Öffentliche IP – klicken zum Kopieren",
         ["Msg_NoDevices"] = "Keine Geräte konfiguriert – mit «Scannen…» das Netzwerk durchsuchen oder «Hinzufügen» klicken.",
         ["Msg_SelectDeviceFirst"] = "Zuerst ein Gerät auswählen.",
         ["Msg_Querying"] = "Frage {0} Gerät(e) ab…",
@@ -393,6 +394,7 @@ internal static class Strings
 
         // Status bar / messages (MainWindow)
         ["Status_Ready"] = "Ready",
+        ["Pub_Tooltip"] = "Public IP – click to copy",
         ["Msg_NoDevices"] = "No devices configured – use «Scan…» to search the network or click «Add».",
         ["Msg_SelectDeviceFirst"] = "Select a device first.",
         ["Msg_Querying"] = "Querying {0} device(s)…",
@@ -693,6 +695,7 @@ internal static class Strings
 
         // Status bar / messages
         ["Status_Ready"] = "Parat",
+        ["Pub_Tooltip"] = "Öffentlichi IP – klicke zum Kopiere",
         ["Msg_NoDevices"] = "Kei Grät konfiguriert – mit «Scanne…» s Netzwärk duresuäche oder «Dezuätue» klicke.",
         ["Msg_SelectDeviceFirst"] = "Zerscht es Grät uswähle.",
         ["Msg_Querying"] = "Frag {0} Grät ab…",
