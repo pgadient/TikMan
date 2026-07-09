@@ -58,7 +58,8 @@ public partial class MainWindow : Window
 
     private void SaveAppData()
     {
-        _appData.Devices = _devices.Select(vm => vm.Model).ToList();
+        // Only persist the device list when the user opted in; otherwise devices are session-only.
+        _appData.Devices = _appData.PersistDeviceList ? _devices.Select(vm => vm.Model).ToList() : new List<Device>();
         _appData.PollIntervalSeconds = SelectedIntervalSeconds();
         _appData.AutoRefreshEnabled = AutoRefreshCheck.IsChecked == true;
         _appData.LogAutoRefresh = LogAutoRefreshCheck.IsChecked == true;
@@ -110,9 +111,8 @@ public partial class MainWindow : Window
         if (!quiet) SetStatus(T("Msg_Querying", targets.Count));
         await Task.WhenAll(targets.Select(d => d.RefreshAsync()));
 
-        // Offer an HTTP fallback for devices whose HTTPS handshake failed (only on manual refresh).
-        if (!quiet)
-            await OfferHttpFallbackAsync(targets.Where(d => d.Model.UseHttps && d.HadTlsError).ToList());
+        // Offer an HTTP fallback for any device whose HTTPS handshake failed (asked once per device).
+        await MaybeOfferHttpFallbackAsync(targets);
 
         var online = targets.Count(d => d.Status == DeviceStatus.Online);
         var text = T("Msg_OnlineSummary", DateTime.Now.ToString("HH:mm:ss"), online, targets.Count);
@@ -121,21 +121,27 @@ public partial class MainWindow : Window
         SetStatus(text);
     }
 
-    /// <summary>Asks whether to retry HTTPS-failed devices over plain HTTP (with a clear-text warning),
-    /// then switches and re-queries the ones the user agreed to.</summary>
-    private async Task OfferHttpFallbackAsync(List<DeviceViewModel> tlsFailed)
+    private readonly HashSet<Guid> _fallbackAsked = new();
+
+    /// <summary>Whenever an HTTPS device fails with a TLS/handshake problem, asks once (per device)
+    /// whether to retry over plain HTTP — with a clear-text warning — then switches and re-queries
+    /// the ones the user agreed to. Runs in every refresh path, background polling included.</summary>
+    private async Task MaybeOfferHttpFallbackAsync(IEnumerable<DeviceViewModel> devices)
     {
-        if (tlsFailed.Count == 0) return;
+        var candidates = devices
+            .Where(d => d.Model.UseHttps && d.HadTlsError && _fallbackAsked.Add(d.Model.Id))
+            .ToList();
+        if (candidates.Count == 0) return;
 
         var answer = MessageBox.Show(this,
-            T("Msg_HttpFallbackPrompt", tlsFailed.Count),
+            T("Msg_HttpFallbackPrompt", candidates.Count),
             T("Msg_HttpFallbackTitle"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
         if (answer != MessageBoxResult.Yes) return;
 
-        foreach (var vm in tlsFailed) vm.SwitchToHttp();
+        foreach (var vm in candidates) vm.SwitchToHttp();
         SaveAppData();
-        SetStatus(T("Msg_Querying", tlsFailed.Count));
-        await Task.WhenAll(tlsFailed.Select(d => d.RefreshAsync()));
+        SetStatus(T("Msg_Querying", candidates.Count));
+        await Task.WhenAll(candidates.Select(d => d.RefreshAsync()));
     }
 
     private async void RefreshAll_Click(object sender, RoutedEventArgs e) => await RefreshAllAsync(quiet: false);
@@ -202,10 +208,13 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>Refreshes a freshly added device, then checks it for updates automatically.</summary>
+    /// <summary>Refreshes a freshly added device, then checks it for updates automatically.
+    /// If the HTTPS handshake failed, offers the HTTP fallback and retries the update check.</summary>
     private async Task RefreshAndCheckAsync(DeviceViewModel vm)
     {
-        if (await vm.RefreshAsync()) await ApplyChannelAndCheckAsync(vm);
+        if (await vm.RefreshAsync()) { await ApplyChannelAndCheckAsync(vm); return; }
+        await MaybeOfferHttpFallbackAsync(new[] { vm });
+        if (vm.Status == DeviceStatus.Online) await ApplyChannelAndCheckAsync(vm);
     }
 
     /// <summary>Checks a device for updates on its effective channel — its own if set, otherwise the

@@ -20,6 +20,9 @@ public class AppData
     public string DefaultEncryptedPassword { get; set; } = "";
     /// <summary>Update channel used for devices that don't override it themselves.</summary>
     public string DefaultUpdateChannel { get; set; } = "stable";
+    /// <summary>When false (default), the device list is not written to disk – devices only live
+    /// for the current session. When true, the list and its config are persisted.</summary>
+    public bool PersistDeviceList { get; set; }
     public List<Device> Devices { get; set; } = new();
 }
 

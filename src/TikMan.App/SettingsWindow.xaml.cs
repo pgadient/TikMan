@@ -31,6 +31,7 @@ public partial class SettingsWindow : Window
         SshPortBox.Text = data.SshPort.ToString();
         DefaultChannelCombo.SelectedValue = data.DefaultUpdateChannel;
         if (DefaultChannelCombo.SelectedValue is null) DefaultChannelCombo.SelectedIndex = 0; // fall back to stable
+        PersistListCheck.IsChecked = data.PersistDeviceList;
         DefaultUserBox.Text = data.DefaultUsername;
         _ready = true;
     }
@@ -91,6 +92,7 @@ public partial class SettingsWindow : Window
             _data.SshPort = port;
         if (DefaultChannelCombo.SelectedValue is string channel && channel.Length > 0)
             _data.DefaultUpdateChannel = channel;
+        _data.PersistDeviceList = PersistListCheck.IsChecked == true;
 
         _data.DefaultUsername = DefaultUserBox.Text.Trim();
         if (DefaultPasswordBox.Password.Length > 0)

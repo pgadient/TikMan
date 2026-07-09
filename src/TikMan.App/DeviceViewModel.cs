@@ -102,8 +102,12 @@ public class DeviceViewModel : INotifyPropertyChanged
     public DeviceStatus Status
     {
         get => _status;
-        private set { _status = value; Notify(); Notify(nameof(StatusText)); Notify(nameof(StatusBrush)); }
+        private set { _status = value; Notify(); Notify(nameof(StatusText)); Notify(nameof(StatusBrush)); Notify(nameof(IsOffline)); }
     }
+
+    /// <summary>True when the last query failed (row text shown red, e.g. a stored device that is
+    /// no longer reachable after loading the config at startup).</summary>
+    public bool IsOffline => Status == DeviceStatus.Offline;
 
     public string StatusText => Status switch
     {

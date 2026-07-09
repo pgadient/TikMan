@@ -67,6 +67,10 @@
                             <DataTrigger Binding="{Binding IsGateway}" Value="True">
                                 <Setter Property="Background" Value="#F68500"/>
                             </DataTrigger>
+                            <!-- Unreachable devices (e.g. stored ones that are gone) get red row text. -->
+                            <DataTrigger Binding="{Binding IsOffline}" Value="True">
+                                <Setter Property="Foreground" Value="#C0392B"/>
+                            </DataTrigger>
                         </Style.Triggers>
                     </Style>
                 </DataGrid.RowStyle>
