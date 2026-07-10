@@ -29,6 +29,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _appData = appData;
+        RouterOsClient.AllowInsecureCertificates = appData.DefaultIgnoreCertErrors;
         DeviceGrid.ItemsSource = _devices;
         _pollTimer.Tick += async (_, _) => await RefreshAllAsync(quiet: true);
         _logTimer.Tick += (_, _) => { if (SelectedDevice is { } vm) _ = LoadLogsAsync(vm, quiet: true); };
@@ -87,7 +88,11 @@ public partial class MainWindow : Window
         var dialog = new SettingsWindow(_appData) { Owner = this };
         if (dialog.ShowDialog() != true) return;
         if (dialog.ResetRequested) ResetToDefaults();
-        else SaveAppData();
+        else
+        {
+            RouterOsClient.AllowInsecureCertificates = _appData.DefaultIgnoreCertErrors;
+            SaveAppData();
+        }
     }
 
     /// <summary>Wipes the config and returns the app to its first-start state.</summary>
@@ -98,6 +103,7 @@ public partial class MainWindow : Window
         DeviceStore.DeleteConfig();
         _devices.Clear();
         _appData = new AppData();
+        RouterOsClient.AllowInsecureCertificates = _appData.DefaultIgnoreCertErrors;
         Instance.Apply(_appData.Language);
         SelectIntervalItem(_appData.PollIntervalSeconds);
         AutoRefreshCheck.IsChecked = _appData.AutoRefreshEnabled;

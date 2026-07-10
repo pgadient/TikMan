@@ -12,10 +12,14 @@ public sealed class RouterOsClient : IDisposable
     private readonly HttpClient _http;
     private readonly string _baseUrl;
 
+    /// <summary>Global switch: accept self-signed / invalid HTTPS certificates for all connections
+    /// (default on – MikroTik ships a self-signed cert on a LAN). Set from the app's settings.</summary>
+    public static bool AllowInsecureCertificates { get; set; } = true;
+
     public RouterOsClient(string host, int port, bool useHttps, string username, string password, bool ignoreCertErrors)
     {
         var handler = new HttpClientHandler();
-        if (useHttps && ignoreCertErrors)
+        if (useHttps && (ignoreCertErrors || AllowInsecureCertificates))
             handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
 
         // Timeouts are controlled per request via CancellationToken.
