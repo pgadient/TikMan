@@ -33,6 +33,8 @@ public class Device
     /// <summary>Whether an SMB/Windows file-share port was seen when this device was scanned – lets
     /// the main view offer share browsing without re-probing.</summary>
     public bool HasSmb { get; set; }
+    /// <summary>Open TCP ports seen during discovery (drives the type guess and protocol chips).</summary>
+    public List<int> OpenPorts { get; set; } = new();
     public string MacAddress { get; set; } = "";
     public string Notes { get; set; } = "";
     /// <summary>Preferred RouterOS update channel for this device. Empty = use the global default

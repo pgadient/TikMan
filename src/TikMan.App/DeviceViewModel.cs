@@ -112,9 +112,9 @@ public class DeviceViewModel : INotifyPropertyChanged
 
     public string Host => Model.Host;
 
-    /// <summary>When on (default), a device's IPv4 and IPv6 addresses are shown together in one row;
-    /// off shows only the primary address. Toggled by the checkbox in the main view.</summary>
-    public static bool CombineAddresses { get; set; } = true;
+    /// <summary>When on, a device's IPv4 and IPv6 addresses are shown together in one row; off (the
+    /// default) shows only the primary address. Toggled by the checkbox in the main view.</summary>
+    public static bool CombineAddresses { get; set; }
 
     /// <summary>The address(es) shown in the list: primary + other-family combined when
     /// <see cref="CombineAddresses"/> is on and an alternate exists, otherwise just the primary.</summary>
@@ -125,6 +125,14 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// <summary>Raises a change notification for <see cref="AddressesDisplay"/> (after the combine
     /// toggle flips).</summary>
     public void RefreshAddressDisplay() => Notify(nameof(AddressesDisplay));
+
+    /// <summary>Notifies the discovery-derived properties after a later scan filled in the MAC/ports.</summary>
+    public void RaiseDiscoveryChanged()
+    {
+        Notify(nameof(Vendor));
+        Notify(nameof(DeviceType));
+        Notify(nameof(HasSmb));
+    }
 
     /// <summary>Whether the device has an IPv4 / IPv6 address (across Host + AltAddress) – drives the
     /// main-page view filter (Combined / IPv4 / IPv6).</summary>
@@ -166,7 +174,7 @@ public class DeviceViewModel : INotifyPropertyChanged
         ? T("Dev_Switch")
         : Board.Length > 0
             ? T("Dev_Router")
-            : DeviceKindText(DeviceClassifier.Guess(Vendor, Array.Empty<int>()));
+            : DeviceKindText(DeviceClassifier.Guess(Vendor, Model.OpenPorts));
 
     /// <summary>True for TP-Link switches (SSH connector, firmware page instead of channels).</summary>
     public bool IsTpLink => Model.Vendor == DeviceVendor.TpLink;
@@ -552,6 +560,19 @@ public class DeviceViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Notify([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+/// <summary>A single SMB share with the UNC path to open in Explorer.</summary>
+public class SmbShareVm
+{
+    public SmbShareVm(string host, string name)
+    {
+        Name = name;
+        UncPath = $@"\\{host}\{name}";
+    }
+
+    public string Name { get; }
+    public string UncPath { get; }
 }
 
 /// <summary>A protocol the device speaks. Web protocols carry a URL (opened on double-click).</summary>

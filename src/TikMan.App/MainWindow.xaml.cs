@@ -41,6 +41,10 @@ public partial class MainWindow : Window
         MarkGateways();
         _ = LoadPublicIpAsync(); // fill the public-IP status field in the background
 
+        DeviceViewModel.CombineAddresses = _appData.CombineAddresses;
+        CombineCheck.IsChecked = _appData.CombineAddresses;
+        InitSubnets();
+
         SelectIntervalItem(_appData.PollIntervalSeconds);
         AutoRefreshCheck.IsChecked = _appData.AutoRefreshEnabled;
         LogAutoRefreshCheck.IsChecked = _appData.LogAutoRefresh;
@@ -50,10 +54,11 @@ public partial class MainWindow : Window
         if (_devices.Count > 0)
         {
             await RefreshAllAsync(quiet: false);
-            _ = CheckUpdatesAsync(_devices.ToList()); // auto-check in the background (no manual button anymore)
+            _ = CheckUpdatesAsync(_devices.ToList());
         }
-        else
-            SetStatus(T("Msg_NoDevices"));
+
+        // Discovery now runs automatically on startup (MNDP + IPv4 + IPv6), adding every host found.
+        await RunDiscoveryAsync(auto: true);
     }
 
     private void Window_Closing(object sender, CancelEventArgs e) => SaveAppData();
@@ -107,7 +112,8 @@ public partial class MainWindow : Window
 
     private async Task RefreshAllAsync(bool quiet)
     {
-        var targets = _devices.Where(d => d.Model.MonitoringEnabled || !quiet).ToList();
+        // Only monitor devices with monitoring on; discovered non-MikroTik hosts just sit in the list.
+        var targets = _devices.Where(d => d.Model.MonitoringEnabled).ToList();
         if (targets.Count == 0) return;
 
         if (!quiet) SetStatus(T("Msg_Querying", targets.Count));
@@ -178,25 +184,6 @@ public partial class MainWindow : Window
     }
 
     // ----- Device management -----
-
-    private void Scan_Click(object sender, RoutedEventArgs e)
-    {
-        var known = _devices.Select(d => d.Model).ToList();
-        var dialog = new ScanWindow(known, _appData.DefaultUsername, _appData.DefaultEncryptedPassword,
-            _appData.DefaultIgnoreCertErrors) { Owner = this };
-        if (dialog.ShowDialog() == true)
-        {
-            foreach (var device in dialog.NewDevices)
-            {
-                var vm = new DeviceViewModel(device) { IsSelected = MainSelectAll.IsChecked == true };
-                _devices.Add(vm);
-                _ = RefreshAndCheckAsync(vm);
-            }
-            MarkGateways();
-            SaveAppData();
-            SetStatus(T("Msg_DevicesAdded", dialog.NewDevices.Count));
-        }
-    }
 
     private void AddDevice_Click(object sender, RoutedEventArgs e)
     {
@@ -371,6 +358,7 @@ public partial class MainWindow : Window
     private void Combine_Changed(object sender, RoutedEventArgs e)
     {
         DeviceViewModel.CombineAddresses = CombineCheck.IsChecked == true;
+        _appData.CombineAddresses = DeviceViewModel.CombineAddresses;
         foreach (var d in _devices) d.RefreshAddressDisplay();
     }
 

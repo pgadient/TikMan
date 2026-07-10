@@ -56,9 +56,10 @@ public static class SmbShares
                 for (int i = 0; i < read; i++)
                 {
                     var info = Marshal.PtrToStructure<ShareInfo1>(buffer + i * size);
-                    bool special = (info.Type & StypeSpecial) != 0;
+                    // Include disk shares, including hidden/administrative ones (C$, D$, ADMIN$, PRINT$).
+                    // IPC$ is not a disk share and is skipped by the disk-type check.
                     bool disk = (info.Type & StypeBaseMask) == StypeDisktree;
-                    if (!special && disk && !string.IsNullOrEmpty(info.Netname))
+                    if (disk && !string.IsNullOrEmpty(info.Netname))
                         shares.Add(info.Netname);
                 }
             }

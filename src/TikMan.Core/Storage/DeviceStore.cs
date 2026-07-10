@@ -23,6 +23,9 @@ public class AppData
     /// <summary>Default for new devices: accept self-signed/invalid TLS certificates (common on a
     /// LAN with MikroTik's default self-signed cert). On by default.</summary>
     public bool DefaultIgnoreCertErrors { get; set; } = true;
+    /// <summary>Whether the list shows a device's IPv4 and IPv6 address combined in one row.
+    /// Off by default (matched addresses are shown on separate rows unless the user turns it on).</summary>
+    public bool CombineAddresses { get; set; }
     /// <summary>When false (default), the device list is not written to disk – devices only live
     /// for the current session. When true, the list and its config are persisted.</summary>
     public bool PersistDeviceList { get; set; }
