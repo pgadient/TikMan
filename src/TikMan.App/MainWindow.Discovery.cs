@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Windows;
+using System.Windows.Threading;
 using TikMan.Core.Discovery;
 using TikMan.Core.Models;
 using static TikMan.App.Localization.LocalizationManager;
@@ -16,6 +17,10 @@ public partial class MainWindow
     private List<LocalSubnet> _subnets = new();
     private int _subnetIndex;
     private const int AutoScanMaxHosts = 8192; // don't ping-sweep a huge subnet automatically
+
+    private const double Ipv6DurationSeconds = 15; // IPv6 discovery window (matches the bar's max)
+    private readonly DispatcherTimer _ipv6ProgressTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
+    private double _ipv6Elapsed;
 
     /// <summary>Fills the subnet box + source label from the local adapters (first one selected).</summary>
     private void InitSubnets()
@@ -57,15 +62,17 @@ public partial class MainWindow
         var ct = _scanCts.Token;
 
         ScanButton.Content = T("Sc_Stop");
-        ScanProgress.IsIndeterminate = true;
-        ScanProgress.Visibility = Visibility.Visible;
+        DiscoveryProgressPanel.Visibility = Visibility.Visible;
+        Ipv4Progress.IsIndeterminate = false;
+        Ipv4Progress.Value = 0;
+        StartIpv6ProgressTimer();
         SetStatus(T("Msg_Discovering"));
 
         var found = new Progress<DiscoveredDevice>(AddDiscovered);
         try
         {
             var mndp = MndpScanner.DiscoverAsync(TimeSpan.FromSeconds(5), found, ct);
-            var ipv6 = Ipv6Discovery.DiscoverContinuousAsync(TimeSpan.FromSeconds(15), found, ct);
+            var ipv6 = Ipv6Discovery.DiscoverContinuousAsync(TimeSpan.FromSeconds(Ipv6DurationSeconds), found, ct);
 
             Task subnet = Task.CompletedTask;
             var target = SubnetBox.Text.Trim();
@@ -75,14 +82,27 @@ public partial class MainWindow
                 {
                     int hosts = SubnetScanner.CountHosts(target);
                     if (auto && hosts > AutoScanMaxHosts)
+                    {
                         SetStatus(T("Msg_SubnetTooBigAuto", hosts)); // MNDP + IPv6 still run
+                        Ipv4Progress.IsIndeterminate = true;
+                    }
                     else
-                        subnet = SubnetScanner.ScanAsync(target, found, null, ct);
+                    {
+                        Ipv4Progress.Maximum = hosts;
+                        int scanned = 0;
+                        var onScanned = new Progress<int>(_ => Ipv4Progress.Value = Math.Min(++scanned, hosts));
+                        subnet = SubnetScanner.ScanAsync(target, found, onScanned, ct);
+                    }
                 }
-                catch (ArgumentException) { /* invalid subnet spec – skip the subnet leg */ }
+                catch (ArgumentException) { Ipv4Progress.IsIndeterminate = true; } // invalid subnet – MNDP only
+            }
+            else
+            {
+                Ipv4Progress.IsIndeterminate = true; // no subnet target – just MNDP on the IPv4 side
             }
 
             await Task.WhenAll(Guard(mndp), Guard(ipv6), Guard(subnet));
+            if (!Ipv4Progress.IsIndeterminate) Ipv4Progress.Value = Ipv4Progress.Maximum;
             SetStatus(T("Msg_DiscoveryDone", _devices.Count));
         }
         catch (OperationCanceledException) { SetStatus(T("Sc_ScanCancelled")); }
@@ -91,11 +111,29 @@ public partial class MainWindow
         {
             _scanning = false;
             ScanButton.Content = T("Tb_Scan");
-            ScanProgress.Visibility = Visibility.Collapsed;
-            ScanProgress.IsIndeterminate = false;
+            _ipv6ProgressTimer.Stop();
+            Ipv4Progress.IsIndeterminate = false;
+            DiscoveryProgressPanel.Visibility = Visibility.Collapsed;
             MarkGateways();
             SaveAppData();
         }
+    }
+
+    /// <summary>Advances the IPv6 bar from 0 to the discovery window (15 s) while it runs.</summary>
+    private void StartIpv6ProgressTimer()
+    {
+        _ipv6Elapsed = 0;
+        Ipv6Progress.Value = 0;
+        _ipv6ProgressTimer.Tick -= Ipv6ProgressTick;
+        _ipv6ProgressTimer.Tick += Ipv6ProgressTick;
+        _ipv6ProgressTimer.Start();
+    }
+
+    private void Ipv6ProgressTick(object? sender, EventArgs e)
+    {
+        _ipv6Elapsed += 0.25;
+        Ipv6Progress.Value = Math.Min(_ipv6Elapsed, Ipv6DurationSeconds);
+        if (_ipv6Elapsed >= Ipv6DurationSeconds) _ipv6ProgressTimer.Stop();
     }
 
     /// <summary>Adds a discovered host to the list (dedup by IP, or merges the other-family address

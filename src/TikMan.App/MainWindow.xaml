@@ -32,7 +32,6 @@
                     </StackPanel>
                     <Button x:Name="CycleAdapterButton" Style="{StaticResource ToolButton}" Click="CycleAdapter_Click"
                             Content="⟳" ToolTip="{loc:Loc Tb_CycleAdapterTip}" Margin="4,0,0,0"/>
-                    <ProgressBar x:Name="ScanProgress" Width="120" Height="6" Margin="14,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
                 </WrapPanel>
 
                 <!-- Row 3: view, filter, auto-refresh -->
@@ -55,6 +54,21 @@
                         <ComboBoxItem Tag="300">5 min</ComboBoxItem>
                     </ComboBox>
                 </WrapPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Full-width discovery progress: IPv4/MNDP (0–100 %) and IPv6 (0–15 s). -->
+        <Border DockPanel.Dock="Top" x:Name="DiscoveryProgressPanel" Visibility="Collapsed"
+                Background="#F7F7F7" BorderBrush="#DDDDDD" BorderThickness="0,0,0,1" Padding="8,4">
+            <StackPanel>
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Width="120" VerticalAlignment="Center" Foreground="#666666" Text="IPv4 / MNDP"/>
+                    <ProgressBar x:Name="Ipv4Progress" Height="10" Minimum="0" Maximum="100"/>
+                </DockPanel>
+                <DockPanel Margin="0,4,0,0">
+                    <TextBlock DockPanel.Dock="Left" Width="120" VerticalAlignment="Center" Foreground="#666666" Text="IPv6 (15 s)"/>
+                    <ProgressBar x:Name="Ipv6Progress" Height="10" Minimum="0" Maximum="15"/>
+                </DockPanel>
             </StackPanel>
         </Border>
 
