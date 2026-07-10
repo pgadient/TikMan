@@ -33,6 +33,7 @@ public partial class SettingsWindow : Window
         if (DefaultChannelCombo.SelectedValue is null) DefaultChannelCombo.SelectedIndex = 0; // fall back to stable
         PersistListCheck.IsChecked = data.PersistDeviceList;
         IgnoreCertCheck.IsChecked = data.DefaultIgnoreCertErrors;
+        AllowHttpCheck.IsChecked = data.AllowHttpFallback;
         DefaultUserBox.Text = data.DefaultUsername;
         _ready = true;
     }
@@ -95,6 +96,7 @@ public partial class SettingsWindow : Window
             _data.DefaultUpdateChannel = channel;
         _data.PersistDeviceList = PersistListCheck.IsChecked == true;
         _data.DefaultIgnoreCertErrors = IgnoreCertCheck.IsChecked == true;
+        _data.AllowHttpFallback = AllowHttpCheck.IsChecked == true;
 
         _data.DefaultUsername = DefaultUserBox.Text.Trim();
         if (DefaultPasswordBox.Password.Length > 0)

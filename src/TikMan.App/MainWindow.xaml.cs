@@ -119,8 +119,8 @@ public partial class MainWindow : Window
         if (!quiet) SetStatus(T("Msg_Querying", targets.Count));
         await Task.WhenAll(targets.Select(d => d.RefreshAsync()));
 
-        // Offer an HTTP fallback for any device whose HTTPS handshake failed (asked once per device).
-        await MaybeOfferHttpFallbackAsync(targets);
+        // Retry TLS-failed devices over HTTP if the user allowed insecure HTTP login (else leave them).
+        await ApplyHttpFallbackAsync(targets);
 
         var online = targets.Count(d => d.Status == DeviceStatus.Online);
         var text = T("Msg_OnlineSummary", DateTime.Now.ToString("HH:mm:ss"), online, targets.Count);
@@ -129,22 +129,14 @@ public partial class MainWindow : Window
         SetStatus(text);
     }
 
-    private readonly HashSet<Guid> _fallbackAsked = new();
-
-    /// <summary>Whenever an HTTPS device fails with a TLS/handshake problem, asks once (per device)
-    /// whether to retry over plain HTTP — with a clear-text warning — then switches and re-queries
-    /// the ones the user agreed to. Runs in every refresh path, background polling included.</summary>
-    private async Task MaybeOfferHttpFallbackAsync(IEnumerable<DeviceViewModel> devices)
+    /// <summary>When "allow insecure HTTP login" is enabled in Settings, silently retries HTTPS
+    /// devices whose TLS handshake failed over plain HTTP (credentials then travel in clear text)
+    /// and re-queries them. No prompt – the user opts in once, then presses Refresh all.</summary>
+    private async Task ApplyHttpFallbackAsync(IEnumerable<DeviceViewModel> devices)
     {
-        var candidates = devices
-            .Where(d => d.Model.UseHttps && d.HadTlsError && _fallbackAsked.Add(d.Model.Id))
-            .ToList();
+        if (!_appData.AllowHttpFallback) return;
+        var candidates = devices.Where(d => d.Model.UseHttps && d.HadTlsError).ToList();
         if (candidates.Count == 0) return;
-
-        var answer = MessageBox.Show(this,
-            T("Msg_HttpFallbackPrompt", candidates.Count),
-            T("Msg_HttpFallbackTitle"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
-        if (answer != MessageBoxResult.Yes) return;
 
         foreach (var vm in candidates) vm.SwitchToHttp();
         SaveAppData();
@@ -203,7 +195,7 @@ public partial class MainWindow : Window
     private async Task RefreshAndCheckAsync(DeviceViewModel vm)
     {
         if (await vm.RefreshAsync()) { await ApplyChannelAndCheckAsync(vm); return; }
-        await MaybeOfferHttpFallbackAsync(new[] { vm });
+        await ApplyHttpFallbackAsync(new[] { vm });
         if (vm.Status == DeviceStatus.Online) await ApplyChannelAndCheckAsync(vm);
     }
 
