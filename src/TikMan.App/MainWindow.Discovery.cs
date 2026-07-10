@@ -63,6 +63,8 @@ public partial class MainWindow
 
         ScanButton.Content = T("Sc_Stop");
         DiscoveryProgressPanel.Visibility = Visibility.Visible;
+        Ipv4ProgressRow.Visibility = Visibility.Visible;
+        Ipv6ProgressRow.Visibility = Visibility.Visible;
         Ipv4Progress.IsIndeterminate = false;
         Ipv4Progress.Value = 0;
         StartIpv6ProgressTimer();
@@ -101,8 +103,15 @@ public partial class MainWindow
                 Ipv4Progress.IsIndeterminate = true; // no subnet target – just MNDP on the IPv4 side
             }
 
-            await Task.WhenAll(Guard(mndp), Guard(ipv6), Guard(subnet));
-            if (!Ipv4Progress.IsIndeterminate) Ipv4Progress.Value = Ipv4Progress.Maximum;
+            // Hide each bar as soon as its own work finishes, so neither sits at 100 % waiting.
+            var ui = TaskScheduler.FromCurrentSynchronizationContext();
+            Task gm = Guard(mndp), gi = Guard(ipv6), gs = Guard(subnet);
+            _ = Task.WhenAll(gm, gs).ContinueWith(_ => Ipv4ProgressRow.Visibility = Visibility.Collapsed,
+                CancellationToken.None, TaskContinuationOptions.None, ui);
+            _ = gi.ContinueWith(_ => Ipv6ProgressRow.Visibility = Visibility.Collapsed,
+                CancellationToken.None, TaskContinuationOptions.None, ui);
+
+            await Task.WhenAll(gm, gi, gs);
             SetStatus(T("Msg_DiscoveryDone", _devices.Count));
         }
         catch (OperationCanceledException) { SetStatus(T("Sc_ScanCancelled")); }
@@ -175,6 +184,38 @@ public partial class MainWindow
         var vm = new DeviceViewModel(device) { IsSelected = MainSelectAll.IsChecked == true };
         _devices.Add(vm);
         if (likely) _ = RefreshAndCheckAsync(vm);
+        _ = EnrichDetailsAsync(vm);
+    }
+
+    /// <summary>Best-effort background enrichment for the Details tab: the web server (Server header +
+    /// page title) for web hosts, and WMI facts (manufacturer/model/OS) for Windows hosts (port 135).</summary>
+    private static async Task EnrichDetailsAsync(DeviceViewModel vm)
+    {
+        var ports = vm.Model.OpenPorts;
+        var info = vm.Model.ExtraInfo;
+        bool changed = false;
+
+        if (ports.Contains(80) || ports.Contains(443))
+        {
+            try
+            {
+                var fp = await HttpFingerprint.ProbeAsync(vm.Host);
+                if (fp.WebServer.Length > 0) { info["Webserver"] = fp.WebServer; changed = true; }
+                if (fp.Model.Length > 0) { info["Web-Modell"] = fp.Model; changed = true; }
+            }
+            catch { /* best effort */ }
+        }
+
+        if (ports.Contains(135) && OperatingSystem.IsWindows())
+        {
+            try
+            {
+                foreach (var kv in await WmiProbe.QueryAsync(vm.Host)) { info[kv.Key] = kv.Value; changed = true; }
+            }
+            catch { /* best effort */ }
+        }
+
+        if (changed) vm.RaiseDetailsChanged();
     }
 
     /// <summary>Fills in facts a later discovery source learned about a device already in the list.</summary>

@@ -323,6 +323,15 @@ public partial class MainWindow : Window
         if (entry.Length > 0) CopyToClipboard(entry);
     }
 
+    /// <summary>Shows the full IEEE OUI record (name + address) for the row's MAC in a copyable popup.</summary>
+    private void VendorInfo_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not DeviceViewModel vm) return;
+        var entry = OuiLookup.GetFullEntry(vm.Model.MacAddress);
+        if (entry.Length == 0) return;
+        new VendorInfoWindow(entry) { Owner = this }.ShowDialog();
+    }
+
     // ----- Logs -----
 
     private async void RefreshLogs_Click(object sender, RoutedEventArgs e)

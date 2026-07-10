@@ -26,7 +26,23 @@ public class DeviceViewModel : INotifyPropertyChanged
     public Device Model { get; }
     private RouterOsClient? _client;
 
-    public DeviceViewModel(Device model) => Model = model;
+    public DeviceViewModel(Device model)
+    {
+        Model = model;
+        RaiseDetailsChanged();
+    }
+
+    /// <summary>Extra discovery facts (WMI / web) shown as key/value rows in the Details tab.</summary>
+    public ObservableCollection<InfoRow> ExtraInfo { get; } = new();
+    public bool HasExtraInfo => ExtraInfo.Count > 0;
+
+    /// <summary>Rebuilds the Details "extra info" rows from the model dictionary (after enrichment).</summary>
+    public void RaiseDetailsChanged()
+    {
+        ExtraInfo.Clear();
+        foreach (var kv in Model.ExtraInfo) ExtraInfo.Add(new InfoRow(kv.Key, kv.Value));
+        Notify(nameof(HasExtraInfo));
+    }
 
     public ObservableCollection<ResourceSnapshot> History { get; } = new();
     public ObservableCollection<LogEntry> Logs { get; } = new();
@@ -560,6 +576,14 @@ public class DeviceViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Notify([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+/// <summary>A key/value fact shown in the Details tab (from WMI / web enrichment).</summary>
+public class InfoRow
+{
+    public InfoRow(string key, string value) { Key = key; Value = value; }
+    public string Key { get; }
+    public string Value { get; }
 }
 
 /// <summary>A single SMB share with the UNC path to open in Explorer.</summary>

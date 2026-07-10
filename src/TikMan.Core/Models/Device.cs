@@ -35,6 +35,9 @@ public class Device
     public bool HasSmb { get; set; }
     /// <summary>Open TCP ports seen during discovery (drives the type guess and protocol chips).</summary>
     public List<int> OpenPorts { get; set; } = new();
+    /// <summary>Extra facts learned during discovery (WMI manufacturer/model/OS, web server, …),
+    /// shown as key/value rows in the Details tab.</summary>
+    public Dictionary<string, string> ExtraInfo { get; set; } = new();
     public string MacAddress { get; set; } = "";
     public string Notes { get; set; } = "";
     /// <summary>Preferred RouterOS update channel for this device. Empty = use the global default
