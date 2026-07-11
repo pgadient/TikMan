@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using TikMan.Core.Api;
@@ -19,6 +20,10 @@ namespace TikMan.App;
 public partial class MainWindow : Window
 {
     private readonly ObservableCollection<DeviceViewModel> _devices = new();
+    private readonly ObservableCollection<Ipv6RowVm> _v6Rows = new();
+    private bool _v6Mode;
+    private int _addressColumnIndex; // display index of the first address column (IPv4 in the v4 view)
+    private static readonly Brush Ipv6GroupBrush = new SolidColorBrush(Color.FromRgb(0xE7, 0xF2, 0xFA)); // ice blue
     private readonly DispatcherTimer _pollTimer = new();
     private readonly DispatcherTimer _logTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     private AppData _appData;
@@ -33,6 +38,20 @@ public partial class MainWindow : Window
         if (v is not null) Title = $"TikMan {v.Major}.{v.Minor}.{v.Build}";
         RouterOsClient.AllowInsecureCertificates = appData.DefaultIgnoreCertErrors;
         DeviceGrid.ItemsSource = _devices;
+        if (Ipv6GroupBrush.CanFreeze) Ipv6GroupBrush.Freeze();
+        // The v4 view hides IPv6-only devices live (HasIpv4 flips when a MAC-match adds an IPv4).
+        if (CollectionViewSource.GetDefaultView(_devices) is ListCollectionView lcv)
+        {
+            lcv.IsLiveFiltering = true;
+            lcv.LiveFilteringProperties.Add(nameof(DeviceViewModel.HasIpv4));
+        }
+        _devices.CollectionChanged += (_, args) =>
+        {
+            if (args.NewItems is not null)
+                foreach (DeviceViewModel vm in args.NewItems)
+                    vm.PropertyChanged += Device_PropertyChangedForV6;
+            if (_v6Mode) BuildV6Rows();
+        };
         _pollTimer.Tick += async (_, _) => await RefreshAllAsync(quiet: true);
         _logTimer.Tick += (_, _) => { if (SelectedDevice is { } vm) _ = LoadLogsAsync(vm, quiet: true); };
     }
@@ -44,6 +63,8 @@ public partial class MainWindow : Window
         MarkGateways();
         CollectionViewSource.GetDefaultView(_devices).SortDescriptions.Add(
             new SortDescription(nameof(DeviceViewModel.Ipv4SortKey), ListSortDirection.Ascending)); // default sort by IPv4
+        _addressColumnIndex = Ipv4Column.DisplayIndex;
+        ApplyDeviceFilter(); // the v4 view only lists devices that have an IPv4
         _ = LoadPublicIpAsync(); // fill the public-IP status field in the background
 
         InitSubnets();
@@ -83,7 +104,15 @@ public partial class MainWindow : Window
         }
     }
 
-    private DeviceViewModel? SelectedDevice => DeviceGrid.SelectedItem as DeviceViewModel;
+    private DeviceViewModel? SelectedDevice => RowDevice(DeviceGrid.SelectedItem);
+
+    /// <summary>Unwraps a grid row (device row of the v4 view, address row of the v6 view).</summary>
+    private static DeviceViewModel? RowDevice(object? row) => row switch
+    {
+        DeviceViewModel d => d,
+        Ipv6RowVm r => r.Device,
+        _ => null,
+    };
 
     // ----- Settings -----
 
@@ -347,20 +376,38 @@ public partial class MainWindow : Window
         return false;
     }
 
-    /// <summary>Copies text to the clipboard and confirms in the status bar.</summary>
+    /// <summary>Copies text to the clipboard and confirms with a toast (plus the status bar).</summary>
     private void CopyToClipboard(string text)
     {
-        try { Clipboard.SetText(text); SetStatus(T("Msg_Copied")); }
+        try
+        {
+            Clipboard.SetText(text);
+            SetStatus(T("Msg_Copied"));
+            ShowCopyToast(text);
+        }
         catch (Exception ex) when (ex is System.Runtime.InteropServices.ExternalException)
         {
             // the clipboard is briefly locked by another app – ignore
         }
     }
 
+    /// <summary>Bottom-centre toast confirming what was copied; holds a moment, then fades out.</summary>
+    private void ShowCopyToast(string text)
+    {
+        CopyToastText.Text = T("Toast_Copied", text.Length > 80 ? text[..80] + "…" : text);
+        CopyToast.Visibility = Visibility.Visible;
+        var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(500))
+        {
+            BeginTime = TimeSpan.FromMilliseconds(1600),
+        };
+        fade.Completed += (_, _) => CopyToast.Visibility = Visibility.Collapsed;
+        CopyToast.BeginAnimation(OpacityProperty, fade); // replaces a still-running fade
+    }
+
     /// <summary>Copies the full IEEE vendor record (name + address) for the row's MAC.</summary>
     private void CopyVendorFull_Click(object sender, RoutedEventArgs e)
     {
-        if ((sender as MenuItem)?.DataContext is not DeviceViewModel vm) return;
+        if (RowDevice((sender as MenuItem)?.DataContext) is not { } vm) return;
         var entry = OuiLookup.GetFullEntry(vm.Model.MacAddress);
         if (entry.Length > 0) CopyToClipboard(entry);
     }
@@ -368,7 +415,7 @@ public partial class MainWindow : Window
     /// <summary>Shows the full IEEE OUI record (name + address) for the row's MAC in a copyable popup.</summary>
     private void VendorInfo_Click(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.DataContext is not DeviceViewModel vm) return;
+        if (RowDevice((sender as FrameworkElement)?.DataContext) is not { } vm) return;
         var entry = OuiLookup.GetFullEntry(vm.Model.MacAddress);
         if (entry.Length == 0) return;
         new VendorInfoWindow(entry) { Owner = this }.ShowDialog();
@@ -405,11 +452,12 @@ public partial class MainWindow : Window
 
     private void ApplyDeviceFilter()
     {
-        var view = CollectionViewSource.GetDefaultView(_devices);
+        var view = CollectionViewSource.GetDefaultView(DeviceGrid.ItemsSource);
         var tokens = DeviceFilterBox.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        view.Filter = tokens.Length == 0
-            ? null
-            : obj => obj is DeviceViewModel d && DeviceMatchesFilter(d, tokens);
+        view.Filter = _v6Mode
+            ? obj => obj is Ipv6RowVm r && (tokens.Length == 0 || DeviceMatchesFilter(r.Device, tokens))
+            // The v4 view only lists devices that actually have an IPv4 (v6-only ones live in the IPv6 tab).
+            : obj => obj is DeviceViewModel d && d.HasIpv4 && (tokens.Length == 0 || DeviceMatchesFilter(d, tokens));
     }
 
     private static bool DeviceMatchesFilter(DeviceViewModel d, string[] tokens)
@@ -422,6 +470,7 @@ public partial class MainWindow : Window
 
     private void DeviceGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        DetailTabs.DataContext = SelectedDevice; // the bottom tabs always talk to the device itself
         ApplyLogFilter();
         if (SelectedDevice is { } vm)
         {
@@ -710,24 +759,59 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>Switches the main list between the IPv4 and IPv6 view: flips the address column,
-    /// re-sorts, and lets every row re-evaluate what its expander has to offer.</summary>
+    /// <summary>Switches the main list between the IPv4 view (one row per device with an IPv4) and
+    /// the IPv6 view (one row per IPv6 address, device groups in alternating colours).</summary>
     private void AddressTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!ReferenceEquals(e.OriginalSource, AddressTabs) || Ipv6Column is null) return;
-        bool v6 = AddressTabs.SelectedIndex == 1;
-        DeviceViewModel.Ipv6ViewMode = v6;
-        Ipv6Column.Visibility = v6 ? Visibility.Visible : Visibility.Collapsed; // IPv4 stays in both views
-        foreach (var vm in _devices)
+        if (!ReferenceEquals(e.OriginalSource, AddressTabs) || Ipv6Column is null || !IsLoaded) return;
+        _v6Mode = AddressTabs.SelectedIndex == 1;
+        if (_v6Mode)
         {
-            vm.RefreshRowDetailsMode();
-            ApplyDefaultExpansion(vm);
+            BuildV6Rows();
+            DeviceGrid.ItemsSource = _v6Rows;
+            Ipv6Column.Visibility = Visibility.Visible;
+            Ipv6Column.DisplayIndex = _addressColumnIndex; // IPv6 before IPv4
         }
-        var view = CollectionViewSource.GetDefaultView(_devices);
-        view.SortDescriptions.Clear();
-        view.SortDescriptions.Add(v6
-            ? new SortDescription(nameof(DeviceViewModel.Ipv6Display), ListSortDirection.Ascending)
-            : new SortDescription(nameof(DeviceViewModel.Ipv4SortKey), ListSortDirection.Ascending));
+        else
+        {
+            DeviceGrid.ItemsSource = _devices;
+            Ipv6Column.Visibility = Visibility.Collapsed;
+            Ipv4Column.DisplayIndex = _addressColumnIndex; // IPv4 first again
+            var view = CollectionViewSource.GetDefaultView(_devices);
+            view.SortDescriptions.Clear();
+            view.SortDescriptions.Add(new SortDescription(nameof(DeviceViewModel.Ipv4SortKey), ListSortDirection.Ascending));
+        }
+        ApplyDeviceFilter();
+    }
+
+    /// <summary>(Re)builds the IPv6 view's rows: one row per IPv6 address, only devices that have
+    /// IPv6, grouped per device with alternating white/ice-blue backgrounds.</summary>
+    private void BuildV6Rows()
+    {
+        var expanded = _v6Rows.Where(r => r.IsExpanded).Select(r => r.Device).ToHashSet();
+        _v6Rows.Clear();
+        int group = 0;
+        foreach (var vm in _devices.Where(d => d.HasIpv6)
+                                   .OrderBy(d => d.Ipv6List[0], StringComparer.OrdinalIgnoreCase))
+        {
+            var bg = group++ % 2 == 0 ? Brushes.Transparent : Ipv6GroupBrush;
+            bool first = true;
+            foreach (var addr in vm.Ipv6List)
+            {
+                var row = new Ipv6RowVm(vm, addr, first, bg);
+                if (row.HasRowDetails && (expanded.Contains(vm) || _appData.ExpandRowsByDefault))
+                    row.IsExpanded = true;
+                _v6Rows.Add(row);
+                first = false;
+            }
+        }
+    }
+
+    /// <summary>Keeps the IPv6 view current while discovery merges addresses or finds SMB.</summary>
+    private void Device_PropertyChangedForV6(object? sender, PropertyChangedEventArgs e)
+    {
+        if (_v6Mode && e.PropertyName is nameof(DeviceViewModel.Ipv6Display) or nameof(DeviceViewModel.HasSmb))
+            BuildV6Rows();
     }
 
     /// <summary>Expands a row right away when the "rows expanded by default" option is on and the
@@ -751,8 +835,11 @@ public partial class MainWindow : Window
 
     /// <summary>Keeps recycled row containers in sync with the item's expanded state.</summary>
     private void DeviceGrid_LoadingRow(object sender, DataGridRowEventArgs e) =>
-        e.Row.DetailsVisibility = e.Row.DataContext is DeviceViewModel { IsExpanded: true }
-            ? Visibility.Visible : Visibility.Collapsed;
+        e.Row.DetailsVisibility = e.Row.DataContext switch
+        {
+            DeviceViewModel { IsExpanded: true } or Ipv6RowVm { IsExpanded: true } => Visibility.Visible,
+            _ => Visibility.Collapsed,
+        };
 
     /// <summary>Opens an SMB share (\\host\share) in Windows Explorer.</summary>
     private void Share_Click(object sender, RoutedEventArgs e)

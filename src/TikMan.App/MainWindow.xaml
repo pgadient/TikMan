@@ -6,6 +6,7 @@
         Title="TikMan" Height="780" Width="1280"
         Icon="pack://application:,,,/TikMan;component/tikman.png" WindowStartupLocation="CenterScreen"
         Loaded="Window_Loaded" Closing="Window_Closing">
+    <Grid>
     <DockPanel>
         <Border DockPanel.Dock="Top" Background="#F3F3F3" BorderBrush="#DDDDDD" BorderThickness="0,0,0,1" Padding="6,5">
             <!-- Filter stays top-right; the four groups wrap as whole units: narrow → up to four
@@ -126,6 +127,8 @@
                 </DataGrid.Resources>
                 <DataGrid.RowStyle>
                     <Style TargetType="DataGridRow">
+                        <!-- Group colour of the IPv6 view (transparent in the IPv4 view). -->
+                        <Setter Property="Background" Value="{Binding RowBackground}"/>
                         <Style.Triggers>
                             <!-- Highlight the local default gateway in orange. -->
                             <DataTrigger Binding="{Binding IsGateway}" Value="True">
@@ -141,7 +144,7 @@
                 <DataGrid.RowDetailsTemplate>
                     <DataTemplate>
                         <StackPanel Margin="60,4,8,8" Background="Transparent">
-                            <ItemsControl ItemsSource="{Binding Ipv6List}">
+                            <ItemsControl ItemsSource="{Binding Ipv6Rest}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12"/>
@@ -331,7 +334,7 @@
 
             <GridSplitter Grid.Row="1" Height="6" HorizontalAlignment="Stretch" Background="Transparent"/>
 
-            <TabControl Grid.Row="2" DataContext="{Binding SelectedItem, ElementName=DeviceGrid}">
+            <TabControl x:Name="DetailTabs" Grid.Row="2">
                 <TabItem Header="{loc:Loc Tab_Logs}">
                     <DockPanel>
                         <Border DockPanel.Dock="Top" Padding="4" Background="#FAFAFA">
@@ -503,4 +506,13 @@
             </TabControl>
         </Grid>
     </DockPanel>
+
+    <!-- Copy confirmation toast (bottom centre, fades out; big enough to actually read). -->
+    <Border x:Name="CopyToast" Visibility="Collapsed" IsHitTestVisible="False"
+            HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="24,0,24,56"
+            Background="#E62D2D2D" CornerRadius="8" Padding="20,12">
+        <TextBlock x:Name="CopyToastText" Foreground="White" FontSize="15" FontWeight="SemiBold"
+                   MaxWidth="760" TextTrimming="CharacterEllipsis"/>
+    </Border>
+    </Grid>
 </Window>
