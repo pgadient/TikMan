@@ -20,9 +20,9 @@ public class Device
     public string HardwareRevision { get; set; } = "";
     public string Name { get; set; } = "";
     public string Host { get; set; } = "";
-    /// <summary>Secondary address of the same physical device in the other IP family (e.g. the IPv6
-    /// address when Host is IPv4). Informational; matched by MAC when adding from a scan. "" if none.</summary>
-    public string AltAddress { get; set; } = "";
+    /// <summary>Further addresses of the same physical device (matched by MAC): the other-family
+    /// address(es), including a device's multiple IPv6 addresses (global, ULA, link-local, privacy).</summary>
+    public List<string> AltAddresses { get; set; } = new();
     public int Port { get; set; } = 443;
     public bool UseHttps { get; set; } = true;
     public bool IgnoreCertErrors { get; set; } = true;

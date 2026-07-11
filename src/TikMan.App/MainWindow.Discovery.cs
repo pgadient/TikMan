@@ -150,19 +150,19 @@ public partial class MainWindow
     /// of the same MAC), then starts monitoring it if it looks like a MikroTik.</summary>
     private void AddDiscovered(DiscoveredDevice d)
     {
-        var byIp = _devices.FirstOrDefault(v =>
-            string.Equals(v.Host, d.IpAddress, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(v.Model.AltAddress, d.IpAddress, StringComparison.OrdinalIgnoreCase));
+        var byIp = _devices.FirstOrDefault(v => v.HasAddress(d.IpAddress));
         if (byIp is not null) { EnrichExisting(byIp, d); return; }
 
-        // Same physical device (same MAC), other IP family → attach as the alternate address.
+        // Same physical device (same MAC) → attach this address. A NIC often has several IPv6
+        // addresses (global, ULA, link-local, privacy), so we collect them all, not just one.
         if (d.MacAddress.Length > 0)
         {
             var byMac = _devices.FirstOrDefault(v => MacEquals(v.Model.MacAddress, d.MacAddress));
-            if (byMac is not null && byMac.Model.AltAddress.Length == 0 && FamilyDiffers(byMac.Host, d.IpAddress))
+            if (byMac is not null)
             {
-                byMac.Model.AltAddress = d.IpAddress;
+                byMac.Model.AltAddresses.Add(d.IpAddress);
                 byMac.RefreshAddressDisplay();
+                EnrichExisting(byMac, d);
                 return;
             }
         }
@@ -238,11 +238,6 @@ public partial class MainWindow
 
     private static string NormalizeMac(string mac) =>
         new string(mac.Where(Uri.IsHexDigit).ToArray()).ToUpperInvariant();
-
-    private static bool IsIpv4(string ip) =>
-        IPAddress.TryParse(ip, out var a) && a.AddressFamily == AddressFamily.InterNetwork;
-
-    private static bool FamilyDiffers(string a, string b) => IsIpv4(a) != IsIpv4(b);
 
     /// <summary>Awaits one discovery leg but swallows its own failure (e.g. MNDP port busy) so the
     /// other legs still finish; cancellation still propagates to stop the whole run.</summary>

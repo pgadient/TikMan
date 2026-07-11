@@ -148,7 +148,14 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="{loc:Loc Col_Name}" Binding="{Binding Name}" Width="170"/>
-                    <DataGridTextColumn Header="{loc:Loc Col_Address}" Binding="{Binding AddressesDisplay}" Width="180"/>
+                    <DataGridTextColumn x:Name="Ipv4Column" Header="IPv4" Binding="{Binding Ipv4Address}" Width="130"/>
+                    <DataGridTemplateColumn x:Name="Ipv6Column" Header="IPv6" Width="240" SortMemberPath="Ipv6Display">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Ipv6Display}" VerticalAlignment="Center" Padding="4,2"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridTemplateColumn Header="{loc:Loc Col_Protocol}" Width="140" SortMemberPath="TransportDisplay">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>

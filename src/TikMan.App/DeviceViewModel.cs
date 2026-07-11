@@ -128,34 +128,51 @@ public class DeviceViewModel : INotifyPropertyChanged
 
     public string Host => Model.Host;
 
-    /// <summary>How the Address column presents a device: both families combined, or one family
-    /// (the IPv4 / IPv6 tab). Shared across all rows; set from the main view.</summary>
+    /// <summary>How the address columns behave: both families side by side (combined), or only one
+    /// family (the IPv4 / IPv6 tab). Shared across all rows; set from the main view.</summary>
     public enum AddressView { Combined, Ipv4, Ipv6 }
     public static AddressView Mode { get; set; } = AddressView.Ipv4;
 
-    /// <summary>The device's IPv4 / IPv6 address, taken from either the primary host or the matched
-    /// other-family alternate ("" if the device has no address of that family).</summary>
-    public string Ipv4Address => FamilyAddress(AddressFamily.InterNetwork);
-    public string Ipv6Address => FamilyAddress(AddressFamily.InterNetworkV6);
-
-    private string FamilyAddress(AddressFamily family)
+    /// <summary>Every address of this physical device: the primary host plus all MAC-matched extras
+    /// (a host commonly has several IPv6 addresses — global, ULA, link-local, privacy).</summary>
+    private IEnumerable<string> AllAddresses()
     {
-        if (IPAddress.TryParse(Model.Host, out var a) && a.AddressFamily == family) return Model.Host;
-        if (IPAddress.TryParse(Model.AltAddress, out var b) && b.AddressFamily == family) return Model.AltAddress;
-        return "";
+        if (Model.Host.Length > 0) yield return Model.Host;
+        foreach (var a in Model.AltAddresses) yield return a;
     }
 
-    /// <summary>What the Address column shows for the current <see cref="Mode"/>: both families in
-    /// combined view, otherwise the address of the tab's family.</summary>
-    public string AddressesDisplay => Mode switch
-    {
-        AddressView.Ipv4 => Ipv4Address.Length > 0 ? Ipv4Address : Model.Host,
-        AddressView.Ipv6 => Ipv6Address.Length > 0 ? Ipv6Address : Model.Host,
-        _ => Model.AltAddress.Length > 0 ? $"{Model.Host}  ·  {Model.AltAddress}" : Model.Host,
-    };
+    /// <summary>The device's IPv4 address (first one found across all its addresses), or "".</summary>
+    public string Ipv4Address =>
+        AllAddresses().FirstOrDefault(a => IPAddress.TryParse(a, out var ip)
+            && ip.AddressFamily == AddressFamily.InterNetwork) ?? "";
 
-    /// <summary>Raises a change notification for <see cref="AddressesDisplay"/> (after the mode flips).</summary>
-    public void RefreshAddressDisplay() => Notify(nameof(AddressesDisplay));
+    /// <summary>All IPv6 addresses of the device (a NIC often has several).</summary>
+    public IReadOnlyList<string> Ipv6List =>
+        AllAddresses().Where(a => IPAddress.TryParse(a, out var ip)
+            && ip.AddressFamily == AddressFamily.InterNetworkV6)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    /// <summary>All IPv6 addresses, one per line (for the IPv6 column).</summary>
+    public string Ipv6Display => string.Join(Environment.NewLine, Ipv6List);
+
+    public bool HasIpv4 => Ipv4Address.Length > 0;
+    public bool HasIpv6 => Ipv6List.Count > 0;
+
+    /// <summary>True if any of the device's addresses equals <paramref name="ip"/>.</summary>
+    public bool HasAddress(string ip) =>
+        AllAddresses().Any(a => string.Equals(a, ip, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>All addresses joined, for the text filter.</summary>
+    public string AllAddressesText => string.Join(" ", AllAddresses());
+
+    /// <summary>Re-raises the address columns after the address set changed (a MAC-matched addition).</summary>
+    public void RefreshAddressDisplay()
+    {
+        Notify(nameof(Ipv4Address));
+        Notify(nameof(Ipv6Display));
+        Notify(nameof(HasIpv4));
+        Notify(nameof(HasIpv6));
+    }
 
     /// <summary>Notifies the discovery-derived properties after a later scan filled in the MAC/ports.</summary>
     public void RaiseDiscoveryChanged()
@@ -164,15 +181,6 @@ public class DeviceViewModel : INotifyPropertyChanged
         Notify(nameof(DeviceType));
         Notify(nameof(HasSmb));
     }
-
-    /// <summary>Whether the device has an IPv4 / IPv6 address (across Host + AltAddress) – drives the
-    /// main-page view filter (Combined / IPv4 / IPv6).</summary>
-    public bool HasIpv4 => IsFamily(AddressFamily.InterNetwork);
-    public bool HasIpv6 => IsFamily(AddressFamily.InterNetworkV6);
-
-    private bool IsFamily(AddressFamily family) =>
-        (IPAddress.TryParse(Model.Host, out var a) && a.AddressFamily == family) ||
-        (IPAddress.TryParse(Model.AltAddress, out var b) && b.AddressFamily == family);
 
     public string ConnectionDisplay => $"{(Model.UseHttps ? "https" : "http")}://{Model.Host}:{Model.Port}";
 
@@ -340,7 +348,8 @@ public class DeviceViewModel : INotifyPropertyChanged
         _client = null;
         Notify(nameof(Name));
         Notify(nameof(Host));
-        Notify(nameof(AddressesDisplay));
+        Notify(nameof(Ipv4Address));
+        Notify(nameof(Ipv6Display));
         Notify(nameof(HasIpv4));
         Notify(nameof(HasIpv6));
         Notify(nameof(ConnectionDisplay));

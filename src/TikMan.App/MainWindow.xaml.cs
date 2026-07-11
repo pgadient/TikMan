@@ -381,10 +381,14 @@ public partial class MainWindow : Window
     {
         bool combine = CombineCheck.IsChecked == true;
         FamilyTabs.Visibility = combine ? Visibility.Collapsed : Visibility.Visible;
-        DeviceViewModel.Mode = combine
+        var mode = combine
             ? DeviceViewModel.AddressView.Combined
             : (Ipv6Tab.IsChecked == true ? DeviceViewModel.AddressView.Ipv6 : DeviceViewModel.AddressView.Ipv4);
-        foreach (var d in _devices) d.RefreshAddressDisplay();
+        DeviceViewModel.Mode = mode;
+
+        // Combined → both address columns; a single tab → only that family's column.
+        Ipv4Column.Visibility = mode == DeviceViewModel.AddressView.Ipv6 ? Visibility.Collapsed : Visibility.Visible;
+        Ipv6Column.Visibility = mode == DeviceViewModel.AddressView.Ipv4 ? Visibility.Collapsed : Visibility.Visible;
         ApplyDeviceFilter();
     }
 
@@ -409,7 +413,7 @@ public partial class MainWindow : Window
     private static bool DeviceMatchesFilter(DeviceViewModel d, string[] tokens)
     {
         var haystack = string.Join(" ",
-            d.Name, d.AddressesDisplay, d.TransportDisplay, d.Vendor, d.DeviceType, d.Board, d.Version, d.LatestWithChannel,
+            d.Name, d.AllAddressesText, d.TransportDisplay, d.Vendor, d.DeviceType, d.Board, d.Version, d.LatestWithChannel,
             d.CpuText, d.MemoryText, d.Uptime, d.UpdateChannel, d.StatusText, d.LastError);
         return tokens.All(t => haystack.Contains(t, StringComparison.OrdinalIgnoreCase));
     }
