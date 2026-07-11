@@ -98,6 +98,7 @@
             </Grid.RowDefinitions>
 
             <DataGrid x:Name="DeviceGrid" Grid.Row="0"
+                      HorizontalScrollBarVisibility="Auto"
                       SelectionChanged="DeviceGrid_SelectionChanged"
                       MouseDoubleClick="DeviceGrid_MouseDoubleClick">
                 <DataGrid.RowStyle>
@@ -146,7 +147,7 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="{loc:Loc Col_Protocol}" Width="200" SortMemberPath="TransportDisplay">
+                    <DataGridTemplateColumn Header="{loc:Loc Col_Protocol}" Width="280" SortMemberPath="TransportDisplay">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <ItemsControl ItemsSource="{Binding SupportedProtocols}" VerticalAlignment="Center">
@@ -156,7 +157,7 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Border CornerRadius="3" Background="{Binding Color}" Margin="0,1,4,1" Padding="5,1"
-                                                    ToolTip="{Binding Url}">
+                                                    ToolTip="{Binding Url}" MouseLeftButtonUp="ProtocolBadge_Click">
                                                 <Border.Style>
                                                     <Style TargetType="Border">
                                                         <Style.Triggers>
@@ -237,7 +238,7 @@
                     <DataGridTextColumn Header="{loc:Loc Col_Cpu}" Binding="{Binding CpuText}" Width="55"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Ram}" Binding="{Binding MemoryText}" Width="120"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Uptime}" Binding="{Binding Uptime}" Width="100"/>
-                    <DataGridTextColumn Header="{loc:Loc Col_LastError}" Binding="{Binding LastError}" Width="*">
+                    <DataGridTextColumn Header="{loc:Loc Col_LastError}" Binding="{Binding LastError}" Width="320">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
                                 <Setter Property="Foreground" Value="#A03030"/>
