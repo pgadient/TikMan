@@ -17,6 +17,18 @@ public static partial class HttpFingerprint
     [GeneratedRegex(@"<meta[^>]*?content=[""']([^""']{1,140})[""'][^>]*>", RegexOptions.IgnoreCase)]
     private static partial Regex MetaContentRegex();
 
+    [GeneratedRegex(@"location(?:\.href)?\s*=\s*[""'](https?://[^""']+)[""']", RegexOptions.IgnoreCase)]
+    private static partial Regex JsRedirectRegex();
+
+    [GeneratedRegex(@"<meta[^>]*http-equiv=[""']refresh[""'][^>]*url=([^""'>;\s]+)", RegexOptions.IgnoreCase)]
+    private static partial Regex MetaRefreshRegex();
+
+    [GeneratedRegex(@"<meta[^>]*(?:property|name)=[""'](?:og:title|application-name)[""'][^>]*content=[""']([^""']{1,80})[""']", RegexOptions.IgnoreCase)]
+    private static partial Regex AltTitleRegex();
+
+    [GeneratedRegex(@"<h1[^>]*>(.*?)</h1>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex H1Regex();
+
     // Keyword (lower-case) → manufacturer shown. First match wins; checked against title + metas + Server.
     private static readonly (string Key, string Name)[] Brands =
     {
@@ -26,6 +38,7 @@ public static partial class HttpFingerprint
         ("unifi", "Ubiquiti"), ("ubiquiti", "Ubiquiti"), ("edgerouter", "Ubiquiti"), ("edgeos", "Ubiquiti"),
         ("hikvision", "Hikvision"), ("dahua", "Dahua"), ("axis", "Axis"), ("reolink", "Reolink"), ("mobotix", "Mobotix"),
         ("tp-link", "TP-Link"), ("tplink", "TP-Link"), ("omada", "TP-Link Omada"), ("archer", "TP-Link"),
+        ("pharos", "TP-Link Pharos"),
         ("netgear", "Netgear"), ("zyxel", "Zyxel"), ("d-link", "D-Link"), ("asuswrt", "ASUS"), ("asus", "ASUS"),
         ("mikrotik", "MikroTik"), ("routeros", "MikroTik"), ("openwrt", "OpenWrt"), ("dd-wrt", "DD-WRT"),
         ("pfsense", "pfSense"), ("opnsense", "OPNsense"), ("proxmox", "Proxmox"), ("truecharts", "TrueNAS"),
@@ -33,7 +46,8 @@ public static partial class HttpFingerprint
         ("canon", "Canon"), ("brother", "Brother"), ("epson", "Epson"), ("lexmark", "Lexmark"), ("kyocera", "Kyocera"),
         ("sonos", "Sonos"), ("philips hue", "Philips Hue"), ("shelly", "Shelly"), ("sonoff", "Sonoff"), ("tasmota", "Tasmota"),
         ("mystrom", "myStrom"), ("netatmo", "Netatmo"), ("fronius", "Fronius"), ("gardena", "Gardena"),
-        ("internet-box", "Swisscom"), ("internet box", "Swisscom"), ("swisscom", "Swisscom"),
+        // The Swisscom router comes in many spellings: "Internet-Box 5 Pro", "Internet Box 3", "InternetBox" …
+        ("internet-box", "Swisscom"), ("internet box", "Swisscom"), ("internetbox", "Swisscom"), ("swisscom", "Swisscom"),
         ("sunrise", "Sunrise"), ("livebox", "Orange"), ("speedport", "Telekom"), ("connect box", "UPC/Vodafone"),
         ("home assistant", "Home Assistant"), ("openmediavault", "OpenMediaVault"), ("plex", "Plex"),
     };
@@ -58,7 +72,28 @@ public static partial class HttpFingerprint
 
                 var server = (resp.Headers.Server?.ToString() ?? "").Trim();
                 var html = await ReadHtmlAsync(resp, ct).ConfigureAwait(false);
+
+                // Many devices (e.g. the Swisscom Internet-Box) hop to their real UI with a
+                // JS/meta redirect that HttpClient can't follow – do one hop, same host only.
+                if (ClientRedirectTarget(html, hostPart, scheme) is { } jump)
+                {
+                    try
+                    {
+                        using var resp2 = await http.GetAsync(jump,
+                            HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                        var server2 = (resp2.Headers.Server?.ToString() ?? "").Trim();
+                        if (server2.Length > 0) server = server2;
+                        var html2 = await ReadHtmlAsync(resp2, ct).ConfigureAwait(false);
+                        if (html2.Length > 0) html = html2;
+                    }
+                    catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
+                    {
+                        // keep what the first page gave us
+                    }
+                }
+
                 var title = CleanTitle(ExtractTitle(html));
+                if (title.Length == 0) title = CleanTitle(ExtractAltTitle(html));
                 var vendor = BrandFrom($"{title} {server} {ExtractMetas(html)}");
 
                 if (server.Length > 0 || title.Length > 0 || vendor.Length > 0)
@@ -93,6 +128,35 @@ public static partial class HttpFingerprint
         return m.Success ? WebUtility.HtmlDecode(m.Groups[1].Value).Trim() : "";
     }
 
+    /// <summary>Title fallbacks for pages whose &lt;title&gt; is empty or generic:
+    /// og:title / application-name metas, then the first &lt;h1&gt;.</summary>
+    private static string ExtractAltTitle(string html)
+    {
+        var m = AltTitleRegex().Match(html);
+        if (m.Success) return WebUtility.HtmlDecode(m.Groups[1].Value).Trim();
+        m = H1Regex().Match(html);
+        if (!m.Success) return "";
+        var text = Regex.Replace(m.Groups[1].Value, "<[^>]+>", " "); // strip inner tags
+        return WebUtility.HtmlDecode(text).Trim();
+    }
+
+    /// <summary>Extracts a JS location / meta-refresh redirect and returns it as an absolute URL,
+    /// but only when it stays on the same host (we never wander off the device).</summary>
+    private static string? ClientRedirectTarget(string html, string hostPart, string scheme)
+    {
+        var m = JsRedirectRegex().Match(html);
+        var raw = m.Success ? m.Groups[1].Value : MetaRefreshRegex().Match(html) is { Success: true } r ? r.Groups[1].Value : "";
+        if (raw.Length == 0) return null;
+
+        if (!raw.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            return $"{scheme}://{hostPart}/{raw.TrimStart('/')}"; // relative → same host by definition
+
+        if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri)) return null;
+        var target = uri.Host.Trim('[', ']');
+        var origin = hostPart.Trim('[', ']');
+        return string.Equals(target, origin, StringComparison.OrdinalIgnoreCase) ? uri.ToString() : null;
+    }
+
     private static string ExtractMetas(string html)
     {
         var sb = new StringBuilder();
@@ -109,7 +173,8 @@ public static partial class HttpFingerprint
     {
         title = Regex.Replace(title, @"\s+", " ").Trim();
         if (title.Length is < 2 or > 80) return "";
-        return title.ToLowerInvariant() is "login" or "index" or "home" or "welcome" or "anmelden" ? "" : title;
+        return title.ToLowerInvariant().TrimEnd('.', '…') is "login" or "index" or "home" or "welcome" or "anmelden"
+            or "loading" or "please wait" or "redirect" or "redirecting" ? "" : title;
     }
 
     private static string BrandFrom(string haystack)
