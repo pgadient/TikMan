@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Windows.Media;
@@ -68,9 +69,11 @@ public class DeviceViewModel : INotifyPropertyChanged
         if (!HasSmb || _sharesLoaded) return;
         _sharesLoaded = true;
         SharesStatus = T("Sc_SmbLoading");
+        // SMB works over IPv4; an IPv6 UNC path (\\[..]\..) doesn't, so prefer the device's IPv4.
+        var smbHost = Ipv4Address.Length > 0 ? Ipv4Address : Host;
         try
         {
-            var listTask = SmbShares.ListAsync(Host);
+            var listTask = SmbShares.ListAsync(smbHost);
             if (await Task.WhenAny(listTask, Task.Delay(TimeSpan.FromSeconds(8))) != listTask)
             {
                 _sharesLoaded = false;
@@ -79,7 +82,7 @@ public class DeviceViewModel : INotifyPropertyChanged
             }
 
             var result = await listTask;
-            foreach (var name in result.Shares) Shares.Add(new SmbShareVm(Host, name));
+            foreach (var name in result.Shares) Shares.Add(new SmbShareVm(smbHost, name));
             SharesStatus = result.Status switch
             {
                 ShareListStatus.AccessDenied => T("Sc_SmbDenied"),
@@ -155,6 +158,20 @@ public class DeviceViewModel : INotifyPropertyChanged
     public bool HasIpv4 => Ipv4Address.Length > 0;
     public bool HasIpv6 => Ipv6List.Count > 0;
 
+    /// <summary>Numeric key for sorting the list by IPv4 address (v6-only devices sort last).</summary>
+    public uint Ipv4SortKey
+    {
+        get
+        {
+            if (IPAddress.TryParse(Ipv4Address, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork)
+            {
+                var b = ip.GetAddressBytes();
+                return ((uint)b[0] << 24) | ((uint)b[1] << 16) | ((uint)b[2] << 8) | b[3];
+            }
+            return uint.MaxValue;
+        }
+    }
+
     /// <summary>True if any of the device's addresses equals <paramref name="ip"/>.</summary>
     public bool HasAddress(string ip) =>
         AllAddresses().Any(a => string.Equals(a, ip, StringComparison.OrdinalIgnoreCase));
@@ -169,7 +186,38 @@ public class DeviceViewModel : INotifyPropertyChanged
         Notify(nameof(Ipv6Display));
         Notify(nameof(HasIpv4));
         Notify(nameof(HasIpv6));
+        Notify(nameof(Ipv4SortKey));
     }
+
+    /// <summary>Pings the device (its IPv4 if it has one, else the primary host).</summary>
+    private async Task<bool> PingAsync(CancellationToken ct)
+    {
+        var host = Ipv4Address.Length > 0 ? Ipv4Address : Model.Host;
+        if (host.Length == 0) return false;
+        try
+        {
+            using var ping = new Ping();
+            var reply = await ping.SendPingAsync(host, 1000).ConfigureAwait(false);
+            return reply.Status == IPStatus.Success;
+        }
+        catch (Exception ex) when (ex is PingException or InvalidOperationException or SocketException) { return false; }
+    }
+
+    /// <summary>Reachability-only refresh for devices we don't log into: green if it pings, red if not.</summary>
+    public async Task<bool> RefreshReachabilityAsync(CancellationToken ct = default)
+    {
+        if (IsRefreshing) return Status == DeviceStatus.Online;
+        IsRefreshing = true;
+        try
+        {
+            Status = await PingAsync(ct).ConfigureAwait(false) ? DeviceStatus.Online : DeviceStatus.Offline;
+            return Status == DeviceStatus.Online;
+        }
+        finally { IsRefreshing = false; }
+    }
+
+    /// <summary>Marks the device reachable (green) – e.g. it was just found by discovery.</summary>
+    public void MarkOnline() => Status = DeviceStatus.Online;
 
     /// <summary>Notifies the discovery-derived properties after a later scan filled in the MAC/ports.</summary>
     public void RaiseDiscoveryChanged()
@@ -454,9 +502,10 @@ public class DeviceViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            Status = DeviceStatus.Offline;
             LastError = Shorten(ex);
             HadTlsError = ErrorText.IsTlsProblem(ex);
+            // REST failed, but keep the dot green if the host still pings (reachable, just not logged in).
+            Status = await PingAsync(ct).ConfigureAwait(false) ? DeviceStatus.Online : DeviceStatus.Offline;
             return false;
         }
         finally
@@ -484,8 +533,8 @@ public class DeviceViewModel : INotifyPropertyChanged
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            Status = DeviceStatus.Offline;
             LastError = Shorten(ex);
+            Status = await PingAsync(ct).ConfigureAwait(false) ? DeviceStatus.Online : DeviceStatus.Offline;
             return false;
         }
         finally

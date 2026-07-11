@@ -42,6 +42,8 @@ public partial class MainWindow : Window
         foreach (var device in _appData.Devices)
             _devices.Add(new DeviceViewModel(device));
         MarkGateways();
+        CollectionViewSource.GetDefaultView(_devices).SortDescriptions.Add(
+            new SortDescription(nameof(DeviceViewModel.Ipv4SortKey), ListSortDirection.Ascending)); // default sort by IPv4
         _ = LoadPublicIpAsync(); // fill the public-IP status field in the background
 
         InitSubnets();
@@ -118,12 +120,13 @@ public partial class MainWindow : Window
 
     private async Task RefreshAllAsync(bool quiet)
     {
-        // Only monitor devices with monitoring on; discovered non-MikroTik hosts just sit in the list.
-        var targets = _devices.Where(d => d.Model.MonitoringEnabled).ToList();
+        // Every device gets refreshed: monitored ones over REST/SSH (with data), the rest by a plain
+        // ping so their status dot is green when reachable and red when they drop out.
+        var targets = _devices.ToList();
         if (targets.Count == 0) return;
 
         if (!quiet) SetStatus(T("Msg_Querying", targets.Count));
-        await Task.WhenAll(targets.Select(d => d.RefreshAsync()));
+        await Task.WhenAll(targets.Select(d => d.Model.MonitoringEnabled ? d.RefreshAsync() : d.RefreshReachabilityAsync()));
 
         // Retry TLS-failed devices over HTTP if the user allowed insecure HTTP login (else leave them).
         await ApplyHttpFallbackAsync(targets);

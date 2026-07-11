@@ -149,8 +149,9 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding DeviceType}" Width="85" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Name}" Binding="{Binding Name}" Width="170" ElementStyle="{StaticResource VCenter}"/>
-                    <DataGridTextColumn x:Name="Ipv4Column" Header="IPv4" Binding="{Binding Ipv4Address}" Width="130" ElementStyle="{StaticResource VCenter}"/>
+                    <DataGridTextColumn x:Name="Ipv4Column" Header="IPv4" Binding="{Binding Ipv4Address}" Width="130" SortMemberPath="Ipv4SortKey" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTemplateColumn x:Name="Ipv6Column" Header="IPv6" Width="240" SortMemberPath="Ipv6Display">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -216,7 +217,6 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding IdentifiedVendor}" Width="100" ElementStyle="{StaticResource VCenter}"/>
-                    <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding DeviceType}" Width="85" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Board}" Binding="{Binding ModelDisplay}" Width="130" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Version}" Width="110">
                         <DataGridTextColumn.ElementStyle>

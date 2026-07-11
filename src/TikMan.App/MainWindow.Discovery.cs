@@ -189,6 +189,7 @@ public partial class MainWindow
         var vm = new DeviceViewModel(device) { IsSelected = MainSelectAll.IsChecked == true };
         _devices.Add(vm);
         if (likely) _ = RefreshAndCheckAsync(vm);
+        else vm.MarkOnline(); // just found by discovery ⇒ reachable (green)
         _ = EnrichDetailsAsync(vm);
     }
 
