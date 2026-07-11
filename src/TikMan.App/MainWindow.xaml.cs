@@ -687,8 +687,9 @@ public partial class MainWindow : Window
     {
         var ip = await PublicIpClient.GetAsync();
         _publicIp = (ip.V4, ip.V6);
-        var shown = PublicIpParts();
-        PublicIpText.Text = shown.Count > 0 ? "🌐 " + string.Join("  ·  ", shown) : "";
+        var v4 = ip.V4.Length > 0 ? ip.V4 : T("Val_Na");
+        var v6 = ip.V6.Length > 0 ? ip.V6 : T("Val_Na");
+        PublicIpText.Text = $"🌐 IPv4 {v4}  ·  IPv6 {v6}";
     }
 
     private List<string> PublicIpParts()

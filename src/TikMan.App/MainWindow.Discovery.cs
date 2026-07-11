@@ -92,7 +92,11 @@ public partial class MainWindow
                     {
                         Ipv4Progress.Maximum = hosts;
                         int scanned = 0;
-                        var onScanned = new Progress<int>(_ => Ipv4Progress.Value = Math.Min(++scanned, hosts));
+                        var onScanned = new Progress<int>(_ =>
+                        {
+                            Ipv4Progress.Value = Math.Min(++scanned, hosts);
+                            if (scanned >= hosts) Ipv4ProgressRow.Visibility = Visibility.Collapsed; // hide at 100 %
+                        });
                         subnet = SubnetScanner.ScanAsync(target, found, onScanned, ct);
                     }
                 }
