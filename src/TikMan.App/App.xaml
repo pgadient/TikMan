@@ -8,8 +8,10 @@
         <SolidColorBrush x:Key="BusyBrush" Color="#D98E1F"/>
         <SolidColorBrush x:Key="UnknownBrush" Color="#9A9A9A"/>
 
+        <!-- One fixed height for every toolbar button, so borders/font weights can't skew them. -->
         <Style x:Key="ToolButton" TargetType="Button">
-            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="Padding" Value="10,0"/>
+            <Setter Property="Height" Value="30"/>
             <Setter Property="Margin" Value="2,0"/>
         </Style>
 
