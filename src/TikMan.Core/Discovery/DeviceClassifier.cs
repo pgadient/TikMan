@@ -64,7 +64,8 @@ public static class DeviceClassifier
         if (Has(5060)) return DeviceKind.Phone;                 // SIP
         if (Has(8291)) return DeviceKind.Router;                // MikroTik Winbox
 
-        var v = (vendor ?? "").ToLowerInvariant();
+        // Trailing space so "…APC" at the end of a vendor name still matches the "apc " fragment.
+        var v = (vendor ?? "").ToLowerInvariant() + " ";
         foreach (var (fragment, kind) in VendorHints)
             if (v.Contains(fragment)) return kind;
 

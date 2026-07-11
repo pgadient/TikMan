@@ -386,6 +386,8 @@ public class DeviceViewModel : INotifyPropertyChanged
             if (Model.ExtraInfo.TryGetValue("Hersteller", out var wmi) && NormalizeVendor(wmi) is { Length: > 0 } v)
                 return v; // WMI manufacturer (e.g. "LENOVO" → "Lenovo")
             if (mac.Contains("philips light")) return "Signify"; // Philips Lighting BV is Signify today
+            if (mac.Contains("american power") || mac.StartsWith("apc") || mac.Contains(" apc "))
+                return "APC"; // APC / American Power Conversion – almost always a UPS
             return "";
         }
     }
