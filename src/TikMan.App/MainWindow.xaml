@@ -9,35 +9,30 @@
     <Grid>
     <DockPanel>
         <Menu DockPanel.Dock="Top" Background="#F9F9F9" BorderBrush="#DDDDDD" BorderThickness="0,0,0,1" Padding="2,1">
+            <MenuItem Header="{loc:Loc Menu_File}">
+                <MenuItem Header="{loc:Loc Tb_Settings}" Click="Settings_Click"/>
+            </MenuItem>
             <MenuItem Header="{loc:Loc Menu_Actions}">
                 <MenuItem Header="{loc:Loc Tb_BackupAll}" Click="BackupAll_Click"/>
                 <MenuItem Header="{loc:Loc Tb_InstallUpdates}" Click="InstallUpdates_Click"/>
-                <Separator/>
-                <MenuItem Header="{loc:Loc Tb_Settings}" Click="Settings_Click"/>
             </MenuItem>
         </Menu>
         <Border DockPanel.Dock="Top" Background="#F3F3F3" BorderBrush="#DDDDDD" BorderThickness="0,0,0,1" Padding="6,5">
             <!-- Filter stays top-right; the four groups wrap as whole units: narrow → up to four
                  rows (buttons 1–4 · 5–7 · scan · options), wide → collapse onto one row. -->
             <DockPanel>
-                <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center" Margin="10,0,0,0">
-                    <!-- Contact/support buttons above the filter box, both right-aligned. -->
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,4">
-                        <Button Click="ReportProblem_Click" Content="{loc:Loc Tb_ReportProblem}" Background="#F68500" Foreground="White"
-                                BorderThickness="0" Padding="9,4" Cursor="Hand" FontWeight="SemiBold"/>
-                        <Button Click="RequestFeature_Click" Content="{loc:Loc Tb_RequestFeature}" Background="#2266CC" Foreground="White"
-                                BorderThickness="0" Padding="9,4" Margin="6,0,0,0" Cursor="Hand" FontWeight="SemiBold"/>
-                        <Button x:Name="CoffeeButton" Click="BuyCoffee_Click" Content="{loc:Loc Tb_BuyCoffee}" Background="#7B5233" Foreground="White"
-                                BorderThickness="0" Padding="9,4" Margin="6,0,0,0" Cursor="Hand" FontWeight="SemiBold"
-                                ToolTip="{loc:Loc Coffee_Title}"/>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                        <TextBlock VerticalAlignment="Center" Margin="0,0,3,0" Text="🔎"/>
-                        <TextBox x:Name="DeviceFilterBox" Width="200" VerticalContentAlignment="Center" Height="24"
-                                 ToolTip="{loc:Loc Filter_Tip}" TextChanged="DeviceFilterBox_TextChanged"/>
-                    </StackPanel>
+                <!-- Contact/support buttons top-right. -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top" Margin="10,2,0,0">
+                    <Button Click="ReportProblem_Click" Content="{loc:Loc Tb_ReportProblem}" Background="#F68500" Foreground="White"
+                            BorderThickness="0" Padding="9,4" Cursor="Hand" FontWeight="SemiBold"/>
+                    <Button Click="RequestFeature_Click" Content="{loc:Loc Tb_RequestFeature}" Background="#2266CC" Foreground="White"
+                            BorderThickness="0" Padding="9,4" Margin="6,0,0,0" Cursor="Hand" FontWeight="SemiBold"/>
+                    <Button x:Name="CoffeeButton" Click="BuyCoffee_Click" Content="{loc:Loc Tb_BuyCoffee}" Background="#7B5233" Foreground="White"
+                            BorderThickness="0" Padding="9,4" Margin="6,0,0,0" Cursor="Hand" FontWeight="SemiBold"
+                            ToolTip="{loc:Loc Coffee_Title}"/>
                 </StackPanel>
 
+                <StackPanel>
                 <WrapPanel Orientation="Horizontal">
                     <!-- Group A: network discovery – the most important part, so it comes first. -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,14,2">
@@ -62,20 +57,25 @@
                         <Button Style="{StaticResource ToolButton}" Click="RefreshAll_Click" Content="{loc:Loc Tb_RefreshAll}"/>
                     </StackPanel>
 
-                    <!-- Group C: options -->
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,0,2">
-                        <CheckBox x:Name="AutoRefreshCheck" VerticalAlignment="Center" Margin="0,0,8,0"
-                                  Checked="AutoRefresh_Changed" Unchecked="AutoRefresh_Changed" Content="{loc:Loc Tb_AutoRefresh}"/>
-                        <ComboBox x:Name="IntervalCombo" Width="70" VerticalAlignment="Center"
-                                  SelectionChanged="IntervalCombo_SelectionChanged">
-                            <ComboBoxItem Tag="10">10 s</ComboBoxItem>
-                            <ComboBoxItem Tag="30">30 s</ComboBoxItem>
-                            <ComboBoxItem Tag="60">60 s</ComboBoxItem>
-                            <ComboBoxItem Tag="120">2 min</ComboBoxItem>
-                            <ComboBoxItem Tag="300">5 min</ComboBoxItem>
-                        </ComboBox>
-                    </StackPanel>
                 </WrapPanel>
+
+                <!-- Row 2: list filter (leftmost) + the auto-refresh option. -->
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <TextBlock VerticalAlignment="Center" Margin="0,0,4,0" Text="{loc:Loc Filter_Label}"/>
+                    <TextBox x:Name="DeviceFilterBox" Width="200" VerticalContentAlignment="Center" Height="24"
+                             ToolTip="{loc:Loc Filter_Tip}" TextChanged="DeviceFilterBox_TextChanged"/>
+                    <CheckBox x:Name="AutoRefreshCheck" VerticalAlignment="Center" Margin="16,0,8,0"
+                              Checked="AutoRefresh_Changed" Unchecked="AutoRefresh_Changed" Content="{loc:Loc Tb_AutoRefresh}"/>
+                    <ComboBox x:Name="IntervalCombo" Width="70" VerticalAlignment="Center"
+                              SelectionChanged="IntervalCombo_SelectionChanged">
+                        <ComboBoxItem Tag="10">10 s</ComboBoxItem>
+                        <ComboBoxItem Tag="30">30 s</ComboBoxItem>
+                        <ComboBoxItem Tag="60">60 s</ComboBoxItem>
+                        <ComboBoxItem Tag="120">2 min</ComboBoxItem>
+                        <ComboBoxItem Tag="300">5 min</ComboBoxItem>
+                    </ComboBox>
+                </StackPanel>
+                </StackPanel>
             </DockPanel>
         </Border>
 
