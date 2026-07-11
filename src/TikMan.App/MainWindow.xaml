@@ -22,13 +22,14 @@
                  rows (buttons 1–4 · 5–7 · scan · options), wide → collapse onto one row. -->
             <DockPanel>
                 <!-- Contact/support buttons top-right. -->
+                <!-- Same ToolButton dimensions as the scan button, just coloured. -->
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top" Margin="10,2,0,0">
-                    <Button Click="ReportProblem_Click" Content="{loc:Loc Tb_ReportProblem}" Background="#F68500" Foreground="White"
-                            BorderThickness="0" Padding="9,4" Cursor="Hand" FontWeight="SemiBold"/>
-                    <Button Click="RequestFeature_Click" Content="{loc:Loc Tb_RequestFeature}" Background="#2266CC" Foreground="White"
-                            BorderThickness="0" Padding="9,4" Margin="6,0,0,0" Cursor="Hand" FontWeight="SemiBold"/>
-                    <Button x:Name="CoffeeButton" Click="BuyCoffee_Click" Content="{loc:Loc Tb_BuyCoffee}" Background="#7B5233" Foreground="White"
-                            BorderThickness="0" Padding="9,4" Margin="6,0,0,0" Cursor="Hand" FontWeight="SemiBold"
+                    <Button Style="{StaticResource ToolButton}" Click="ReportProblem_Click" Content="{loc:Loc Tb_ReportProblem}"
+                            Background="#F68500" Foreground="White" BorderThickness="0" Cursor="Hand" FontWeight="SemiBold"/>
+                    <Button Style="{StaticResource ToolButton}" Click="RequestFeature_Click" Content="{loc:Loc Tb_RequestFeature}"
+                            Background="#2266CC" Foreground="White" BorderThickness="0" Margin="6,0,0,0" Cursor="Hand" FontWeight="SemiBold"/>
+                    <Button x:Name="CoffeeButton" Style="{StaticResource ToolButton}" Click="BuyCoffee_Click" Content="{loc:Loc Tb_BuyCoffee}"
+                            Background="#7B5233" Foreground="White" BorderThickness="0" Margin="6,0,0,0" Cursor="Hand" FontWeight="SemiBold"
                             ToolTip="{loc:Loc Coffee_Title}"/>
                 </StackPanel>
 

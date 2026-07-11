@@ -150,12 +150,12 @@ public partial class MainWindow : Window
             case "small":
                 CoffeeButton.Visibility = Visibility.Visible;
                 CoffeeButton.Content = "☕";
-                CoffeeButton.Padding = new Thickness(6, 4, 6, 4);
+                CoffeeButton.Padding = new Thickness(6, 5, 6, 5);
                 break;
             default:
                 CoffeeButton.Visibility = Visibility.Visible;
                 CoffeeButton.Content = T("Tb_BuyCoffee");
-                CoffeeButton.Padding = new Thickness(9, 4, 9, 4);
+                CoffeeButton.Padding = new Thickness(10, 5, 10, 5); // ToolButton dimensions
                 break;
         }
     }
