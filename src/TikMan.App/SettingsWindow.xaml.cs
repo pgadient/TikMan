@@ -34,6 +34,7 @@ public partial class SettingsWindow : Window
         PersistListCheck.IsChecked = data.PersistDeviceList;
         IgnoreCertCheck.IsChecked = data.DefaultIgnoreCertErrors;
         AllowHttpCheck.IsChecked = data.AllowHttpFallback;
+        ForceMailtoCheck.IsChecked = data.ForceMailFallback;
         DefaultUserBox.Text = data.DefaultUsername;
         _ready = true;
     }
@@ -97,6 +98,7 @@ public partial class SettingsWindow : Window
         _data.PersistDeviceList = PersistListCheck.IsChecked == true;
         _data.DefaultIgnoreCertErrors = IgnoreCertCheck.IsChecked == true;
         _data.AllowHttpFallback = AllowHttpCheck.IsChecked == true;
+        _data.ForceMailFallback = ForceMailtoCheck.IsChecked == true;
 
         _data.DefaultUsername = DefaultUserBox.Text.Trim();
         if (DefaultPasswordBox.Password.Length > 0)

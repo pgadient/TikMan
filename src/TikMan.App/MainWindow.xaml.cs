@@ -620,6 +620,30 @@ public partial class MainWindow : Window
 
     private void SetStatus(string text) => StatusText.Text = text;
 
+    /// <summary>Builds a diagnostic report and opens a pre-filled problem e-mail to the support
+    /// address – Outlook Classic with the log attached, else the default mail app with it inline.</summary>
+    private void ReportProblem_Click(object sender, RoutedEventArgs e)
+    {
+        var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        var version = v is null ? "" : $"{v.Major}.{v.Minor}.{v.Build}";
+        var (file, text) = ProblemReporter.BuildReport(version);
+        var subject = T("Rep_Subject", version);
+
+        // Prefer Outlook Classic (file attachment) unless the user forces the mailto fallback.
+        if (!_appData.ForceMailFallback && ProblemReporter.TryOutlookClassic(subject, T("Rep_Body"), file))
+        {
+            SetStatus(T("Rep_Opened"));
+            return;
+        }
+
+        // Fallback: default mail via mailto – no attachment, so put the (capped) log inline.
+        var inline = text.Length > 1200 ? text[..1200] + $"\n…\n({T("Rep_FullLog")}: {file})" : text;
+        if (ProblemReporter.TryMailto(subject, T("Rep_Body") + "\n\n" + inline))
+            SetStatus(file.Length > 0 ? T("Rep_OpenedFallback", file) : T("Rep_Opened"));
+        else
+            SetStatus(T("Rep_Failed", file));
+    }
+
     /// <summary>Opens an SMB share (\\host\share) in Windows Explorer.</summary>
     private void Share_Click(object sender, RoutedEventArgs e)
     {

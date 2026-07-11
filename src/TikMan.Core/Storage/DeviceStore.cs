@@ -29,6 +29,9 @@ public class AppData
     /// <summary>Allow logging in over plain HTTP when HTTPS fails (credentials then travel in clear
     /// text). Off by default; when on, TLS-failed devices are retried over HTTP on the next refresh.</summary>
     public bool AllowHttpFallback { get; set; }
+    /// <summary>Force the problem report to use the default-mail (mailto) path with the log inline,
+    /// instead of preferring Outlook Classic with a file attachment. Off by default.</summary>
+    public bool ForceMailFallback { get; set; }
     /// <summary>When false (default), the device list is not written to disk – devices only live
     /// for the current session. When true, the list and its config are persisted.</summary>
     public bool PersistDeviceList { get; set; }

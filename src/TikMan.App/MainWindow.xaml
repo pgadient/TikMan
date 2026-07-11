@@ -32,6 +32,8 @@
                         <Button Style="{StaticResource ToolButton}" Click="BackupAll_Click" Content="{loc:Loc Tb_BackupAll}"/>
                         <Button Style="{StaticResource ToolButton}" FontWeight="SemiBold" Click="InstallUpdates_Click" Content="{loc:Loc Tb_InstallUpdates}"/>
                         <Button Style="{StaticResource ToolButton}" Click="Settings_Click" Content="{loc:Loc Tb_Settings}"/>
+                        <Button Click="ReportProblem_Click" Content="{loc:Loc Tb_ReportProblem}" Background="#F68500" Foreground="White"
+                                BorderThickness="0" Padding="9,4" Margin="8,0,0,0" Cursor="Hand" FontWeight="SemiBold"/>
                     </StackPanel>
 
                     <!-- Group C: network discovery -->
