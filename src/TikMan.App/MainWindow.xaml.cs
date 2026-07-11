@@ -638,7 +638,9 @@ public partial class MainWindow : Window
 
     private void InstallUpdates_Click(object sender, RoutedEventArgs e)
     {
+        // Nothing marked → offer the update list for every device.
         var targets = _devices.Where(d => d.IsSelected).ToList();
+        if (targets.Count == 0) targets = _devices.ToList();
         if (targets.Count == 0)
         {
             SetStatus(T("Msg_NoDevicesMarked"));

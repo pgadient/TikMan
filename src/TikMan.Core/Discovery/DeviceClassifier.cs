@@ -40,6 +40,8 @@ public static class DeviceClassifier
         ("reolink", DeviceKind.Camera), ("mobotix", DeviceKind.Camera),
         ("espressif", DeviceKind.IoT), ("tuya", DeviceKind.IoT), ("sonoff", DeviceKind.IoT),
         ("shelly", DeviceKind.IoT), ("sonos", DeviceKind.IoT), ("nest", DeviceKind.IoT),
+        ("gardena", DeviceKind.IoT), ("mystrom", DeviceKind.IoT), ("netatmo", DeviceKind.IoT),
+        ("tasmota", DeviceKind.IoT),
         ("amazon tech", DeviceKind.IoT), ("google", DeviceKind.IoT), ("signify", DeviceKind.IoT),
         ("philips lighting", DeviceKind.IoT), ("tp-link", DeviceKind.Switch),
         ("cisco", DeviceKind.Switch), ("juniper", DeviceKind.Switch), ("netgear", DeviceKind.Switch),

@@ -310,8 +310,28 @@ public partial class MainWindow
             catch { /* best effort */ }
         }
 
+        // Swisscom Internet-Boxes name their exact model over the SoftAtHome API / login page.
+        if ((ports.Contains(80) || ports.Contains(443)) && LooksLikeInternetBox(vm))
+        {
+            try
+            {
+                var host = vm.Ipv4Address.Length > 0 ? vm.Ipv4Address : vm.Host;
+                if (await SwisscomProbe.QueryAsync(host) is { } box)
+                {
+                    vm.ApplySwisscomInfo(box);
+                    changed = false; // ApplySwisscomInfo already raised the details
+                }
+            }
+            catch { /* best effort */ }
+        }
+
         if (changed) vm.RaiseDetailsChanged();
     }
+
+    private static bool LooksLikeInternetBox(DeviceViewModel vm) =>
+        vm.IdentifiedVendor.Equals("Swisscom", StringComparison.OrdinalIgnoreCase) ||
+        (vm.Model.ExtraInfo.TryGetValue("Web-Titel", out var t) &&
+         t.Replace("-", "").Replace(" ", "").Contains("internetbox", StringComparison.OrdinalIgnoreCase));
 
     private static bool LooksLikeBrother(DeviceViewModel vm) =>
         vm.MacVendor.Contains("brother", StringComparison.OrdinalIgnoreCase) ||

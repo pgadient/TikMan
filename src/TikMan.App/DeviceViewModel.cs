@@ -72,6 +72,15 @@ public class DeviceViewModel : INotifyPropertyChanged
         RaiseDetailsChanged();
     }
 
+    /// <summary>Applies what the Swisscom Internet-Box reported (exact model, serial, firmware).</summary>
+    public void ApplySwisscomInfo(SwisscomProbe.BoxInfo box)
+    {
+        if (box.ModelName.Length > 0) Model.ExtraInfo["Modell"] = box.ModelName; // feeds ModelDisplay
+        if (box.Serial.Length > 0) Model.SerialNumber = box.Serial;
+        if (box.Firmware.Length > 0 && Version.Length == 0) Version = box.Firmware;
+        RaiseDetailsChanged();
+    }
+
     public ObservableCollection<ResourceSnapshot> History { get; } = new();
     public ObservableCollection<LogEntry> Logs { get; } = new();
 
@@ -389,7 +398,9 @@ public class DeviceViewModel : INotifyPropertyChanged
                 };
                 if (t.Length > 0) return t;
             }
-            return DeviceKindText(DeviceClassifier.Guess(MacVendor, Model.OpenPorts));
+            // The identified vendor (web-scraped) counts too – a Gardena hub is IoT even when its
+            // MAC belongs to a generic radio-module maker.
+            return DeviceKindText(DeviceClassifier.Guess($"{MacVendor} {IdentifiedVendor}", Model.OpenPorts));
         }
     }
 
