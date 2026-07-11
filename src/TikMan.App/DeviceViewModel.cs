@@ -312,10 +312,12 @@ public class DeviceViewModel : INotifyPropertyChanged
     public string Board { get => _board; private set { _board = value; Notify(); Notify(nameof(DeviceType)); Notify(nameof(IdentifiedVendor)); Notify(nameof(ModelDisplay)); } }
 
     /// <summary>Model shown in the "Model" column for any device: the RouterOS board / TP-Link model
-    /// when known, otherwise the model learned via WMI (empty if neither).</summary>
+    /// when known, otherwise the model learned via WMI, otherwise the model scraped from the web UI
+    /// title (empty if none).</summary>
     public string ModelDisplay =>
         Board.Length > 0 ? Board
-        : Model.ExtraInfo.TryGetValue("Modell", out var wmi) ? wmi
+        : Model.ExtraInfo.TryGetValue("Modell", out var wmi) && wmi.Length > 0 ? wmi
+        : Model.ExtraInfo.TryGetValue("Web-Titel", out var web) ? web
         : "";
 
     private string _uptime = "";
