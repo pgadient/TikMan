@@ -128,11 +128,6 @@ public class DeviceViewModel : INotifyPropertyChanged
 
     public string Host => Model.Host;
 
-    /// <summary>How the address columns behave: both families side by side (combined), or only one
-    /// family (the IPv4 / IPv6 tab). Shared across all rows; set from the main view.</summary>
-    public enum AddressView { Combined, Ipv4, Ipv6 }
-    public static AddressView Mode { get; set; } = AddressView.Ipv4;
-
     /// <summary>Every address of this physical device: the primary host plus all MAC-matched extras
     /// (a host commonly has several IPv6 addresses — global, ULA, link-local, privacy).</summary>
     private IEnumerable<string> AllAddresses()

@@ -49,10 +49,6 @@
 
                     <!-- Group D: options -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,0,2">
-                        <CheckBox x:Name="CombineCheck" VerticalAlignment="Center" Margin="0,0,10,0"
-                                  ToolTip="{loc:Loc View_Tip}" Checked="Combine_Changed" Unchecked="Combine_Changed"
-                                  Content="{loc:Loc View_Combine}"/>
-                        <Separator Margin="6,2" Width="1" Background="#CCCCCC"/>
                         <CheckBox x:Name="AutoRefreshCheck" VerticalAlignment="Center" Margin="0,0,8,0"
                                   Checked="AutoRefresh_Changed" Unchecked="AutoRefresh_Changed" Content="{loc:Loc Tb_AutoRefresh}"/>
                         <ComboBox x:Name="IntervalCombo" Width="70" VerticalAlignment="Center"
@@ -101,13 +97,7 @@
                 <RowDefinition Height="300" MinHeight="120"/>
             </Grid.RowDefinitions>
 
-            <DockPanel Grid.Row="0">
-                <StackPanel x:Name="FamilyTabs" DockPanel.Dock="Top" Orientation="Horizontal" Margin="2,0,0,4" Visibility="Collapsed">
-                    <RadioButton x:Name="Ipv4Tab" GroupName="Family" Content="IPv4" IsChecked="True" Margin="0,0,16,0"
-                                 FontWeight="SemiBold" Checked="FamilyTab_Changed"/>
-                    <RadioButton x:Name="Ipv6Tab" GroupName="Family" Content="IPv6" FontWeight="SemiBold" Checked="FamilyTab_Changed"/>
-                </StackPanel>
-                <DataGrid x:Name="DeviceGrid"
+            <DataGrid x:Name="DeviceGrid" Grid.Row="0"
                       SelectionChanged="DeviceGrid_SelectionChanged"
                       MouseDoubleClick="DeviceGrid_MouseDoubleClick">
                 <DataGrid.RowStyle>
@@ -256,8 +246,7 @@
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
                 </DataGrid.Columns>
-                </DataGrid>
-            </DockPanel>
+            </DataGrid>
 
             <GridSplitter Grid.Row="1" Height="6" HorizontalAlignment="Stretch" Background="Transparent"/>
 
