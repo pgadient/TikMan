@@ -109,10 +109,8 @@
                       SelectionChanged="DeviceGrid_SelectionChanged"
                       MouseDoubleClick="DeviceGrid_MouseDoubleClick">
                 <DataGrid.Resources>
-                    <!-- Vertically centre every cell's content (rows can be tall: multiline IPv6, badges). -->
-                    <Style TargetType="DataGridCell">
-                        <Setter Property="VerticalContentAlignment" Value="Center"/>
-                    </Style>
+                    <!-- Centre cell text via ElementStyle (a bare DataGridCell style can disturb row-height
+                         measurement, so it's avoided here). -->
                     <Style x:Key="VCenter" TargetType="TextBlock">
                         <Setter Property="VerticalAlignment" Value="Center"/>
                     </Style>
@@ -160,7 +158,13 @@
                     <DataGridTemplateColumn x:Name="Ipv6Column" Header="IPv6" Width="240" SortMemberPath="Ipv6Display">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding Ipv6Display}" VerticalAlignment="Center" Padding="4,2"/>
+                                <ItemsControl ItemsSource="{Binding Ipv6List}" VerticalAlignment="Center" Margin="4,2">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
