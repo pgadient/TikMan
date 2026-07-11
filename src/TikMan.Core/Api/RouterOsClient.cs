@@ -53,6 +53,13 @@ public sealed class RouterOsClient : IDisposable
         };
     }
 
+    /// <summary>Reads the RouterBOARD serial number ("" on CHR/x86 installs without a board).</summary>
+    public async Task<string> GetSerialNumberAsync(CancellationToken ct = default)
+    {
+        using var doc = await GetAsync("system/routerboard", TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+        return S(doc.RootElement, "serial-number");
+    }
+
     public async Task<string> GetIdentityAsync(CancellationToken ct = default)
     {
         using var doc = await GetAsync("system/identity", TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);

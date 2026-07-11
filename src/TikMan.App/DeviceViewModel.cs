@@ -43,8 +43,33 @@ public class DeviceViewModel : INotifyPropertyChanged
         ExtraInfo.Clear();
         foreach (var kv in Model.ExtraInfo) ExtraInfo.Add(new InfoRow(kv.Key, kv.Value));
         Notify(nameof(HasExtraInfo));
-        Notify(nameof(IdentifiedVendor)); // the web-scraped manufacturer may have just arrived
+        Notify(nameof(IdentifiedVendor)); // the web-scraped/WMI manufacturer may have just arrived
         Notify(nameof(ModelDisplay));     // …and WMI may have supplied a model
+        Notify(nameof(DeviceType));       // …or a form factor (laptop/notebook/tablet)
+        Notify(nameof(SerialNumber));
+        Notify(nameof(FirmwareDetails));
+        Notify(nameof(HasRowDetails));
+    }
+
+    /// <summary>Hardware serial number (RouterBOARD, Brother maintenance page, …).</summary>
+    public string SerialNumber => Model.SerialNumber;
+
+    /// <summary>Sub-firmware versions (e.g. Brother Sub1/Sub2/Sub4) for the expanded row.</summary>
+    public IReadOnlyList<string> FirmwareDetails =>
+        Model.ExtraInfo
+            .Where(kv => kv.Key.StartsWith("Sub", StringComparison.OrdinalIgnoreCase) &&
+                         kv.Key.Contains("Firmware", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(kv => $"{kv.Key}: {kv.Value}")
+            .ToList();
+
+    /// <summary>Applies what the Brother maintenance page reported (serial, main/sub firmware).</summary>
+    public void ApplyBrotherInfo(BrotherProbe.BrotherInfo info)
+    {
+        if (info.Serial.Length > 0) Model.SerialNumber = info.Serial;
+        if (info.MainFirmware.Length > 0 && Version.Length == 0) Version = info.MainFirmware;
+        foreach (var kv in info.SubFirmware) Model.ExtraInfo[kv.Key] = kv.Value;
+        RaiseDetailsChanged();
     }
 
     public ObservableCollection<ResourceSnapshot> History { get; } = new();
@@ -73,8 +98,9 @@ public class DeviceViewModel : INotifyPropertyChanged
         var smbHost = Ipv4Address.Length > 0 ? Ipv4Address : Host;
         try
         {
+            // Busy file servers can take a while to answer NetShareEnum – give them room.
             var listTask = SmbShares.ListAsync(smbHost);
-            if (await Task.WhenAny(listTask, Task.Delay(TimeSpan.FromSeconds(8))) != listTask)
+            if (await Task.WhenAny(listTask, Task.Delay(TimeSpan.FromSeconds(25))) != listTask)
             {
                 _sharesLoaded = false;
                 SharesStatus = T("Sc_SmbTimeout");
@@ -164,8 +190,8 @@ public class DeviceViewModel : INotifyPropertyChanged
     };
 
     /// <summary>True when the expander (+) has something to show: IPv6 addresses beyond the one in
-    /// the column, or SMB shares.</summary>
-    public bool HasRowDetails => Ipv6List.Count > 1 || HasSmb;
+    /// the column, SMB shares, or sub-firmware details.</summary>
+    public bool HasRowDetails => Ipv6List.Count > 1 || HasSmb || FirmwareDetails.Count > 0;
 
     /// <summary>The IPv6 addresses the collapsed row does NOT show (all but the first); the
     /// expander lists these, so a device with a single IPv6 never repeats it.</summary>
@@ -272,30 +298,32 @@ public class DeviceViewModel : INotifyPropertyChanged
 
     /// <summary>Protocols this device speaks, for the "Supported protocols" column. Web entries
     /// (http/https) carry a URL and open in the browser on double-click.</summary>
-    public IReadOnlyList<ProtocolVm> SupportedProtocols
+    // The IPv4 view links over IPv4; the IPv6 view builds its own list per address row.
+    public IReadOnlyList<ProtocolVm> SupportedProtocols =>
+        ProtocolsFor(Ipv4Address.Length > 0 ? Ipv4Address : Model.Host);
+
+    /// <summary>Protocol badges whose web links point at the given address/host.</summary>
+    public IReadOnlyList<ProtocolVm> ProtocolsFor(string host)
     {
-        get
+        var hostPart = host.Contains(':') && !host.StartsWith('[') ? $"[{host}]" : host;
+        var list = new List<ProtocolVm>();
+        if (Model.OpenPorts.Count > 0)
         {
-            var hostPart = Model.Host.Contains(':') && !Model.Host.StartsWith('[') ? $"[{Model.Host}]" : Model.Host;
-            var list = new List<ProtocolVm>();
-            if (Model.OpenPorts.Count > 0)
+            // Discovered device: a colour-coded badge for each recognised open service.
+            foreach (var port in Model.OpenPorts.Distinct().OrderBy(p => p))
             {
-                // Discovered device: a colour-coded badge for each recognised open service.
-                foreach (var port in Model.OpenPorts.Distinct().OrderBy(p => p))
-                {
-                    var svc = SubnetScanner.ServiceName(port);
-                    list.Add(new ProtocolVm(svc, WebUrl(port, hostPart), ProtocolVm.BrushFor(svc)));
-                }
+                var svc = SubnetScanner.ServiceName(port);
+                list.Add(new ProtocolVm(svc, WebUrl(port, hostPart), ProtocolVm.BrushFor(svc)));
             }
-            else
-            {
-                // Manually added device: offer the web schemes + ssh (double-click a web badge opens it).
-                list.Add(new ProtocolVm("http", $"http://{hostPart}/", ProtocolVm.BrushFor("http")));
-                list.Add(new ProtocolVm("https", $"https://{hostPart}/", ProtocolVm.BrushFor("https")));
-                list.Add(new ProtocolVm("ssh", "", ProtocolVm.BrushFor("ssh")));
-            }
-            return list;
         }
+        else
+        {
+            // Manually added device: offer the web schemes + ssh (double-click a web badge opens it).
+            list.Add(new ProtocolVm("http", $"http://{hostPart}/", ProtocolVm.BrushFor("http")));
+            list.Add(new ProtocolVm("https", $"https://{hostPart}/", ProtocolVm.BrushFor("https")));
+            list.Add(new ProtocolVm("ssh", "", ProtocolVm.BrushFor("ssh")));
+        }
+        return list;
     }
 
     private static string WebUrl(int port, string host) => port switch
@@ -319,17 +347,51 @@ public class DeviceViewModel : INotifyPropertyChanged
             var mac = MacVendor.ToLowerInvariant();
             if (Board.Length > 0 || mac.Contains("mikrotik") || mac.Contains("routerboard")) return "MikroTik";
             if (Model.Vendor == DeviceVendor.TpLink) return "TP-Link";
-            return Model.ExtraInfo.TryGetValue("Hersteller (Web)", out var web) ? web : "";
+            if (Model.ExtraInfo.TryGetValue("Hersteller (Web)", out var web) && web.Length > 0) return web;
+            if (Model.ExtraInfo.TryGetValue("Hersteller", out var wmi) && NormalizeVendor(wmi) is { Length: > 0 } v)
+                return v; // WMI manufacturer (e.g. "LENOVO" → "Lenovo")
+            if (mac.Contains("philips light")) return "Signify"; // Philips Lighting BV is Signify today
+            return "";
         }
     }
 
+    /// <summary>Cleans a WMI manufacturer string: drops BIOS placeholders, fixes ALL-CAPS names.</summary>
+    private static string NormalizeVendor(string raw)
+    {
+        var v = raw.Trim();
+        if (v.Length == 0 ||
+            v.Contains("to be filled", StringComparison.OrdinalIgnoreCase) ||
+            v.Equals("System manufacturer", StringComparison.OrdinalIgnoreCase)) return "";
+        if (v.Length > 3 && v == v.ToUpperInvariant())
+            v = System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(v.ToLowerInvariant());
+        return v;
+    }
+
     /// <summary>Rough device kind for the "Type" column. TP-Link devices are switches; a device
-    /// that answered the RouterOS API (has a board name) is a MikroTik router; otherwise guessed.</summary>
-    public string DeviceType => Model.Vendor == DeviceVendor.TpLink
-        ? T("Dev_Switch")
-        : Board.Length > 0
-            ? T("Dev_Router")
-            : DeviceKindText(DeviceClassifier.Guess(MacVendor, Model.OpenPorts));
+    /// that answered the RouterOS API (has a board name) is a MikroTik router; a WMI form factor
+    /// (laptop/notebook/tablet …) beats the vendor guess; otherwise guessed.</summary>
+    public string DeviceType
+    {
+        get
+        {
+            if (Model.Vendor == DeviceVendor.TpLink) return T("Dev_Switch");
+            if (Board.Length > 0) return T("Dev_Router");
+            if (Model.ExtraInfo.TryGetValue("Bauform", out var ff))
+            {
+                var t = ff switch
+                {
+                    "Laptop" => T("Dev_Laptop"),
+                    "Notebook" => T("Dev_Notebook"),
+                    "Tablet" => T("Dev_Tablet"),
+                    "Desktop" or "Workstation" => T("Dev_Pc"),
+                    "Server" or "Server (SOHO)" or "Performance-Server" => T("Dev_Server"),
+                    _ => "",
+                };
+                if (t.Length > 0) return t;
+            }
+            return DeviceKindText(DeviceClassifier.Guess(MacVendor, Model.OpenPorts));
+        }
+    }
 
     /// <summary>True for TP-Link switches (SSH connector, firmware page instead of channels).</summary>
     public bool IsTpLink => Model.Vendor == DeviceVendor.TpLink;
@@ -352,6 +414,10 @@ public class DeviceViewModel : INotifyPropertyChanged
         DeviceKind.Camera => T("Dev_Camera"),
         DeviceKind.IoT => T("Dev_IoT"),
         DeviceKind.Server => T("Dev_Server"),
+        DeviceKind.Ups => T("Dev_Ups"),
+        DeviceKind.Laptop => T("Dev_Laptop"),
+        DeviceKind.Notebook => T("Dev_Notebook"),
+        DeviceKind.Tablet => T("Dev_Tablet"),
         _ => "",
     };
 
@@ -514,6 +580,15 @@ public class DeviceViewModel : INotifyPropertyChanged
             var r = await Client.GetSystemResourceAsync(ct);
             Version = r.Version;
             Board = r.BoardName;
+            if (Model.SerialNumber.Length == 0)
+            {
+                try
+                {
+                    Model.SerialNumber = await Client.GetSerialNumberAsync(ct);
+                    Notify(nameof(SerialNumber));
+                }
+                catch { /* CHR/x86 has no routerboard endpoint */ }
+            }
             Uptime = r.Uptime;
             CpuLoad = r.CpuLoad;
             MemoryText = r.TotalMemory > 0

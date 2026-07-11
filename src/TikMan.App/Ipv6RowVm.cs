@@ -50,6 +50,12 @@ public class Ipv6RowVm : INotifyPropertyChanged
     /// <summary>Nothing extra to list in the details (see HasRowDetails).</summary>
     public IReadOnlyList<string> Ipv6Rest => Array.Empty<string>();
 
+    /// <summary>The v6 expander only carries SMB shares, no firmware lines.</summary>
+    public IReadOnlyList<string> FirmwareDetails => Array.Empty<string>();
+
+    /// <summary>Web links open over this row's IPv6 address (the v4 view links over IPv4).</summary>
+    public object SupportedProtocols => Device.ProtocolsFor(Ipv6Summary);
+
     /// <summary>Sorting the IPv6 column sorts by the row's own address.</summary>
     public string Ipv6Display => Ipv6Summary;
 
@@ -62,8 +68,8 @@ public class Ipv6RowVm : INotifyPropertyChanged
     public object Name => Device.Name;
     public object Ipv4Address => Device.Ipv4Address;
     public object Ipv4SortKey => Device.Ipv4SortKey;
-    public object SupportedProtocols => Device.SupportedProtocols;
     public object TransportDisplay => Device.TransportDisplay;
+    public object SerialNumber => Device.SerialNumber;
     public object MacVendor => Device.MacVendor;
     public object IdentifiedVendor => Device.IdentifiedVendor;
     public object ModelDisplay => Device.ModelDisplay;

@@ -179,6 +179,25 @@
                             <StackPanel Margin="0,4,0,0">
                                 <StackPanel.Style>
                                     <Style TargetType="StackPanel">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding FirmwareDetails.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <TextBlock Text="{loc:Loc Det_Firmware}" FontWeight="SemiBold" Foreground="#555555"/>
+                                <ItemsControl ItemsSource="{Binding FirmwareDetails}" Margin="0,2,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                            <StackPanel Margin="0,4,0,0">
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
                                         <Setter Property="Visibility" Value="Collapsed"/>
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding HasSmb}" Value="True">
@@ -318,6 +337,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding IdentifiedVendor}" Width="100" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Board}" Binding="{Binding ModelDisplay}" Width="130" ElementStyle="{StaticResource VCenter}"/>
+                    <DataGridTextColumn Header="{loc:Loc Col_Serial}" Binding="{Binding SerialNumber}" Width="140" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Version}" Width="110">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">

@@ -15,6 +15,10 @@ public enum DeviceKind
     Camera,
     IoT,
     Server,
+    Ups,
+    Laptop,
+    Notebook,
+    Tablet,
 }
 
 /// <summary>Best-effort classification of a device into a <see cref="DeviceKind"/>.</summary>
@@ -24,6 +28,9 @@ public static class DeviceClassifier
     private static readonly (string Fragment, DeviceKind Kind)[] VendorHints =
     {
         ("mikrotik", DeviceKind.Router), ("routerboard", DeviceKind.Router),
+        // APC / Schneider gear on the network is almost always a UPS management card.
+        ("american power", DeviceKind.Ups), ("apc ", DeviceKind.Ups), ("schneider electric", DeviceKind.Ups),
+        ("eaton", DeviceKind.Ups), ("cyberpower", DeviceKind.Ups),
         ("synology", DeviceKind.Nas), ("qnap", DeviceKind.Nas), ("western digital", DeviceKind.Nas),
         ("buffalo", DeviceKind.Nas), ("terra master", DeviceKind.Nas),
         ("hewlett", DeviceKind.Printer), ("hp inc", DeviceKind.Printer), ("canon", DeviceKind.Printer),

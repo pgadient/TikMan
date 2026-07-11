@@ -295,8 +295,29 @@ public partial class MainWindow
             catch { /* best effort */ }
         }
 
+        // Brother printers expose serial + main/sub firmware on an unauthenticated EWS page.
+        if ((ports.Contains(80) || ports.Contains(443)) && LooksLikeBrother(vm))
+        {
+            try
+            {
+                var host = vm.Ipv4Address.Length > 0 ? vm.Ipv4Address : vm.Host;
+                if (await BrotherProbe.QueryAsync(host) is { } brother)
+                {
+                    vm.ApplyBrotherInfo(brother);
+                    changed = false; // ApplyBrotherInfo already raised the details
+                }
+            }
+            catch { /* best effort */ }
+        }
+
         if (changed) vm.RaiseDetailsChanged();
     }
+
+    private static bool LooksLikeBrother(DeviceViewModel vm) =>
+        vm.MacVendor.Contains("brother", StringComparison.OrdinalIgnoreCase) ||
+        vm.IdentifiedVendor.Equals("Brother", StringComparison.OrdinalIgnoreCase) ||
+        (vm.Model.ExtraInfo.TryGetValue("Web-Titel", out var t) &&
+         t.Contains("brother", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Fills in facts a later discovery source learned about a device already in the list.</summary>
     private static void EnrichExisting(DeviceViewModel vm, DiscoveredDevice d)

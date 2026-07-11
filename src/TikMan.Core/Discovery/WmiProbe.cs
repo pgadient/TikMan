@@ -33,6 +33,11 @@ public static class WmiProbe
                 }
                 foreach (ManagementBaseObject o in Query(scope, "SELECT Caption FROM Win32_OperatingSystem"))
                     Put(info, "OS", o["Caption"]);
+
+                // The chassis type tells laptop/notebook/tablet apart (finer than PCSystemType).
+                foreach (ManagementBaseObject o in Query(scope, "SELECT ChassisTypes FROM Win32_SystemEnclosure"))
+                    if (o["ChassisTypes"] is ushort[] { Length: > 0 } types && Chassis(types[0]) is { Length: > 0 } c)
+                        info["Bauform"] = c;
             }, ct).WaitAsync(TimeSpan.FromSeconds(12), ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is ManagementException or UnauthorizedAccessException
@@ -61,7 +66,18 @@ public static class WmiProbe
         5 => "Server (SOHO)",
         6 => "Appliance-PC",
         7 => "Performance-Server",
-        8 => "Tablet/Maximum",
+        8 => "Tablet",
         _ => $"Typ {pcSystemType}",
+    };
+
+    /// <summary>SMBIOS chassis type → form factor ("" when it adds nothing).</summary>
+    private static string Chassis(int type) => type switch
+    {
+        8 or 9 => "Laptop",              // Portable / Laptop
+        10 or 14 => "Notebook",          // Notebook / Sub Notebook
+        30 or 31 or 32 => "Tablet",      // Tablet / Convertible / Detachable
+        3 or 4 or 5 or 6 or 7 or 13 or 15 or 16 or 35 or 36 => "Desktop",
+        17 or 23 or 28 or 29 => "Server",
+        _ => "",
     };
 }
