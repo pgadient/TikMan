@@ -769,14 +769,12 @@ public partial class MainWindow : Window
         {
             BuildV6Rows();
             DeviceGrid.ItemsSource = _v6Rows;
-            Ipv6Column.Visibility = Visibility.Visible;
             Ipv6Column.DisplayIndex = _addressColumnIndex; // IPv6 before IPv4
         }
         else
         {
             DeviceGrid.ItemsSource = _devices;
-            Ipv6Column.Visibility = Visibility.Collapsed;
-            Ipv4Column.DisplayIndex = _addressColumnIndex; // IPv4 first again
+            Ipv4Column.DisplayIndex = _addressColumnIndex; // IPv4 before IPv6 again
             var view = CollectionViewSource.GetDefaultView(_devices);
             view.SortDescriptions.Clear();
             view.SortDescriptions.Add(new SortDescription(nameof(DeviceViewModel.Ipv4SortKey), ListSortDirection.Ascending));

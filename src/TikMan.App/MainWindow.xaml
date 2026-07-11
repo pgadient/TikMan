@@ -144,13 +144,25 @@
                 <DataGrid.RowDetailsTemplate>
                     <DataTemplate>
                         <StackPanel Margin="60,4,8,8" Background="Transparent">
-                            <ItemsControl ItemsSource="{Binding Ipv6Rest}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12"/>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                            <StackPanel>
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Ipv6Rest.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <TextBlock Text="{loc:Loc Det_MoreIpv6}" FontWeight="SemiBold" Foreground="#555555"/>
+                                <ItemsControl ItemsSource="{Binding Ipv6Rest}" Margin="0,2,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
                             <StackPanel Margin="0,4,0,0">
                                 <StackPanel.Style>
                                     <Style TargetType="StackPanel">
@@ -233,8 +245,7 @@
                     <DataGridTextColumn Header="{loc:Loc Col_Name}" Binding="{Binding Name}" Width="170" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTextColumn x:Name="Ipv4Column" Header="IPv4" Binding="{Binding Ipv4Address}" Width="130" SortMemberPath="Ipv4SortKey" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTextColumn x:Name="Ipv6Column" Header="IPv6" Binding="{Binding Ipv6Summary}" Width="240"
-                                        SortMemberPath="Ipv6Display" ElementStyle="{StaticResource VCenter}"
-                                        Visibility="Collapsed"/>
+                                        SortMemberPath="Ipv6Display" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTemplateColumn Header="{loc:Loc Col_Protocol}" Width="280" SortMemberPath="TransportDisplay">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
