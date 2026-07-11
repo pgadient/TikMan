@@ -19,7 +19,21 @@
                 </StackPanel>
 
                 <WrapPanel Orientation="Horizontal">
-                    <!-- Group A: buttons 1–4 -->
+                    <!-- Group A: network discovery – the most important part, so it comes first. -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,14,2">
+                        <Button x:Name="ScanButton" Style="{StaticResource ToolButton}" FontWeight="SemiBold"
+                                Click="ScanNow_Click" Content="{loc:Loc Tb_Scan}"/>
+                        <TextBlock VerticalAlignment="Center" Margin="10,0,4,0" Text="{loc:Loc Sc_Subnet}"/>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBox x:Name="SubnetBox" Width="210" Height="24" VerticalContentAlignment="Center"
+                                     ToolTip="{loc:Loc Sc_TargetsTip}"/>
+                            <TextBlock x:Name="SubnetSourceText" Foreground="#999999" FontSize="10" Margin="3,1,0,0" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                        <Button x:Name="CycleAdapterButton" Style="{StaticResource ToolButton}" Click="CycleAdapter_Click"
+                                Content="⟳" ToolTip="{loc:Loc Tb_CycleAdapterTip}" Margin="4,0,0,0"/>
+                    </StackPanel>
+
+                    <!-- Group B: device actions -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,14,2">
                         <Button Style="{StaticResource ToolButton}" Click="AddDevice_Click" Content="{loc:Loc Tb_Add}"/>
                         <Button Style="{StaticResource ToolButton}" Click="EditDevice_Click" Content="{loc:Loc Tb_Edit}"/>
@@ -28,7 +42,7 @@
                         <Button Style="{StaticResource ToolButton}" Click="RefreshAll_Click" Content="{loc:Loc Tb_RefreshAll}"/>
                     </StackPanel>
 
-                    <!-- Group B: buttons 5–7 -->
+                    <!-- Group C: backup/update/settings + contact buttons -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,14,2">
                         <Button Style="{StaticResource ToolButton}" Click="BackupAll_Click" Content="{loc:Loc Tb_BackupAll}"/>
                         <Button Style="{StaticResource ToolButton}" FontWeight="SemiBold" Click="InstallUpdates_Click" Content="{loc:Loc Tb_InstallUpdates}"/>
@@ -40,19 +54,6 @@
                         <Button x:Name="CoffeeButton" Click="BuyCoffee_Click" Content="{loc:Loc Tb_BuyCoffee}" Background="#7B5233" Foreground="White"
                                 BorderThickness="0" Padding="9,4" Margin="6,0,0,0" Cursor="Hand" FontWeight="SemiBold"
                                 ToolTip="{loc:Loc Coffee_Title}"/>
-                    </StackPanel>
-
-                    <!-- Group C: network discovery -->
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,14,2">
-                        <Button x:Name="ScanButton" Style="{StaticResource ToolButton}" Click="ScanNow_Click" Content="{loc:Loc Tb_Scan}"/>
-                        <TextBlock VerticalAlignment="Center" Margin="10,0,4,0" Text="{loc:Loc Sc_Subnet}"/>
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBox x:Name="SubnetBox" Width="210" Height="24" VerticalContentAlignment="Center"
-                                     ToolTip="{loc:Loc Sc_TargetsTip}"/>
-                            <TextBlock x:Name="SubnetSourceText" Foreground="#999999" FontSize="10" Margin="3,1,0,0" TextTrimming="CharacterEllipsis"/>
-                        </StackPanel>
-                        <Button x:Name="CycleAdapterButton" Style="{StaticResource ToolButton}" Click="CycleAdapter_Click"
-                                Content="⟳" ToolTip="{loc:Loc Tb_CycleAdapterTip}" Margin="4,0,0,0"/>
                     </StackPanel>
 
                     <!-- Group D: options -->

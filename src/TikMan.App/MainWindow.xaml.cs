@@ -585,7 +585,9 @@ public partial class MainWindow : Window
 
     private async void BackupAll_Click(object sender, RoutedEventArgs e)
     {
+        // Nothing marked → back up every device.
         var targets = _devices.Where(d => d.IsSelected).ToList();
+        if (targets.Count == 0) targets = _devices.ToList();
         if (targets.Count == 0)
         {
             SetStatus(T("Msg_NoDevicesMarked"));
