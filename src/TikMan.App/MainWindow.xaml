@@ -11,7 +11,7 @@
             <!-- Filter stays top-right; the four groups wrap as whole units: narrow → up to four
                  rows (buttons 1–4 · 5–7 · scan · options), wide → collapse onto one row. -->
             <DockPanel>
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top" Margin="10,2,0,0">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
                     <TextBlock VerticalAlignment="Center" Margin="0,0,3,0" Text="🔎"/>
                     <TextBox x:Name="DeviceFilterBox" Width="200" VerticalContentAlignment="Center" Height="24"
                              ToolTip="{loc:Loc Filter_Tip}" TextChanged="DeviceFilterBox_TextChanged"/>

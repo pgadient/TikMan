@@ -202,7 +202,8 @@ public partial class MainWindow
             {
                 var fp = await HttpFingerprint.ProbeAsync(vm.Host);
                 if (fp.WebServer.Length > 0) { info["Webserver"] = fp.WebServer; changed = true; }
-                if (fp.Model.Length > 0) { info["Web-Modell"] = fp.Model; changed = true; }
+                if (fp.Vendor.Length > 0) { info["Hersteller (Web)"] = fp.Vendor; changed = true; }
+                if (fp.Title.Length > 0) { info["Web-Titel"] = fp.Title; changed = true; }
             }
             catch { /* best effort */ }
         }

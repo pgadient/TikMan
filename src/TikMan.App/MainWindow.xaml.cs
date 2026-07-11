@@ -29,6 +29,8 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _appData = appData;
+        var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        if (v is not null) Title = $"TikMan {v.Major}.{v.Minor}.{v.Build}";
         RouterOsClient.AllowInsecureCertificates = appData.DefaultIgnoreCertErrors;
         DeviceGrid.ItemsSource = _devices;
         _pollTimer.Tick += async (_, _) => await RefreshAllAsync(quiet: true);
