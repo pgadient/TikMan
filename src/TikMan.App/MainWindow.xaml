@@ -107,6 +107,7 @@
             <DataGrid x:Name="DeviceGrid" Grid.Row="0"
                       HorizontalScrollBarVisibility="Auto"
                       RowDetailsVisibilityMode="Collapsed"
+                      LoadingRow="DeviceGrid_LoadingRow"
                       SelectionChanged="DeviceGrid_SelectionChanged"
                       MouseDoubleClick="DeviceGrid_MouseDoubleClick">
                 <DataGrid.Resources>
@@ -118,7 +119,6 @@
                 </DataGrid.Resources>
                 <DataGrid.RowStyle>
                     <Style TargetType="DataGridRow">
-                        <Setter Property="DetailsVisibility" Value="Collapsed"/>
                         <Style.Triggers>
                             <!-- Highlight the local default gateway in orange. -->
                             <DataTrigger Binding="{Binding IsGateway}" Value="True">
@@ -127,10 +127,6 @@
                             <!-- Unreachable devices (e.g. stored ones that are gone) get red row text. -->
                             <DataTrigger Binding="{Binding IsOffline}" Value="True">
                                 <Setter Property="Foreground" Value="#C0392B"/>
-                            </DataTrigger>
-                            <!-- The + expander opens the row details (all IPv6 addresses, SMB shares). -->
-                            <DataTrigger Binding="{Binding IsExpanded}" Value="True">
-                                <Setter Property="DetailsVisibility" Value="Visible"/>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
@@ -193,6 +189,7 @@
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <ToggleButton IsChecked="{Binding IsExpanded, UpdateSourceTrigger=PropertyChanged}"
+                                              Checked="Expander_Toggled" Unchecked="Expander_Toggled"
                                               Width="17" Height="17" HorizontalAlignment="Center" VerticalAlignment="Center"
                                               Cursor="Hand" FontSize="12" Padding="0">
                                     <ToggleButton.Style>

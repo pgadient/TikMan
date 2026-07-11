@@ -702,6 +702,23 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>Shows/hides the row details. Set as a local value because with
+    /// RowDetailsVisibilityMode=Collapsed the DataGrid coerces style-trigger values back to Collapsed.</summary>
+    private void Expander_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (sender is not DependencyObject d) return;
+        while (d is not null and not DataGridRow)
+            d = System.Windows.Media.VisualTreeHelper.GetParent(d);
+        if (d is DataGridRow row)
+            row.DetailsVisibility = ((System.Windows.Controls.Primitives.ToggleButton)sender).IsChecked == true
+                ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>Keeps recycled row containers in sync with the item's expanded state.</summary>
+    private void DeviceGrid_LoadingRow(object sender, DataGridRowEventArgs e) =>
+        e.Row.DetailsVisibility = e.Row.DataContext is DeviceViewModel { IsExpanded: true }
+            ? Visibility.Visible : Visibility.Collapsed;
+
     /// <summary>Opens an SMB share (\\host\share) in Windows Explorer.</summary>
     private void Share_Click(object sender, RoutedEventArgs e)
     {
