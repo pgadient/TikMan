@@ -43,6 +43,7 @@ public class DeviceViewModel : INotifyPropertyChanged
         foreach (var kv in Model.ExtraInfo) ExtraInfo.Add(new InfoRow(kv.Key, kv.Value));
         Notify(nameof(HasExtraInfo));
         Notify(nameof(IdentifiedVendor)); // the web-scraped manufacturer may have just arrived
+        Notify(nameof(ModelDisplay));     // …and WMI may have supplied a model
     }
 
     public ObservableCollection<ResourceSnapshot> History { get; } = new();
@@ -308,7 +309,14 @@ public class DeviceViewModel : INotifyPropertyChanged
     public string Version { get => _version; private set { _version = value; Notify(); } }
 
     private string _board = "";
-    public string Board { get => _board; private set { _board = value; Notify(); Notify(nameof(DeviceType)); Notify(nameof(IdentifiedVendor)); } }
+    public string Board { get => _board; private set { _board = value; Notify(); Notify(nameof(DeviceType)); Notify(nameof(IdentifiedVendor)); Notify(nameof(ModelDisplay)); } }
+
+    /// <summary>Model shown in the "Model" column for any device: the RouterOS board / TP-Link model
+    /// when known, otherwise the model learned via WMI (empty if neither).</summary>
+    public string ModelDisplay =>
+        Board.Length > 0 ? Board
+        : Model.ExtraInfo.TryGetValue("Modell", out var wmi) ? wmi
+        : "";
 
     private string _uptime = "";
     public string Uptime { get => _uptime; private set { _uptime = value; Notify(); } }

@@ -204,7 +204,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding IdentifiedVendor}" Width="100"/>
                     <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding DeviceType}" Width="85"/>
-                    <DataGridTextColumn Header="{loc:Loc Col_Board}" Binding="{Binding Board}" Width="130"/>
+                    <DataGridTextColumn Header="{loc:Loc Col_Board}" Binding="{Binding ModelDisplay}" Width="130"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Version}" Width="110">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">

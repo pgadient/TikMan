@@ -23,7 +23,7 @@ internal static class Strings
         // Device table
         ["Col_Name"] = "Name",
         ["Col_Address"] = "Adresse",
-        ["Col_Board"] = "Board",
+        ["Col_Board"] = "Modell",
         ["Col_Version"] = "Version",
         ["Col_Latest"] = "Neuste",
         ["Col_Cpu"] = "CPU",
@@ -346,7 +346,7 @@ internal static class Strings
         // Device table
         ["Col_Name"] = "Name",
         ["Col_Address"] = "Address",
-        ["Col_Board"] = "Board",
+        ["Col_Board"] = "Model",
         ["Col_Version"] = "Version",
         ["Col_Latest"] = "Latest",
         ["Col_Cpu"] = "CPU",
@@ -670,7 +670,7 @@ internal static class Strings
         // Device table
         ["Col_Name"] = "Name",
         ["Col_Address"] = "Adrässe",
-        ["Col_Board"] = "Board",
+        ["Col_Board"] = "Modäll",
         ["Col_Version"] = "Version",
         ["Col_Latest"] = "Nöischti",
         ["Col_Cpu"] = "CPU",
