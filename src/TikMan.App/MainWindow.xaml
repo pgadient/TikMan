@@ -174,11 +174,11 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="{loc:Loc Col_Vendor}" Width="120" SortMemberPath="Vendor">
+                    <DataGridTemplateColumn Header="{loc:Loc Col_MacVendor}" Width="130" SortMemberPath="MacVendor">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding Vendor}" VerticalAlignment="Center" Padding="4,0">
+                                    <TextBlock Text="{Binding MacVendor}" VerticalAlignment="Center" Padding="4,0">
                                         <TextBlock.ContextMenu>
                                             <ContextMenu>
                                                 <MenuItem Header="{loc:Loc Ctx_CopyVendorFull}" Click="CopyVendorFull_Click"/>
@@ -191,7 +191,7 @@
                                         <Button.Style>
                                             <Style TargetType="Button">
                                                 <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Vendor}" Value="">
+                                                    <DataTrigger Binding="{Binding MacVendor}" Value="">
                                                         <Setter Property="Visibility" Value="Collapsed"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
@@ -202,6 +202,7 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding IdentifiedVendor}" Width="100"/>
                     <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding DeviceType}" Width="85"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Board}" Binding="{Binding Board}" Width="130"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Version}" Width="110">

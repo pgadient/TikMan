@@ -42,6 +42,7 @@ public class DeviceViewModel : INotifyPropertyChanged
         ExtraInfo.Clear();
         foreach (var kv in Model.ExtraInfo) ExtraInfo.Add(new InfoRow(kv.Key, kv.Value));
         Notify(nameof(HasExtraInfo));
+        Notify(nameof(IdentifiedVendor)); // the web-scraped manufacturer may have just arrived
     }
 
     public ObservableCollection<ResourceSnapshot> History { get; } = new();
@@ -172,7 +173,8 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// <summary>Notifies the discovery-derived properties after a later scan filled in the MAC/ports.</summary>
     public void RaiseDiscoveryChanged()
     {
-        Notify(nameof(Vendor));
+        Notify(nameof(MacVendor));
+        Notify(nameof(IdentifiedVendor));
         Notify(nameof(DeviceType));
         Notify(nameof(HasSmb));
     }
@@ -218,8 +220,22 @@ public class DeviceViewModel : INotifyPropertyChanged
         _ => "",
     };
 
-    /// <summary>Manufacturer resolved offline from the MAC address (empty if unknown).</summary>
-    public string Vendor => OuiLookup.Lookup(Model.MacAddress);
+    /// <summary>Raw manufacturer from the MAC address / IEEE OUI list ("MAC vendor" column;
+    /// shows the list's exact name, e.g. "Routerboard.com", empty if unknown).</summary>
+    public string MacVendor => OuiLookup.Lookup(Model.MacAddress);
+
+    /// <summary>Identified device vendor for the "Vendor" column: MikroTik / TP-Link when known,
+    /// otherwise the manufacturer scraped from the device's web UI (empty if none).</summary>
+    public string IdentifiedVendor
+    {
+        get
+        {
+            var mac = MacVendor.ToLowerInvariant();
+            if (Board.Length > 0 || mac.Contains("mikrotik") || mac.Contains("routerboard")) return "MikroTik";
+            if (Model.Vendor == DeviceVendor.TpLink) return "TP-Link";
+            return Model.ExtraInfo.TryGetValue("Hersteller (Web)", out var web) ? web : "";
+        }
+    }
 
     /// <summary>Rough device kind for the "Type" column. TP-Link devices are switches; a device
     /// that answered the RouterOS API (has a board name) is a MikroTik router; otherwise guessed.</summary>
@@ -227,7 +243,7 @@ public class DeviceViewModel : INotifyPropertyChanged
         ? T("Dev_Switch")
         : Board.Length > 0
             ? T("Dev_Router")
-            : DeviceKindText(DeviceClassifier.Guess(Vendor, Model.OpenPorts));
+            : DeviceKindText(DeviceClassifier.Guess(MacVendor, Model.OpenPorts));
 
     /// <summary>True for TP-Link switches (SSH connector, firmware page instead of channels).</summary>
     public bool IsTpLink => Model.Vendor == DeviceVendor.TpLink;
@@ -292,7 +308,7 @@ public class DeviceViewModel : INotifyPropertyChanged
     public string Version { get => _version; private set { _version = value; Notify(); } }
 
     private string _board = "";
-    public string Board { get => _board; private set { _board = value; Notify(); Notify(nameof(DeviceType)); } }
+    public string Board { get => _board; private set { _board = value; Notify(); Notify(nameof(DeviceType)); Notify(nameof(IdentifiedVendor)); } }
 
     private string _uptime = "";
     public string Uptime { get => _uptime; private set { _uptime = value; Notify(); } }

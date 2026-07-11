@@ -373,7 +373,7 @@ public partial class MainWindow : Window
     private static bool DeviceMatchesFilter(DeviceViewModel d, string[] tokens)
     {
         var haystack = string.Join(" ",
-            d.Name, d.AllAddressesText, d.TransportDisplay, d.Vendor, d.DeviceType, d.Board, d.Version, d.LatestWithChannel,
+            d.Name, d.AllAddressesText, d.TransportDisplay, d.MacVendor, d.IdentifiedVendor, d.DeviceType, d.Board, d.Version, d.LatestWithChannel,
             d.CpuText, d.MemoryText, d.Uptime, d.UpdateChannel, d.StatusText, d.LastError);
         return tokens.All(t => haystack.Contains(t, StringComparison.OrdinalIgnoreCase));
     }
