@@ -8,10 +8,11 @@
         <SolidColorBrush x:Key="BusyBrush" Color="#D98E1F"/>
         <SolidColorBrush x:Key="UnknownBrush" Color="#9A9A9A"/>
 
-        <!-- One fixed height for every toolbar button, so borders/font weights can't skew them. -->
+        <!-- Toolbar buttons stretch to the full row height, so they all share one size. -->
         <Style x:Key="ToolButton" TargetType="Button">
             <Setter Property="Padding" Value="10,0"/>
-            <Setter Property="Height" Value="30"/>
+            <Setter Property="MinHeight" Value="30"/>
+            <Setter Property="VerticalAlignment" Value="Stretch"/>
             <Setter Property="Margin" Value="2,0"/>
         </Style>
 
