@@ -34,6 +34,8 @@
                         <Button Style="{StaticResource ToolButton}" Click="Settings_Click" Content="{loc:Loc Tb_Settings}"/>
                         <Button Click="ReportProblem_Click" Content="{loc:Loc Tb_ReportProblem}" Background="#F68500" Foreground="White"
                                 BorderThickness="0" Padding="9,4" Margin="8,0,0,0" Cursor="Hand" FontWeight="SemiBold"/>
+                        <Button Click="RequestFeature_Click" Content="{loc:Loc Tb_RequestFeature}" Background="#2266CC" Foreground="White"
+                                BorderThickness="0" Padding="9,4" Margin="6,0,0,0" Cursor="Hand" FontWeight="SemiBold"/>
                     </StackPanel>
 
                     <!-- Group C: network discovery -->
@@ -292,6 +294,7 @@
                 </TabItem>
 
                 <TabItem Header="{loc:Loc Tab_Details}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="12" HorizontalAlignment="Left">
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -387,6 +390,7 @@
                             </ItemsControl>
                         </StackPanel>
                     </StackPanel>
+                    </ScrollViewer>
                 </TabItem>
 
                 <TabItem Header="{loc:Loc Tab_Available}">

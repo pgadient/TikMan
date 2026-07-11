@@ -647,6 +647,21 @@ public partial class MainWindow : Window
             SetStatus(T("Rep_Failed", file));
     }
 
+    /// <summary>Opens a pre-filled feature-request e-mail (no log attached).</summary>
+    private void RequestFeature_Click(object sender, RoutedEventArgs e)
+    {
+        var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        var version = v is null ? "" : $"{v.Major}.{v.Minor}.{v.Build}";
+        var subject = T("Feat_Subject", version);
+        var body = T("Feat_Body");
+
+        if ((!_appData.ForceMailFallback && ProblemReporter.TryOutlookClassic(subject, body, "")) ||
+            ProblemReporter.TryMailto(subject, body))
+            SetStatus(T("Feat_Opened"));
+        else
+            SetStatus(T("Feat_Failed"));
+    }
+
     /// <summary>Opens an SMB share (\\host\share) in Windows Explorer.</summary>
     private void Share_Click(object sender, RoutedEventArgs e)
     {
