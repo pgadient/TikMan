@@ -101,6 +101,12 @@
                       HorizontalScrollBarVisibility="Auto"
                       SelectionChanged="DeviceGrid_SelectionChanged"
                       MouseDoubleClick="DeviceGrid_MouseDoubleClick">
+                <DataGrid.Resources>
+                    <!-- Vertically centre every cell's content (rows can be tall: multiline IPv6, badges). -->
+                    <Style TargetType="DataGridCell">
+                        <Setter Property="VerticalContentAlignment" Value="Center"/>
+                    </Style>
+                </DataGrid.Resources>
                 <DataGrid.RowStyle>
                     <Style TargetType="DataGridRow">
                         <Style.Triggers>
@@ -224,6 +230,7 @@
                     <DataGridTextColumn Header="{loc:Loc Col_Latest}" Binding="{Binding LatestWithChannel}" Width="130">
                         <DataGridTextColumn.CellStyle>
                             <Style TargetType="DataGridCell">
+                                <Setter Property="VerticalContentAlignment" Value="Center"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding UpdateAvailable}" Value="True">
                                         <Setter Property="Foreground" Value="#B35900"/>

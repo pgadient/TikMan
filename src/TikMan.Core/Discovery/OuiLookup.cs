@@ -41,14 +41,14 @@ public static class OuiLookup
         return prefix.Length == 6 && Db.TryGetValue(prefix, out var vendor) ? vendor : "";
     }
 
-    /// <summary>Returns the complete IEEE record for a MAC (company name + postal address),
-    /// exactly as it appears in a locally present full <c>oui.txt</c>. The embedded list only
-    /// keeps company names, so the address block is only available once the user has downloaded
-    /// the full oui.txt (Settings). Falls back to just the vendor name otherwise.</summary>
+    /// <summary>Returns the complete IEEE record for a MAC (company name + postal address), from a
+    /// locally downloaded full oui.txt if present, otherwise from the bundled list (which keeps the
+    /// full records). Falls back to just the vendor name if the OUI isn't found.</summary>
     public static string GetFullEntry(string mac)
     {
         var prefix = NormalizePrefix(mac);
         if (prefix.Length != 6) return "";
+
         foreach (var path in FileCandidates())
         {
             try
@@ -59,7 +59,28 @@ public static class OuiLookup
             }
             catch (IOException) { /* unreadable – try the next candidate */ }
         }
-        return Lookup(mac); // no full list available – the friendly name is all we have
+
+        // No local file: pull the record straight from the embedded IEEE list (it has addresses).
+        try
+        {
+            using var raw = Assembly.GetExecutingAssembly().GetManifestResourceStream("oui.txt.gz");
+            if (raw is not null)
+            {
+                using var gz = new GZipStream(raw, CompressionMode.Decompress);
+                using var reader = new StreamReader(gz);
+                var block = ExtractBlock(ReadLines(reader), prefix);
+                if (block.Length > 0) return block;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException) { /* fall through */ }
+
+        return Lookup(mac); // OUI not found – the vendor name is all we have
+    }
+
+    private static IEnumerable<string> ReadLines(TextReader reader)
+    {
+        string? line;
+        while ((line = reader.ReadLine()) is not null) yield return line;
     }
 
     /// <summary>Pulls the multi-line record for one OUI out of an IEEE oui.txt: the "(hex)" line
