@@ -689,9 +689,18 @@ public partial class MainWindow : Window
             SetStatus(T("Feat_Failed"));
     }
 
-    /// <summary>Coffee button (stub): a friendly thank-you until a real donation link exists.</summary>
-    private void BuyCoffee_Click(object sender, RoutedEventArgs e) =>
-        MessageBox.Show(this, T("Coffee_Msg"), T("Coffee_Title"), MessageBoxButton.OK, MessageBoxImage.Information);
+    /// <summary>Coffee button: opens the Ko-fi donation page in the default browser.</summary>
+    private void BuyCoffee_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://ko-fi.com/pascalmontico") { UseShellExecute = true });
+        }
+        catch
+        {
+            MessageBox.Show(this, "https://ko-fi.com/pascalmontico", T("Coffee_Title"), MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+    }
 
     /// <summary>Opens an SMB share (\\host\share) in Windows Explorer.</summary>
     private void Share_Click(object sender, RoutedEventArgs e)
