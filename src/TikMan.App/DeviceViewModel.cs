@@ -194,15 +194,34 @@ public class DeviceViewModel : INotifyPropertyChanged
         get
         {
             var hostPart = Model.Host.Contains(':') && !Model.Host.StartsWith('[') ? $"[{Model.Host}]" : Model.Host;
-            // Both web schemes are offered (a device usually serves both); double-click opens either.
-            return new List<ProtocolVm>
+            var list = new List<ProtocolVm>();
+            if (Model.OpenPorts.Count > 0)
             {
-                new("http", $"http://{hostPart}/"),
-                new("https", $"https://{hostPart}/"),
-                new("ssh", ""),
-            };
+                // Discovered device: a colour-coded badge for each recognised open service.
+                foreach (var port in Model.OpenPorts.Distinct().OrderBy(p => p))
+                {
+                    var svc = SubnetScanner.ServiceName(port);
+                    list.Add(new ProtocolVm(svc, WebUrl(port, hostPart), ProtocolVm.BrushFor(svc)));
+                }
+            }
+            else
+            {
+                // Manually added device: offer the web schemes + ssh (double-click a web badge opens it).
+                list.Add(new ProtocolVm("http", $"http://{hostPart}/", ProtocolVm.BrushFor("http")));
+                list.Add(new ProtocolVm("https", $"https://{hostPart}/", ProtocolVm.BrushFor("https")));
+                list.Add(new ProtocolVm("ssh", "", ProtocolVm.BrushFor("ssh")));
+            }
+            return list;
         }
     }
+
+    private static string WebUrl(int port, string host) => port switch
+    {
+        80 => $"http://{host}/",
+        443 => $"https://{host}/",
+        8080 => $"http://{host}:8080/",
+        _ => "",
+    };
 
     /// <summary>Manufacturer resolved offline from the MAC address (empty if unknown).</summary>
     public string Vendor => OuiLookup.Lookup(Model.MacAddress);
@@ -623,13 +642,44 @@ public class SmbShareVm
     public string UncPath { get; }
 }
 
-/// <summary>A protocol the device speaks. Web protocols carry a URL (opened on double-click).</summary>
+/// <summary>A protocol/service the device speaks, shown as a colour-coded badge. Web protocols
+/// carry a URL (opened on double-click).</summary>
 public class ProtocolVm
 {
-    public ProtocolVm(string name, string url) { Name = name; Url = url; }
+    public ProtocolVm(string name, string url, Brush color) { Name = name; Url = url; Color = color; }
     public string Name { get; }
     public string Url { get; }
+    public Brush Color { get; }
     public bool IsWeb => Url.Length > 0;
+
+    private static readonly Dictionary<string, Brush> Cache = new();
+
+    /// <summary>Badge colour for a service, grouped by kind: secure=green, web=orange, ssh=blue,
+    /// insecure=red, file=teal, MikroTik=dark, api/management=purple, else grey.</summary>
+    public static Brush BrushFor(string service)
+    {
+        var hex = service switch
+        {
+            "https" or "imaps" or "ftps" or "smtps" or "api-ssl" or "submission" => "#2E9E44",
+            "http" or "http-alt" => "#E67E22",
+            "ssh" or "sftp" => "#3A5BA0",
+            "telnet" or "ftp" => "#C0392B",
+            "smb" or "netbios" or "rsync" => "#16A085",
+            "winbox" => "#2B3A42",
+            "api" => "#8E44AD",
+            "wmi" => "#7A3EA0",
+            "dns" or "snmp" or "syslog" => "#7F8C8D",
+            "smtp" or "imap" => "#2980B9",
+            _ => "#95A5A6",
+        };
+        if (!Cache.TryGetValue(hex, out var brush))
+        {
+            brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)!);
+            brush.Freeze();
+            Cache[hex] = brush;
+        }
+        return brush;
+    }
 }
 
 /// <summary>One row in the "Available updates" tab: the newest version of a channel.</summary>
