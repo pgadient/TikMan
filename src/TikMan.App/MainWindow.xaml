@@ -106,6 +106,7 @@
 
             <DataGrid x:Name="DeviceGrid" Grid.Row="0"
                       HorizontalScrollBarVisibility="Auto"
+                      RowDetailsVisibilityMode="Collapsed"
                       SelectionChanged="DeviceGrid_SelectionChanged"
                       MouseDoubleClick="DeviceGrid_MouseDoubleClick">
                 <DataGrid.Resources>
@@ -117,6 +118,7 @@
                 </DataGrid.Resources>
                 <DataGrid.RowStyle>
                     <Style TargetType="DataGridRow">
+                        <Setter Property="DetailsVisibility" Value="Collapsed"/>
                         <Style.Triggers>
                             <!-- Highlight the local default gateway in orange. -->
                             <DataTrigger Binding="{Binding IsGateway}" Value="True">
@@ -126,9 +128,53 @@
                             <DataTrigger Binding="{Binding IsOffline}" Value="True">
                                 <Setter Property="Foreground" Value="#C0392B"/>
                             </DataTrigger>
+                            <!-- The + expander opens the row details (all IPv6 addresses, SMB shares). -->
+                            <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                                <Setter Property="DetailsVisibility" Value="Visible"/>
+                            </DataTrigger>
                         </Style.Triggers>
                     </Style>
                 </DataGrid.RowStyle>
+                <DataGrid.RowDetailsTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="60,4,8,8" Background="Transparent">
+                            <ItemsControl ItemsSource="{Binding Ipv6List}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <StackPanel Margin="0,4,0,0">
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasSmb}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{loc:Loc Sc_SmbHeader}" FontWeight="SemiBold" Foreground="#555555"/>
+                                    <TextBlock Text="{Binding SharesStatus}" Foreground="#888888" FontStyle="Italic" Margin="8,0,0,0"/>
+                                </StackPanel>
+                                <ItemsControl ItemsSource="{Binding Shares}" Margin="0,4,0,0">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Content="{Binding Name}" Click="Share_Click" ToolTip="{Binding UncPath}"
+                                                    Margin="0,0,8,4" Padding="8,3"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </StackPanel>
+                    </DataTemplate>
+                </DataGrid.RowDetailsTemplate>
                 <DataGrid.Columns>
                     <DataGridTemplateColumn Width="30" CanUserResize="False" CanUserSort="False">
                         <DataGridTemplateColumn.Header>
@@ -140,6 +186,30 @@
                             <DataTemplate>
                                 <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}"
                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Width="26" CanUserResize="False" CanUserSort="False">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <ToggleButton IsChecked="{Binding IsExpanded, UpdateSourceTrigger=PropertyChanged}"
+                                              Width="17" Height="17" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Cursor="Hand" FontSize="12" Padding="0">
+                                    <ToggleButton.Style>
+                                        <Style TargetType="ToggleButton">
+                                            <Setter Property="Content" Value="+"/>
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasRowDetails}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <Trigger Property="IsChecked" Value="True">
+                                                    <Setter Property="Content" Value="−"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ToggleButton.Style>
+                                </ToggleButton>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
@@ -155,19 +225,8 @@
                     <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding DeviceType}" Width="85" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Name}" Binding="{Binding Name}" Width="170" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTextColumn x:Name="Ipv4Column" Header="IPv4" Binding="{Binding Ipv4Address}" Width="130" SortMemberPath="Ipv4SortKey" ElementStyle="{StaticResource VCenter}"/>
-                    <DataGridTemplateColumn x:Name="Ipv6Column" Header="IPv6" Width="240" SortMemberPath="Ipv6Display">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <ItemsControl ItemsSource="{Binding Ipv6List}" VerticalAlignment="Center" Margin="4,2">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding}"/>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
+                    <DataGridTextColumn x:Name="Ipv6Column" Header="IPv6" Binding="{Binding Ipv6Summary}" Width="240"
+                                        SortMemberPath="Ipv6Display" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTemplateColumn Header="{loc:Loc Col_Protocol}" Width="280" SortMemberPath="TransportDisplay">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>

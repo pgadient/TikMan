@@ -155,6 +155,30 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// <summary>All IPv6 addresses, one per line (for the IPv6 column).</summary>
     public string Ipv6Display => string.Join(Environment.NewLine, Ipv6List);
 
+    /// <summary>Single-line IPv6 cell: the first address plus a "(+N)" hint; the expander lists all.</summary>
+    public string Ipv6Summary => Ipv6List.Count switch
+    {
+        0 => "",
+        1 => Ipv6List[0],
+        var n => $"{Ipv6List[0]}  (+{n - 1})",
+    };
+
+    /// <summary>True when the expander (+) has something to show: further IPv6 addresses or SMB shares.</summary>
+    public bool HasRowDetails => Ipv6List.Count > 1 || HasSmb;
+
+    private bool _isExpanded;
+    /// <summary>Expands the row-details area (all IPv6 addresses + SMB share buttons).</summary>
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set
+        {
+            _isExpanded = value;
+            Notify();
+            if (value) _ = LoadSharesAsync(); // shares load lazily on first expand
+        }
+    }
+
     public bool HasIpv4 => Ipv4Address.Length > 0;
     public bool HasIpv6 => Ipv6List.Count > 0;
 
@@ -185,6 +209,8 @@ public class DeviceViewModel : INotifyPropertyChanged
         Notify(nameof(Ipv4Address));
         Notify(nameof(Ipv6List));
         Notify(nameof(Ipv6Display));
+        Notify(nameof(Ipv6Summary));
+        Notify(nameof(HasRowDetails));
         Notify(nameof(HasIpv4));
         Notify(nameof(HasIpv6));
         Notify(nameof(Ipv4SortKey));
@@ -227,6 +253,7 @@ public class DeviceViewModel : INotifyPropertyChanged
         Notify(nameof(IdentifiedVendor));
         Notify(nameof(DeviceType));
         Notify(nameof(HasSmb));
+        Notify(nameof(HasRowDetails));
     }
 
     public string ConnectionDisplay => $"{(Model.UseHttps ? "https" : "http")}://{Model.Host}:{Model.Port}";
@@ -450,6 +477,8 @@ public class DeviceViewModel : INotifyPropertyChanged
         Notify(nameof(Ipv4Address));
         Notify(nameof(Ipv6List));
         Notify(nameof(Ipv6Display));
+        Notify(nameof(Ipv6Summary));
+        Notify(nameof(HasRowDetails));
         Notify(nameof(HasIpv4));
         Notify(nameof(HasIpv6));
         Notify(nameof(ConnectionDisplay));
