@@ -103,32 +103,58 @@ public class DeviceViewModel : INotifyPropertyChanged
         if (!HasSmb || _sharesLoaded) return;
         _sharesLoaded = true;
         SharesStatus = T("Sc_SmbLoading");
-        // SMB works over IPv4; an IPv6 UNC path (\\[..]\..) doesn't, so prefer the device's IPv4.
-        var smbHost = Ipv4Address.Length > 0 ? Ipv4Address : Host;
+
+        // SMB works over IPv4 – but an existing Windows session (mapped drive, stored credentials)
+        // is keyed by the server NAME. \\sr1 answers instantly where \\192.168.13.1 crawls into
+        // access-denied, so we try host names first and only then the bare address.
+        var ip = Ipv4Address.Length > 0 ? Ipv4Address : Host;
+        var candidates = new List<string>();
+        if (Host.Length > 0 && !IPAddress.TryParse(Host, out _)) candidates.Add(Host);
         try
         {
-            // Busy file servers can take a while to answer NetShareEnum – give them room.
-            var listTask = SmbShares.ListAsync(smbHost);
-            if (await Task.WhenAny(listTask, Task.Delay(TimeSpan.FromSeconds(25))) != listTask)
+            var dnsName = (await Dns.GetHostEntryAsync(ip)).HostName;
+            if (dnsName.Length > 0)
             {
-                _sharesLoaded = false;
-                SharesStatus = T("Sc_SmbTimeout");
-                return;
+                candidates.Add(dnsName);
+                var shortName = dnsName.Split('.')[0];
+                if (!shortName.Equals(dnsName, StringComparison.OrdinalIgnoreCase)) candidates.Add(shortName);
             }
+        }
+        catch (System.Net.Sockets.SocketException) { /* no PTR record – the IP still gets tried */ }
+        candidates.Add(ip);
 
-            var result = await listTask;
-            foreach (var name in result.Shares) Shares.Add(new SmbShareVm(smbHost, name));
-            SharesStatus = result.Status switch
-            {
-                ShareListStatus.AccessDenied => T("Sc_SmbDenied"),
-                _ when result.Shares.Count > 0 => "",
-                _ => T("Sc_SmbNone"),
-            };
-        }
-        catch
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        bool denied = false, timedOut = false;
+        foreach (var candidate in candidates.Where(c => c.Length > 0 && seen.Add(c)))
         {
-            SharesStatus = T("Sc_SmbNone");
+            try
+            {
+                var listTask = SmbShares.ListAsync(candidate);
+                if (await Task.WhenAny(listTask, Task.Delay(TimeSpan.FromSeconds(10))) != listTask)
+                {
+                    timedOut = true; // NetShareEnum keeps blocking its pool thread; just move on
+                    continue;
+                }
+                var result = await listTask;
+                if (result.Status == ShareListStatus.Ok && result.Shares.Count > 0)
+                {
+                    foreach (var name in result.Shares) Shares.Add(new SmbShareVm(candidate, name));
+                    SharesStatus = "";
+                    return;
+                }
+                denied |= result.Status == ShareListStatus.AccessDenied;
+            }
+            catch { /* try the next candidate */ }
         }
+
+        if (denied) { SharesStatus = T("Sc_SmbDenied"); return; }
+        if (timedOut)
+        {
+            _sharesLoaded = false; // allow a retry on the next expand/selection
+            SharesStatus = T("Sc_SmbTimeout");
+            return;
+        }
+        SharesStatus = T("Sc_SmbNone");
     }
 
     /// <summary>Rows of the "Available updates" tab: latest version per channel.</summary>
