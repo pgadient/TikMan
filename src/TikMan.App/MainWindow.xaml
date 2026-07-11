@@ -104,7 +104,14 @@
                 <RowDefinition Height="300" MinHeight="120"/>
             </Grid.RowDefinitions>
 
-            <DataGrid x:Name="DeviceGrid" Grid.Row="0"
+            <DockPanel Grid.Row="0">
+                <!-- IPv4/IPv6 view switch: same device list, only the address column and sorting flip. -->
+                <TabControl x:Name="AddressTabs" DockPanel.Dock="Top" BorderThickness="0" Padding="0"
+                            Background="Transparent" SelectionChanged="AddressTabs_SelectionChanged">
+                    <TabItem Header="IPv4"/>
+                    <TabItem Header="IPv6"/>
+                </TabControl>
+            <DataGrid x:Name="DeviceGrid"
                       HorizontalScrollBarVisibility="Auto"
                       RowDetailsVisibilityMode="Collapsed"
                       LoadingRow="DeviceGrid_LoadingRow"
@@ -134,6 +141,18 @@
                 <DataGrid.RowDetailsTemplate>
                     <DataTemplate>
                         <StackPanel Margin="60,4,8,8" Background="Transparent">
+                            <TextBlock Text="{Binding Ipv4Address}" FontFamily="Consolas" FontSize="12">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasIpv4}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
                             <ItemsControl ItemsSource="{Binding Ipv6List}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
@@ -223,7 +242,8 @@
                     <DataGridTextColumn Header="{loc:Loc Col_Name}" Binding="{Binding Name}" Width="170" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTextColumn x:Name="Ipv4Column" Header="IPv4" Binding="{Binding Ipv4Address}" Width="130" SortMemberPath="Ipv4SortKey" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTextColumn x:Name="Ipv6Column" Header="IPv6" Binding="{Binding Ipv6Summary}" Width="240"
-                                        SortMemberPath="Ipv6Display" ElementStyle="{StaticResource VCenter}"/>
+                                        SortMemberPath="Ipv6Display" ElementStyle="{StaticResource VCenter}"
+                                        Visibility="Collapsed"/>
                     <DataGridTemplateColumn Header="{loc:Loc Col_Protocol}" Width="280" SortMemberPath="TransportDisplay">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -319,6 +339,7 @@
                     <DataGridTextColumn Header="{loc:Loc Col_Uptime}" Binding="{Binding Uptime}" Width="100" ElementStyle="{StaticResource VCenter}"/>
                 </DataGrid.Columns>
             </DataGrid>
+            </DockPanel>
 
             <GridSplitter Grid.Row="1" Height="6" HorizontalAlignment="Stretch" Background="Transparent"/>
 

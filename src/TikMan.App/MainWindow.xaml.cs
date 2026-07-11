@@ -702,6 +702,23 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>Switches the main list between the IPv4 and IPv6 view: flips the address column,
+    /// re-sorts, and lets every row re-evaluate what its expander has to offer.</summary>
+    private void AddressTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!ReferenceEquals(e.OriginalSource, AddressTabs) || Ipv4Column is null) return;
+        bool v6 = AddressTabs.SelectedIndex == 1;
+        DeviceViewModel.Ipv6ViewMode = v6;
+        Ipv4Column.Visibility = v6 ? Visibility.Collapsed : Visibility.Visible;
+        Ipv6Column.Visibility = v6 ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var vm in _devices) vm.RefreshRowDetailsMode();
+        var view = CollectionViewSource.GetDefaultView(_devices);
+        view.SortDescriptions.Clear();
+        view.SortDescriptions.Add(v6
+            ? new SortDescription(nameof(DeviceViewModel.Ipv6Display), ListSortDirection.Ascending)
+            : new SortDescription(nameof(DeviceViewModel.Ipv4SortKey), ListSortDirection.Ascending));
+    }
+
     /// <summary>Shows/hides the row details. Set as a local value because with
     /// RowDetailsVisibilityMode=Collapsed the DataGrid coerces style-trigger values back to Collapsed.</summary>
     private void Expander_Toggled(object sender, RoutedEventArgs e)
