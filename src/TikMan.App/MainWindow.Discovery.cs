@@ -22,6 +22,10 @@ public partial class MainWindow
     private readonly DispatcherTimer _ipv6ProgressTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private double _ipv6Elapsed;
 
+    private const double MndpDurationSeconds = 5; // MNDP listen window (matches the bar's max)
+    private readonly DispatcherTimer _mndpProgressTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
+    private double _mndpElapsed;
+
     /// <summary>Fills the subnet box + source label from the local adapters (first one selected).</summary>
     private void InitSubnets()
     {
@@ -64,9 +68,15 @@ public partial class MainWindow
         ScanButton.Content = T("Sc_Stop");
         DiscoveryProgressPanel.Visibility = Visibility.Visible;
         Ipv4ProgressRow.Visibility = Visibility.Visible;
+        MndpProgressRow.Visibility = Visibility.Visible;
+        Ipv4MetaProgressRow.Visibility = Visibility.Visible;
         Ipv6ProgressRow.Visibility = Visibility.Visible;
+        Ipv6MetaProgressRow.Visibility = Visibility.Visible;
         Ipv4Progress.IsIndeterminate = false;
         Ipv4Progress.Value = 0;
+        Ipv4MetaProgress.Value = 0;
+        Ipv6MetaProgress.Value = 0;
+        StartMndpProgressTimer();
         StartIpv6ProgressTimer();
         SetStatus(T("Msg_Discovering"));
 
@@ -107,15 +117,31 @@ public partial class MainWindow
                 Ipv4Progress.IsIndeterminate = true; // no subnet target – just MNDP on the IPv4 side
             }
 
-            // Hide each bar as soon as its own work finishes, so neither sits at 100 % waiting.
+            // Hide each bar as soon as its own work finishes, so none sits at 100 % waiting.
             var ui = TaskScheduler.FromCurrentSynchronizationContext();
             Task gm = Guard(mndp), gi = Guard(ipv6), gs = Guard(subnet);
-            _ = Task.WhenAll(gm, gs).ContinueWith(_ => Ipv4ProgressRow.Visibility = Visibility.Collapsed,
+            _ = gm.ContinueWith(_ =>
+                {
+                    _mndpProgressTimer.Stop();
+                    MndpProgressRow.Visibility = Visibility.Collapsed;
+                }, CancellationToken.None, TaskContinuationOptions.None, ui);
+            _ = gs.ContinueWith(_ => Ipv4ProgressRow.Visibility = Visibility.Collapsed,
                 CancellationToken.None, TaskContinuationOptions.None, ui);
             _ = gi.ContinueWith(_ => Ipv6ProgressRow.Visibility = Visibility.Collapsed,
                 CancellationToken.None, TaskContinuationOptions.None, ui);
 
-            await Task.WhenAll(gm, gi, gs);
+            // Scans first, then the meta phase per address family – a stable base before analysis.
+            async Task V4ChainAsync()
+            {
+                await Task.WhenAll(gm, gs);
+                await RunMetaPhaseAsync(v6: false, ct);
+            }
+            async Task V6ChainAsync()
+            {
+                await gi;
+                await RunMetaPhaseAsync(v6: true, ct);
+            }
+            await Task.WhenAll(V4ChainAsync(), V6ChainAsync());
             SetStatus(T("Msg_DiscoveryDone", _devices.Count));
         }
         catch (OperationCanceledException) { SetStatus(T("Sc_ScanCancelled")); }
@@ -125,12 +151,39 @@ public partial class MainWindow
             _scanning = false;
             ScanButton.Content = T("Tb_Scan");
             _ipv6ProgressTimer.Stop();
+            _mndpProgressTimer.Stop();
             Ipv4Progress.IsIndeterminate = false;
             DiscoveryProgressPanel.Visibility = Visibility.Collapsed;
             MarkGateways();
             ApplyDeviceFilter(); // re-evaluate tab membership after v4/v6 merges
             SaveAppData();
         }
+    }
+
+    /// <summary>Meta phase after a scan: collects details (web fingerprint, WMI) about the devices
+    /// of one address family, with its own progress bar. The IPv4 phase covers every device with an
+    /// IPv4; the IPv6 phase covers the v6-only rest, so nothing is probed twice.</summary>
+    private async Task RunMetaPhaseAsync(bool v6, CancellationToken ct)
+    {
+        var row = v6 ? Ipv6MetaProgressRow : Ipv4MetaProgressRow;
+        var bar = v6 ? Ipv6MetaProgress : Ipv4MetaProgress;
+        var targets = _devices.Where(d => v6 ? d.HasIpv6 && !d.HasIpv4 : d.HasIpv4).ToList();
+        if (targets.Count == 0 || ct.IsCancellationRequested)
+        {
+            row.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        bar.Maximum = targets.Count;
+        bar.Value = 0;
+        int done = 0;
+        await Task.WhenAll(targets.Select(async vm =>
+        {
+            if (!ct.IsCancellationRequested)
+                await EnrichDetailsAsync(vm);
+            bar.Value = ++done; // continuations resume on the UI thread
+        }));
+        row.Visibility = Visibility.Collapsed;
     }
 
     /// <summary>Advances the IPv6 bar from 0 to the discovery window (15 s) while it runs.</summary>
@@ -148,6 +201,23 @@ public partial class MainWindow
         _ipv6Elapsed += 0.25;
         Ipv6Progress.Value = Math.Min(_ipv6Elapsed, Ipv6DurationSeconds);
         if (_ipv6Elapsed >= Ipv6DurationSeconds) _ipv6ProgressTimer.Stop();
+    }
+
+    /// <summary>Advances the MNDP bar from 0 to the listen window (5 s) while it runs.</summary>
+    private void StartMndpProgressTimer()
+    {
+        _mndpElapsed = 0;
+        MndpProgress.Value = 0;
+        _mndpProgressTimer.Tick -= MndpProgressTick;
+        _mndpProgressTimer.Tick += MndpProgressTick;
+        _mndpProgressTimer.Start();
+    }
+
+    private void MndpProgressTick(object? sender, EventArgs e)
+    {
+        _mndpElapsed += 0.25;
+        MndpProgress.Value = Math.Min(_mndpElapsed, MndpDurationSeconds);
+        if (_mndpElapsed >= MndpDurationSeconds) _mndpProgressTimer.Stop();
     }
 
     /// <summary>Adds a discovered host to the list (dedup by IP, or merges the other-family address
@@ -193,7 +263,7 @@ public partial class MainWindow
         ApplyDefaultExpansion(vm);
         if (likely) _ = RefreshAndCheckAsync(vm);
         else vm.MarkOnline(); // just found by discovery ⇒ reachable (green)
-        _ = EnrichDetailsAsync(vm);
+        // Details (web fingerprint, WMI) are collected in the meta phase after the scans finish.
     }
 
     /// <summary>Best-effort background enrichment for the Details tab: the web server (Server header +
