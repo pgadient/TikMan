@@ -85,6 +85,8 @@
         <CheckBox x:Name="PersistListCheck" Margin="0,12,0,0" Content="{loc:Loc Set_PersistList}"/>
         <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_PersistHint}"/>
 
+        <CheckBox x:Name="ExpandRowsCheck" Margin="0,12,0,0" Content="{loc:Loc Set_ExpandRows}"/>
+
         <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
             <TextBlock Width="150" VerticalAlignment="Center" FontWeight="SemiBold" Text="{loc:Loc Set_CoffeeButton}"/>
             <ComboBox x:Name="CoffeeButtonCombo" Width="180" HorizontalAlignment="Left"

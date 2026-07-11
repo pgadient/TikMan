@@ -48,6 +48,7 @@ public partial class MainWindow : Window
 
         InitSubnets();
         ApplyCoffeeButton();
+        foreach (var vm in _devices) ApplyDefaultExpansion(vm); // persisted devices
 
         SelectIntervalItem(_appData.PollIntervalSeconds);
         AutoRefreshCheck.IsChecked = _appData.AutoRefreshEnabled;
@@ -89,6 +90,7 @@ public partial class MainWindow : Window
     private void Settings_Click(object sender, RoutedEventArgs e)
     {
         var oldCoffee = _appData.CoffeeButton;
+        var oldExpand = _appData.ExpandRowsByDefault;
         var dialog = new SettingsWindow(_appData) { Owner = this };
         if (dialog.ShowDialog() != true) return;
         if (dialog.ResetRequested) ResetToDefaults();
@@ -96,6 +98,12 @@ public partial class MainWindow : Window
         {
             RouterOsClient.AllowInsecureCertificates = _appData.DefaultIgnoreCertErrors;
             ApplyCoffeeButton();
+            if (_appData.ExpandRowsByDefault != oldExpand)
+                foreach (var vm in _devices)
+                {
+                    if (_appData.ExpandRowsByDefault) ApplyDefaultExpansion(vm);
+                    else vm.IsExpanded = false;
+                }
             SaveAppData();
             if (_appData.CoffeeButton == "off" && oldCoffee != "off")
                 MessageBox.Show(this, T("Coffee_OffMsg"), T("Coffee_Title"), MessageBoxButton.OK, MessageBoxImage.Information);
@@ -706,17 +714,27 @@ public partial class MainWindow : Window
     /// re-sorts, and lets every row re-evaluate what its expander has to offer.</summary>
     private void AddressTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!ReferenceEquals(e.OriginalSource, AddressTabs) || Ipv4Column is null) return;
+        if (!ReferenceEquals(e.OriginalSource, AddressTabs) || Ipv6Column is null) return;
         bool v6 = AddressTabs.SelectedIndex == 1;
         DeviceViewModel.Ipv6ViewMode = v6;
-        Ipv4Column.Visibility = v6 ? Visibility.Collapsed : Visibility.Visible;
-        Ipv6Column.Visibility = v6 ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var vm in _devices) vm.RefreshRowDetailsMode();
+        Ipv6Column.Visibility = v6 ? Visibility.Visible : Visibility.Collapsed; // IPv4 stays in both views
+        foreach (var vm in _devices)
+        {
+            vm.RefreshRowDetailsMode();
+            ApplyDefaultExpansion(vm);
+        }
         var view = CollectionViewSource.GetDefaultView(_devices);
         view.SortDescriptions.Clear();
         view.SortDescriptions.Add(v6
             ? new SortDescription(nameof(DeviceViewModel.Ipv6Display), ListSortDirection.Ascending)
             : new SortDescription(nameof(DeviceViewModel.Ipv4SortKey), ListSortDirection.Ascending));
+    }
+
+    /// <summary>Expands a row right away when the "rows expanded by default" option is on and the
+    /// device has something to show. Called when devices appear or gain details.</summary>
+    private void ApplyDefaultExpansion(DeviceViewModel vm)
+    {
+        if (_appData.ExpandRowsByDefault && vm.HasRowDetails && !vm.IsExpanded) vm.IsExpanded = true;
     }
 
     /// <summary>Shows/hides the row details. Set as a local value because with

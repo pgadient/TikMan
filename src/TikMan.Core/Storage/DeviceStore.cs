@@ -34,6 +34,9 @@ public class AppData
     public bool ForceMailFallback { get; set; }
     /// <summary>Coffee button size: "normal", "small", or "off".</summary>
     public string CoffeeButton { get; set; } = "normal";
+    /// <summary>Expand device rows by default, so all IPv6 addresses and SMB shares are visible
+    /// without clicking the + expander.</summary>
+    public bool ExpandRowsByDefault { get; set; }
     /// <summary>When false (default), the device list is not written to disk – devices only live
     /// for the current session. When true, the list and its config are persisted.</summary>
     public bool PersistDeviceList { get; set; }

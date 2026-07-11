@@ -155,7 +155,7 @@ public partial class MainWindow
     private void AddDiscovered(DiscoveredDevice d)
     {
         var byIp = _devices.FirstOrDefault(v => v.HasAddress(d.IpAddress));
-        if (byIp is not null) { EnrichExisting(byIp, d); return; }
+        if (byIp is not null) { EnrichExisting(byIp, d); ApplyDefaultExpansion(byIp); return; }
 
         // Same physical device (same MAC) → attach this address. A NIC often has several IPv6
         // addresses (global, ULA, link-local, privacy), so we collect them all, not just one.
@@ -167,6 +167,7 @@ public partial class MainWindow
                 byMac.Model.AltAddresses.Add(d.IpAddress);
                 byMac.RefreshAddressDisplay();
                 EnrichExisting(byMac, d);
+                ApplyDefaultExpansion(byMac);
                 return;
             }
         }
@@ -188,6 +189,7 @@ public partial class MainWindow
         };
         var vm = new DeviceViewModel(device) { IsSelected = MainSelectAll.IsChecked == true };
         _devices.Add(vm);
+        ApplyDefaultExpansion(vm);
         if (likely) _ = RefreshAndCheckAsync(vm);
         else vm.MarkOnline(); // just found by discovery ⇒ reachable (green)
         _ = EnrichDetailsAsync(vm);

@@ -168,9 +168,9 @@ public class DeviceViewModel : INotifyPropertyChanged
     public static bool Ipv6ViewMode { get; set; }
 
     /// <summary>True when the expander (+) has something to show. On the IPv4 tab that's any IPv6
-    /// address or SMB shares; on the IPv6 tab it's the IPv4 address, further IPv6 addresses or shares.</summary>
+    /// address or SMB shares; on the IPv6 tab (IPv4 stays a column) further IPv6 addresses or shares.</summary>
     public bool HasRowDetails => Ipv6ViewMode
-        ? HasIpv4 || Ipv6List.Count > 1 || HasSmb
+        ? Ipv6List.Count > 1 || HasSmb
         : Ipv6List.Count > 0 || HasSmb;
 
     /// <summary>Re-evaluates HasRowDetails after the IPv4/IPv6 tab switched.</summary>

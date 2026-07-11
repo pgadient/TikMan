@@ -37,6 +37,7 @@ public partial class SettingsWindow : Window
         ForceMailtoCheck.IsChecked = data.ForceMailFallback;
         CoffeeButtonCombo.SelectedValue = data.CoffeeButton;
         if (CoffeeButtonCombo.SelectedValue is null) CoffeeButtonCombo.SelectedIndex = 0;
+        ExpandRowsCheck.IsChecked = data.ExpandRowsByDefault;
         DefaultUserBox.Text = data.DefaultUsername;
         _ready = true;
     }
@@ -102,6 +103,7 @@ public partial class SettingsWindow : Window
         _data.AllowHttpFallback = AllowHttpCheck.IsChecked == true;
         _data.ForceMailFallback = ForceMailtoCheck.IsChecked == true;
         if (CoffeeButtonCombo.SelectedValue is string coffee) _data.CoffeeButton = coffee;
+        _data.ExpandRowsByDefault = ExpandRowsCheck.IsChecked == true;
 
         _data.DefaultUsername = DefaultUserBox.Text.Trim();
         if (DefaultPasswordBox.Password.Length > 0)

@@ -141,18 +141,6 @@
                 <DataGrid.RowDetailsTemplate>
                     <DataTemplate>
                         <StackPanel Margin="60,4,8,8" Background="Transparent">
-                            <TextBlock Text="{Binding Ipv4Address}" FontFamily="Consolas" FontSize="12">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding HasIpv4}" Value="True">
-                                                <Setter Property="Visibility" Value="Visible"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
                             <ItemsControl ItemsSource="{Binding Ipv6List}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
