@@ -183,6 +183,7 @@ public class DeviceViewModel : INotifyPropertyChanged
     public void RefreshAddressDisplay()
     {
         Notify(nameof(Ipv4Address));
+        Notify(nameof(Ipv6List));
         Notify(nameof(Ipv6Display));
         Notify(nameof(HasIpv4));
         Notify(nameof(HasIpv6));
@@ -447,6 +448,7 @@ public class DeviceViewModel : INotifyPropertyChanged
         Notify(nameof(Name));
         Notify(nameof(Host));
         Notify(nameof(Ipv4Address));
+        Notify(nameof(Ipv6List));
         Notify(nameof(Ipv6Display));
         Notify(nameof(HasIpv4));
         Notify(nameof(HasIpv6));
