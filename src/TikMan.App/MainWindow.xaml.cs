@@ -42,8 +42,8 @@ public partial class MainWindow : Window
         MarkGateways();
         _ = LoadPublicIpAsync(); // fill the public-IP status field in the background
 
-        DeviceViewModel.CombineAddresses = _appData.CombineAddresses;
         CombineCheck.IsChecked = _appData.CombineAddresses;
+        ApplyAddressMode();
         InitSubnets();
 
         SelectIntervalItem(_appData.PollIntervalSeconds);
@@ -361,22 +361,48 @@ public partial class MainWindow : Window
 
     private void DeviceFilterBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyDeviceFilter();
 
-    /// <summary>Toggles whether each device's IPv4/IPv6 addresses are shown combined in one row.</summary>
+    /// <summary>Combine on → one list with both addresses; off → IPv4/IPv6 tabs.</summary>
     private void Combine_Changed(object sender, RoutedEventArgs e)
     {
-        DeviceViewModel.CombineAddresses = CombineCheck.IsChecked == true;
-        _appData.CombineAddresses = DeviceViewModel.CombineAddresses;
+        _appData.CombineAddresses = CombineCheck.IsChecked == true;
+        ApplyAddressMode();
+    }
+
+    /// <summary>Switches the IPv4/IPv6 tab (only visible when addresses aren't combined).</summary>
+    private void FamilyTab_Changed(object sender, RoutedEventArgs e)
+    {
+        if (IsLoaded) ApplyAddressMode();
+    }
+
+    /// <summary>Applies the current address view (combined vs IPv4/IPv6 tab) to every row + the filter.</summary>
+    private void ApplyAddressMode()
+    {
+        bool combine = CombineCheck.IsChecked == true;
+        FamilyTabs.Visibility = combine ? Visibility.Collapsed : Visibility.Visible;
+        DeviceViewModel.Mode = combine
+            ? DeviceViewModel.AddressView.Combined
+            : (Ipv6Tab.IsChecked == true ? DeviceViewModel.AddressView.Ipv6 : DeviceViewModel.AddressView.Ipv4);
         foreach (var d in _devices) d.RefreshAddressDisplay();
+        ApplyDeviceFilter();
     }
 
     private void ApplyDeviceFilter()
     {
         var view = CollectionViewSource.GetDefaultView(_devices);
         var tokens = DeviceFilterBox.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        view.Filter = tokens.Length == 0
+        var mode = DeviceViewModel.Mode;
+        view.Filter = tokens.Length == 0 && mode == DeviceViewModel.AddressView.Combined
             ? null
-            : obj => obj is DeviceViewModel d && DeviceMatchesFilter(d, tokens);
+            : obj => obj is DeviceViewModel d && MatchesMode(d, mode) && (tokens.Length == 0 || DeviceMatchesFilter(d, tokens));
     }
+
+    /// <summary>In the IPv4/IPv6 tabs, only show devices that actually have an address of that family.</summary>
+    private static bool MatchesMode(DeviceViewModel d, DeviceViewModel.AddressView mode) => mode switch
+    {
+        DeviceViewModel.AddressView.Ipv4 => d.HasIpv4,
+        DeviceViewModel.AddressView.Ipv6 => d.HasIpv6,
+        _ => true,
+    };
 
     private static bool DeviceMatchesFilter(DeviceViewModel d, string[] tokens)
     {

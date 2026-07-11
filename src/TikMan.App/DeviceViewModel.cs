@@ -128,18 +128,33 @@ public class DeviceViewModel : INotifyPropertyChanged
 
     public string Host => Model.Host;
 
-    /// <summary>When on, a device's IPv4 and IPv6 addresses are shown together in one row; off (the
-    /// default) shows only the primary address. Toggled by the checkbox in the main view.</summary>
-    public static bool CombineAddresses { get; set; }
+    /// <summary>How the Address column presents a device: both families combined, or one family
+    /// (the IPv4 / IPv6 tab). Shared across all rows; set from the main view.</summary>
+    public enum AddressView { Combined, Ipv4, Ipv6 }
+    public static AddressView Mode { get; set; } = AddressView.Ipv4;
 
-    /// <summary>The address(es) shown in the list: primary + other-family combined when
-    /// <see cref="CombineAddresses"/> is on and an alternate exists, otherwise just the primary.</summary>
-    public string AddressesDisplay => CombineAddresses && Model.AltAddress.Length > 0
-        ? $"{Model.Host}  ·  {Model.AltAddress}"
-        : Model.Host;
+    /// <summary>The device's IPv4 / IPv6 address, taken from either the primary host or the matched
+    /// other-family alternate ("" if the device has no address of that family).</summary>
+    public string Ipv4Address => FamilyAddress(AddressFamily.InterNetwork);
+    public string Ipv6Address => FamilyAddress(AddressFamily.InterNetworkV6);
 
-    /// <summary>Raises a change notification for <see cref="AddressesDisplay"/> (after the combine
-    /// toggle flips).</summary>
+    private string FamilyAddress(AddressFamily family)
+    {
+        if (IPAddress.TryParse(Model.Host, out var a) && a.AddressFamily == family) return Model.Host;
+        if (IPAddress.TryParse(Model.AltAddress, out var b) && b.AddressFamily == family) return Model.AltAddress;
+        return "";
+    }
+
+    /// <summary>What the Address column shows for the current <see cref="Mode"/>: both families in
+    /// combined view, otherwise the address of the tab's family.</summary>
+    public string AddressesDisplay => Mode switch
+    {
+        AddressView.Ipv4 => Ipv4Address.Length > 0 ? Ipv4Address : Model.Host,
+        AddressView.Ipv6 => Ipv6Address.Length > 0 ? Ipv6Address : Model.Host,
+        _ => Model.AltAddress.Length > 0 ? $"{Model.Host}  ·  {Model.AltAddress}" : Model.Host,
+    };
+
+    /// <summary>Raises a change notification for <see cref="AddressesDisplay"/> (after the mode flips).</summary>
     public void RefreshAddressDisplay() => Notify(nameof(AddressesDisplay));
 
     /// <summary>Notifies the discovery-derived properties after a later scan filled in the MAC/ports.</summary>

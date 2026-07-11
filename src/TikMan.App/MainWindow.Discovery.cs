@@ -124,6 +124,7 @@ public partial class MainWindow
             Ipv4Progress.IsIndeterminate = false;
             DiscoveryProgressPanel.Visibility = Visibility.Collapsed;
             MarkGateways();
+            ApplyDeviceFilter(); // re-evaluate tab membership after v4/v6 merges
             SaveAppData();
         }
     }
