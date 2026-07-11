@@ -245,8 +245,8 @@ public partial class MainWindow
         bool likely = d.IsLikelyMikroTik || d.Source == "MNDP";
         var device = new Device
         {
-            // No hostname learned over IPv6 → leave the name empty (an IPv6 as name reads poorly).
-            Name = d.Identity.Length > 0 ? d.Identity : d.IpAddress.Contains(':') ? "" : d.IpAddress,
+            // No hostname learned → leave the name empty (an IP address as name reads poorly).
+            Name = d.Identity,
             Host = d.IpAddress,
             MacAddress = d.MacAddress,
             OpenPorts = d.OpenPorts,
