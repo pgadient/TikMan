@@ -32,6 +32,7 @@ public static partial class HttpFingerprint
         ("laserjet", "HP"), ("officejet", "HP"), ("hewlett", "HP"), ("hp inc", "HP"),
         ("canon", "Canon"), ("brother", "Brother"), ("epson", "Epson"), ("lexmark", "Lexmark"), ("kyocera", "Kyocera"),
         ("sonos", "Sonos"), ("philips hue", "Philips Hue"), ("shelly", "Shelly"), ("sonoff", "Sonoff"), ("tasmota", "Tasmota"),
+        ("mystrom", "myStrom"), ("netatmo", "Netatmo"), ("fronius", "Fronius"), ("gardena", "Gardena"),
         ("internet-box", "Swisscom"), ("internet box", "Swisscom"), ("swisscom", "Swisscom"),
         ("sunrise", "Sunrise"), ("livebox", "Orange"), ("speedport", "Telekom"), ("connect box", "UPC/Vodafone"),
         ("home assistant", "Home Assistant"), ("openmediavault", "OpenMediaVault"), ("plex", "Plex"),

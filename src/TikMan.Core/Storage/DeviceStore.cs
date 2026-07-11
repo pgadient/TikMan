@@ -9,7 +9,7 @@ public class AppData
 {
     public int Version { get; set; } = 1;
     public int PollIntervalSeconds { get; set; } = 30;
-    public bool AutoRefreshEnabled { get; set; } = true;
+    public bool AutoRefreshEnabled { get; set; }
     public bool LogAutoRefresh { get; set; } = true;
     public AppLanguage Language { get; set; } = AppLanguage.System;
     public BackupMethod BackupMethod { get; set; } = BackupMethod.Auto;

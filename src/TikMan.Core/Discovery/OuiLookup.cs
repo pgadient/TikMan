@@ -95,7 +95,8 @@ public static class OuiLookup
             if (marker >= 0)
             {
                 if (inBlock) break; // reached the next entry
-                if (NormalizePrefix(line[..marker]) == prefix) { inBlock = true; block.Add(line.Trim()); }
+                // Keep only the company name from the "(hex)" line, not the MAC/OUI prefix itself.
+                if (NormalizePrefix(line[..marker]) == prefix) { inBlock = true; block.Add(line[(marker + 5)..].Trim()); }
                 continue;
             }
             if (!inBlock) continue;

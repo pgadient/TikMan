@@ -313,12 +313,22 @@ public class DeviceViewModel : INotifyPropertyChanged
 
     /// <summary>Model shown in the "Model" column for any device: the RouterOS board / TP-Link model
     /// when known, otherwise the model learned via WMI, otherwise the model scraped from the web UI
-    /// title (empty if none).</summary>
-    public string ModelDisplay =>
-        Board.Length > 0 ? Board
-        : Model.ExtraInfo.TryGetValue("Modell", out var wmi) && wmi.Length > 0 ? wmi
-        : Model.ExtraInfo.TryGetValue("Web-Titel", out var web) ? web
-        : "";
+    /// title. A leading manufacturer that already shows in the Vendor column is stripped
+    /// ("Brother MFC-L2710DW" → "MFC-L2710DW"); "" when the model is only the vendor name.</summary>
+    public string ModelDisplay
+    {
+        get
+        {
+            var model = Board.Length > 0 ? Board
+                : Model.ExtraInfo.TryGetValue("Modell", out var wmi) && wmi.Length > 0 ? wmi
+                : Model.ExtraInfo.TryGetValue("Web-Titel", out var web) ? web
+                : "";
+            var vendor = IdentifiedVendor;
+            if (vendor.Length > 0 && model.StartsWith(vendor, StringComparison.OrdinalIgnoreCase))
+                model = model[vendor.Length..].TrimStart(' ', '-', ':', '/', '·', ',');
+            return model.Trim();
+        }
+    }
 
     private string _uptime = "";
     public string Uptime { get => _uptime; private set { _uptime = value; Notify(); } }
