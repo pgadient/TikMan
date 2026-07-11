@@ -85,6 +85,16 @@
         <CheckBox x:Name="PersistListCheck" Margin="0,12,0,0" Content="{loc:Loc Set_PersistList}"/>
         <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_PersistHint}"/>
 
+        <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+            <TextBlock Width="150" VerticalAlignment="Center" FontWeight="SemiBold" Text="{loc:Loc Set_CoffeeButton}"/>
+            <ComboBox x:Name="CoffeeButtonCombo" Width="180" HorizontalAlignment="Left"
+                      VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag">
+                <ComboBoxItem Tag="normal" Content="{loc:Loc Set_CoffeeNormal}"/>
+                <ComboBoxItem Tag="small" Content="{loc:Loc Set_CoffeeSmall}"/>
+                <ComboBoxItem Tag="off" Content="{loc:Loc Set_CoffeeOff}"/>
+            </ComboBox>
+        </StackPanel>
+
         <TextBlock Margin="0,12,0,0" TextWrapping="Wrap" Foreground="#777777" Text="{loc:Loc Set_BackupInfo}"/>
 
         <Separator Margin="0,14,0,0"/>

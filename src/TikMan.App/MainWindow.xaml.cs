@@ -47,6 +47,7 @@ public partial class MainWindow : Window
         _ = LoadPublicIpAsync(); // fill the public-IP status field in the background
 
         InitSubnets();
+        ApplyCoffeeButton();
 
         SelectIntervalItem(_appData.PollIntervalSeconds);
         AutoRefreshCheck.IsChecked = _appData.AutoRefreshEnabled;
@@ -87,13 +88,38 @@ public partial class MainWindow : Window
 
     private void Settings_Click(object sender, RoutedEventArgs e)
     {
+        var oldCoffee = _appData.CoffeeButton;
         var dialog = new SettingsWindow(_appData) { Owner = this };
         if (dialog.ShowDialog() != true) return;
         if (dialog.ResetRequested) ResetToDefaults();
         else
         {
             RouterOsClient.AllowInsecureCertificates = _appData.DefaultIgnoreCertErrors;
+            ApplyCoffeeButton();
             SaveAppData();
+            if (_appData.CoffeeButton == "off" && oldCoffee != "off")
+                MessageBox.Show(this, T("Coffee_OffMsg"), T("Coffee_Title"), MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+    }
+
+    /// <summary>Applies the coffee-button preference (normal size, small ☕ only, or hidden).</summary>
+    private void ApplyCoffeeButton()
+    {
+        switch (_appData.CoffeeButton)
+        {
+            case "off":
+                CoffeeButton.Visibility = Visibility.Collapsed;
+                break;
+            case "small":
+                CoffeeButton.Visibility = Visibility.Visible;
+                CoffeeButton.Content = "☕";
+                CoffeeButton.Padding = new Thickness(6, 4, 6, 4);
+                break;
+            default:
+                CoffeeButton.Visibility = Visibility.Visible;
+                CoffeeButton.Content = T("Tb_BuyCoffee");
+                CoffeeButton.Padding = new Thickness(9, 4, 9, 4);
+                break;
         }
     }
 
@@ -106,6 +132,7 @@ public partial class MainWindow : Window
         _devices.Clear();
         _appData = new AppData();
         RouterOsClient.AllowInsecureCertificates = _appData.DefaultIgnoreCertErrors;
+        ApplyCoffeeButton();
         Instance.Apply(_appData.Language);
         SelectIntervalItem(_appData.PollIntervalSeconds);
         AutoRefreshCheck.IsChecked = _appData.AutoRefreshEnabled;
@@ -661,6 +688,10 @@ public partial class MainWindow : Window
         else
             SetStatus(T("Feat_Failed"));
     }
+
+    /// <summary>Coffee button (stub): a friendly thank-you until a real donation link exists.</summary>
+    private void BuyCoffee_Click(object sender, RoutedEventArgs e) =>
+        MessageBox.Show(this, T("Coffee_Msg"), T("Coffee_Title"), MessageBoxButton.OK, MessageBoxImage.Information);
 
     /// <summary>Opens an SMB share (\\host\share) in Windows Explorer.</summary>
     private void Share_Click(object sender, RoutedEventArgs e)

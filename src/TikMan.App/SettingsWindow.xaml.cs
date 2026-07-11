@@ -35,6 +35,8 @@ public partial class SettingsWindow : Window
         IgnoreCertCheck.IsChecked = data.DefaultIgnoreCertErrors;
         AllowHttpCheck.IsChecked = data.AllowHttpFallback;
         ForceMailtoCheck.IsChecked = data.ForceMailFallback;
+        CoffeeButtonCombo.SelectedValue = data.CoffeeButton;
+        if (CoffeeButtonCombo.SelectedValue is null) CoffeeButtonCombo.SelectedIndex = 0;
         DefaultUserBox.Text = data.DefaultUsername;
         _ready = true;
     }
@@ -99,6 +101,7 @@ public partial class SettingsWindow : Window
         _data.DefaultIgnoreCertErrors = IgnoreCertCheck.IsChecked == true;
         _data.AllowHttpFallback = AllowHttpCheck.IsChecked == true;
         _data.ForceMailFallback = ForceMailtoCheck.IsChecked == true;
+        if (CoffeeButtonCombo.SelectedValue is string coffee) _data.CoffeeButton = coffee;
 
         _data.DefaultUsername = DefaultUserBox.Text.Trim();
         if (DefaultPasswordBox.Password.Length > 0)

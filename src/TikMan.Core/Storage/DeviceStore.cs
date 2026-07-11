@@ -32,6 +32,8 @@ public class AppData
     /// <summary>Force the problem report to use the default-mail (mailto) path with the log inline,
     /// instead of preferring Outlook Classic with a file attachment. Off by default.</summary>
     public bool ForceMailFallback { get; set; }
+    /// <summary>Coffee button size: "normal", "small", or "off".</summary>
+    public string CoffeeButton { get; set; } = "normal";
     /// <summary>When false (default), the device list is not written to disk – devices only live
     /// for the current session. When true, the list and its config are persisted.</summary>
     public bool PersistDeviceList { get; set; }
