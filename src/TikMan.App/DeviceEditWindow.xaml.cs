@@ -37,6 +37,7 @@ public partial class DeviceEditWindow : Window
         RowHost.Height = new GridLength(0);
 
         PortBox.Text = first.Port.ToString();
+        SshPortBox.Text = first.SshPort.ToString();
         HttpsCheck.IsChecked = first.UseHttps;
         IgnoreCertCheck.IsChecked = first.IgnoreCertErrors;
         UserBox.Text = first.Username;
@@ -58,6 +59,7 @@ public partial class DeviceEditWindow : Window
             NameBox.Text = existing.Name;
             HostBox.Text = existing.Host;
             PortBox.Text = existing.Port.ToString();
+            SshPortBox.Text = existing.SshPort.ToString();
             HttpsCheck.IsChecked = existing.UseHttps;
             IgnoreCertCheck.IsChecked = existing.IgnoreCertErrors;
             UserBox.Text = existing.Username;
@@ -90,6 +92,10 @@ public partial class DeviceEditWindow : Window
         if (tpLink && PortBox.Text is "443") { HttpsCheck.IsChecked = false; PortBox.Text = "22"; }
         else if (!tpLink && PortBox.Text is "22") { HttpsCheck.IsChecked = true; PortBox.Text = "443"; }
     }
+
+    /// <summary>The SSH port from its box, or the current value when the box is empty/invalid.</summary>
+    private int ParseSshPort(int fallback) =>
+        int.TryParse(SshPortBox.Text.Trim(), out var p) && p is >= 1 and <= 65535 ? p : fallback;
 
     private void SelectChannel(string channel)
     {
@@ -127,6 +133,7 @@ public partial class DeviceEditWindow : Window
         device.Name = NameBox.Text.Trim().Length > 0 ? NameBox.Text.Trim() : host;
         device.Host = host;
         device.Port = port;
+        device.SshPort = ParseSshPort(device.SshPort);
         device.UseHttps = HttpsCheck.IsChecked == true;
         device.IgnoreCertErrors = IgnoreCertCheck.IsChecked == true;
         device.Username = UserBox.Text.Trim();
@@ -247,6 +254,7 @@ public partial class DeviceEditWindow : Window
         foreach (var d in _multi!)
         {
             d.Port = port;
+            d.SshPort = ParseSshPort(d.SshPort);
             d.UseHttps = useHttps;
             d.IgnoreCertErrors = ignoreCert;
             d.Username = user;

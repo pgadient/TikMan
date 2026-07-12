@@ -28,7 +28,6 @@ public partial class SettingsWindow : Window
 
         LanguageCombo.SelectedValue = data.Language.ToString();
         BackupMethodCombo.SelectedValue = data.BackupMethod.ToString();
-        SshPortBox.Text = data.SshPort.ToString();
         DefaultChannelCombo.SelectedValue = data.DefaultUpdateChannel;
         if (DefaultChannelCombo.SelectedValue is null) DefaultChannelCombo.SelectedIndex = 0; // fall back to stable
         PersistListCheck.IsChecked = data.PersistDeviceList;
@@ -40,7 +39,6 @@ public partial class SettingsWindow : Window
         ExpandRowsCheck.IsChecked = data.ExpandRowsByDefault;
         ExternalSshCheck.IsChecked = data.UseExternalSshClient;
         SshClientPathBox.Text = data.ExternalSshClientPath;
-        DefaultUserBox.Text = data.DefaultUsername;
         _ready = true;
     }
 
@@ -102,8 +100,6 @@ public partial class SettingsWindow : Window
             _data.Language = lang;
         if (BackupMethodCombo.SelectedValue is string methodTag && Enum.TryParse<BackupMethod>(methodTag, out var method))
             _data.BackupMethod = method;
-        if (int.TryParse(SshPortBox.Text.Trim(), out var port) && port is >= 1 and <= 65535)
-            _data.SshPort = port;
         if (DefaultChannelCombo.SelectedValue is string channel && channel.Length > 0)
             _data.DefaultUpdateChannel = channel;
         _data.PersistDeviceList = PersistListCheck.IsChecked == true;
@@ -114,10 +110,6 @@ public partial class SettingsWindow : Window
         _data.ExpandRowsByDefault = ExpandRowsCheck.IsChecked == true;
         _data.UseExternalSshClient = ExternalSshCheck.IsChecked == true;
         _data.ExternalSshClientPath = SshClientPathBox.Text.Trim();
-
-        _data.DefaultUsername = DefaultUserBox.Text.Trim();
-        if (DefaultPasswordBox.Password.Length > 0)
-            _data.DefaultEncryptedPassword = CredentialProtector.Protect(DefaultPasswordBox.Password);
 
         DialogResult = true;
     }

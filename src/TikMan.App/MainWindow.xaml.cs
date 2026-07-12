@@ -71,6 +71,7 @@ public partial class MainWindow : Window
         ApplyCoffeeButton();
         foreach (var vm in _devices) ApplyDefaultExpansion(vm); // persisted devices
 
+        if (_appData.ShowIpv6View) AddressTabs.SelectedIndex = 1; // restore the last address view
         SelectIntervalItem(_appData.PollIntervalSeconds);
         AutoRefreshCheck.IsChecked = _appData.AutoRefreshEnabled;
         LogAutoRefreshCheck.IsChecked = _appData.LogAutoRefresh;
@@ -96,6 +97,7 @@ public partial class MainWindow : Window
         _appData.PollIntervalSeconds = SelectedIntervalSeconds();
         _appData.AutoRefreshEnabled = AutoRefreshCheck.IsChecked == true;
         _appData.LogAutoRefresh = LogAutoRefreshCheck.IsChecked == true;
+        _appData.ShowIpv6View = _v6Mode;
         try { DeviceStore.Save(_appData); }
         catch (Exception ex)
         {
@@ -313,6 +315,34 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>Context menu: set login/connection info for the marked devices (or the selected row
+    /// when nothing is marked). Opens the single or multi editor accordingly.</summary>
+    private void SetLogin_Click(object sender, RoutedEventArgs e)
+    {
+        var targets = _devices.Where(d => d.IsSelected).ToList();
+        if (targets.Count == 0 && SelectedDevice is { } sel) targets.Add(sel);
+        if (targets.Count == 0) { SetStatus(T("Msg_SelectDeviceFirst")); return; }
+        if (targets.Count == 1)
+        {
+            var dialog = new DeviceEditWindow(targets[0].Model) { Owner = this };
+            if (dialog.ShowDialog() != true) return;
+            targets[0].ResetClient();
+            MarkGateways();
+            SaveAppData();
+            _ = RefreshAndCheckAsync(targets[0]);
+        }
+        else EditMultiple(targets);
+    }
+
+    /// <summary>Context menu: open an SSH terminal to the selected device.</summary>
+    private void ContextSsh_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedDevice is not { } vm) { SetStatus(T("Msg_SelectDeviceFirst")); return; }
+        var host = _v6Mode ? vm.Ipv6List.FirstOrDefault() ?? vm.Ipv4Address : vm.Ipv4Address;
+        if (host.Length == 0) host = vm.Host;
+        LaunchSshTerminal(host.Trim('[', ']'), vm);
+    }
+
     /// <summary>Edits the settings shared by several marked devices at once.</summary>
     private void EditMultiple(List<DeviceViewModel> vms)
     {
@@ -373,6 +403,7 @@ public partial class MainWindow : Window
     {
         var user = vm?.Model.Username.Trim() ?? "";
         var target = user.Length > 0 ? $"{user}@{host}" : host;
+        var sshPort = vm?.Model.SshPort ?? 22;
 
         var external = _appData.ExternalSshClientPath.Trim();
         if (_appData.UseExternalSshClient && external.Length > 0)
@@ -382,8 +413,8 @@ public partial class MainWindow : Window
             bool putty = exeName.Contains("putty", StringComparison.OrdinalIgnoreCase) ||
                          exeName.Contains("kitty", StringComparison.OrdinalIgnoreCase);
             var extArgs = putty
-                ? (_appData.SshPort != 22 ? $"-ssh {target} -P {_appData.SshPort}" : $"-ssh {target}")
-                : (_appData.SshPort != 22 ? $"-p {_appData.SshPort} {target}" : target);
+                ? (sshPort != 22 ? $"-ssh {target} -P {sshPort}" : $"-ssh {target}")
+                : (sshPort != 22 ? $"-p {sshPort} {target}" : target);
             try
             {
                 System.Diagnostics.Process.Start(
@@ -393,7 +424,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var sshArgs = _appData.SshPort != 22 ? $"-p {_appData.SshPort} {target}" : target;
+        var sshArgs = sshPort != 22 ? $"-p {sshPort} {target}" : target;
         try
         {
             System.Diagnostics.Process.Start(
@@ -630,7 +661,7 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog(this) != true) return;
 
         SetStatus(T("Full_Running", vm.Name));
-        var ok = await vm.DownloadFullBackupAsync(_appData.BackupMethod, _appData.SshPort, dialog.FileName);
+        var ok = await vm.DownloadFullBackupAsync(_appData.BackupMethod, vm.Model.SshPort, dialog.FileName);
         if (ok)
         {
             SetStatus(T("Full_Saved", vm.Name, dialog.FileName));

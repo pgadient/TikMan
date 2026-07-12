@@ -149,6 +149,15 @@
                         <Setter Property="VerticalAlignment" Value="Center"/>
                     </Style>
                 </DataGrid.Resources>
+                <DataGrid.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="{loc:Loc Ctx_SetLogin}" Click="SetLogin_Click" FontWeight="SemiBold"/>
+                        <MenuItem Header="{loc:Loc Tb_Edit}" Click="EditDevice_Click"/>
+                        <MenuItem Header="{loc:Loc Ctx_SshTerminal}" Click="ContextSsh_Click"/>
+                        <Separator/>
+                        <MenuItem Header="{loc:Loc Tb_Remove}" Click="RemoveDevice_Click"/>
+                    </ContextMenu>
+                </DataGrid.ContextMenu>
                 <DataGrid.RowStyle>
                     <Style TargetType="DataGridRow">
                         <!-- Group colour of the IPv6 view (transparent in the IPv4 view). -->

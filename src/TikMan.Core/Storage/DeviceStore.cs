@@ -37,6 +37,8 @@ public class AppData
     /// <summary>Expand device rows by default, so all IPv6 addresses and SMB shares are visible
     /// without clicking the + expander.</summary>
     public bool ExpandRowsByDefault { get; set; }
+    /// <summary>Which address tab the list last showed: false = IPv4 (default), true = IPv6.</summary>
+    public bool ShowIpv6View { get; set; }
     /// <summary>Open ssh sessions with an external client (see <see cref="ExternalSshClientPath"/>)
     /// instead of the built-in OpenSSH terminal.</summary>
     public bool UseExternalSshClient { get; set; }

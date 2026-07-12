@@ -14,12 +14,6 @@
                 <RowDefinition Height="34"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="34"/>
-                <RowDefinition Height="34"/>
-                <RowDefinition Height="14"/>
-                <RowDefinition Height="26"/>
-                <RowDefinition Height="34"/>
-                <RowDefinition Height="34"/>
-                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
             <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" FontWeight="SemiBold" Text="{loc:Loc Set_Language}"/>
@@ -42,25 +36,9 @@
                 <ComboBoxItem Tag="Web" Content="{loc:Loc Set_BackupWeb}"/>
                 <ComboBoxItem Tag="Ssh" Content="{loc:Loc Set_BackupSsh}"/>
             </ComboBox>
-
-            <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" FontWeight="SemiBold" Text="{loc:Loc Set_SshPort}"/>
-            <TextBox x:Name="SshPortBox" Grid.Row="3" Grid.Column="1" Width="80" HorizontalAlignment="Left"
-                     VerticalContentAlignment="Center" Height="26" Text="22"/>
-
-            <TextBlock Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" VerticalAlignment="Center"
-                       FontWeight="SemiBold" Text="{loc:Loc Sc_DefaultCreds}"/>
-
-            <TextBlock Grid.Row="6" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc Sc_User}"/>
-            <TextBox x:Name="DefaultUserBox" Grid.Row="6" Grid.Column="1" Width="220" HorizontalAlignment="Left"
-                     VerticalContentAlignment="Center" Height="26"/>
-
-            <TextBlock Grid.Row="7" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc Sc_Password}"/>
-            <PasswordBox x:Name="DefaultPasswordBox" Grid.Row="7" Grid.Column="1" Width="220" HorizontalAlignment="Left"
-                         VerticalContentAlignment="Center" Height="26"/>
-
-            <TextBlock Grid.Row="8" Grid.Column="1" Foreground="#777777" FontSize="11" Margin="0,2,0,0"
-                       Text="{loc:Loc Set_DefaultPwHint}"/>
         </Grid>
+
+        <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_CredsMovedHint}"/>
 
         <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
             <TextBlock Width="150" VerticalAlignment="Center" FontWeight="SemiBold" Text="{loc:Loc Set_DefaultChannel}"/>

@@ -26,6 +26,9 @@ public class Device
     public int Port { get; set; } = 443;
     public bool UseHttps { get; set; } = true;
     public bool IgnoreCertErrors { get; set; } = true;
+    /// <summary>SSH port for backups / the info probe / the terminal (separate from the REST
+    /// <see cref="Port"/>, which is 443/80 for MikroTik).</summary>
+    public int SshPort { get; set; } = 22;
     public string Username { get; set; } = "admin";
     /// <summary>DPAPI-encrypted (Base64), never plaintext.</summary>
     public string EncryptedPassword { get; set; } = "";

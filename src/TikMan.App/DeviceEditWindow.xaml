@@ -44,6 +44,8 @@
                           Checked="HttpsCheck_Changed" Unchecked="HttpsCheck_Changed" Content="{loc:Loc De_Https}"/>
                 <TextBlock VerticalAlignment="Center" Margin="16,0,4,0" Text="{loc:Loc De_Port}"/>
                 <TextBox x:Name="PortBox" Width="60" VerticalContentAlignment="Center" Height="24" Text="443"/>
+                <TextBlock VerticalAlignment="Center" Margin="16,0,4,0" Text="{loc:Loc De_SshPort}"/>
+                <TextBox x:Name="SshPortBox" Width="60" VerticalContentAlignment="Center" Height="24" Text="22"/>
             </StackPanel>
 
             <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center"/>

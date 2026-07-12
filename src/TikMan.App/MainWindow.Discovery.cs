@@ -348,7 +348,7 @@ public partial class MainWindow
                 var host = vm.Ipv4Address.Length > 0 ? vm.Ipv4Address : vm.Host;
                 var password = CredentialProtector.Unprotect(vm.Model.EncryptedPassword);
                 if (password.Length > 0 &&
-                    await SshInfoProbe.QueryAsync(host, _appData.SshPort, vm.Model.Username.Trim(),
+                    await SshInfoProbe.QueryAsync(host, vm.Model.SshPort, vm.Model.Username.Trim(),
                         password, $"{vm.IdentifiedVendor} {vm.MacVendor}") is { } sshInfo)
                 {
                     vm.ApplySshInfo(sshInfo);
