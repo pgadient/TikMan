@@ -68,6 +68,7 @@ public partial class MainWindow : Window
             new SortDescription(nameof(DeviceViewModel.Ipv4SortKey), ListSortDirection.Ascending)); // default sort by IPv4
         _addressColumnIndex = Ipv4Column.DisplayIndex;
         ApplyDeviceFilter(); // the v4 view only lists devices that have an IPv4
+        if (_appData.PersistDeviceList) ApplyColumnLayout(); // restore saved order/width/sort
         _ = LoadPublicIpAsync(); // fill the public-IP status field in the background
 
         InitSubnets();
@@ -98,8 +99,9 @@ public partial class MainWindow : Window
 
     private void SaveAppData()
     {
-        // Only persist the device list when the user opted in; otherwise devices are session-only.
+        // Only persist the device list + column layout when the user opted in.
         _appData.Devices = _appData.PersistDeviceList ? _devices.Select(vm => vm.Model).ToList() : new List<Device>();
+        if (_appData.PersistDeviceList) CaptureColumnLayout(); else _appData.ColumnLayout = new();
         _appData.PollIntervalSeconds = SelectedIntervalSeconds();
         _appData.AutoRefreshEnabled = AutoRefreshCheck.IsChecked == true;
         _appData.LogAutoRefresh = LogAutoRefreshCheck.IsChecked == true;
@@ -109,6 +111,43 @@ public partial class MainWindow : Window
         {
             MessageBox.Show(this, T("Msg_SaveConfigFailed", ex.Message),
                 "TikMan", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    /// <summary>Captures the current column order/width and the active sort into the config.</summary>
+    private void CaptureColumnLayout()
+    {
+        _appData.ColumnLayout = DeviceGrid.Columns
+            .Select(c => new ColumnState { Width = c.ActualWidth, DisplayIndex = c.DisplayIndex })
+            .ToList();
+        var sorted = DeviceGrid.Columns.FirstOrDefault(c => c.SortDirection is not null);
+        _appData.SortColumn = sorted is null ? -1 : DeviceGrid.Columns.IndexOf(sorted);
+        _appData.SortDescending = sorted?.SortDirection == ListSortDirection.Descending;
+    }
+
+    /// <summary>Restores a saved column order/width and sort (only if the counts still match).</summary>
+    private void ApplyColumnLayout()
+    {
+        var saved = _appData.ColumnLayout;
+        if (saved.Count != DeviceGrid.Columns.Count) return;
+        // Apply widths first, then display indices in target order so the permutation stays valid.
+        for (int i = 0; i < saved.Count; i++)
+            if (saved[i].Width > 20) DeviceGrid.Columns[i].Width = new DataGridLength(saved[i].Width);
+        foreach (var (col, _) in DeviceGrid.Columns
+                     .Select((c, i) => (c, saved[i].DisplayIndex)).OrderBy(x => x.Item2))
+            col.DisplayIndex = Math.Clamp(saved[DeviceGrid.Columns.IndexOf(col)].DisplayIndex, 0, DeviceGrid.Columns.Count - 1);
+
+        if (_appData.SortColumn >= 0 && _appData.SortColumn < DeviceGrid.Columns.Count)
+        {
+            var col = DeviceGrid.Columns[_appData.SortColumn];
+            var dir = _appData.SortDescending ? ListSortDirection.Descending : ListSortDirection.Ascending;
+            col.SortDirection = dir;
+            if (col.SortMemberPath is { Length: > 0 } path)
+            {
+                var view = CollectionViewSource.GetDefaultView(DeviceGrid.ItemsSource);
+                view.SortDescriptions.Clear();
+                view.SortDescriptions.Add(new SortDescription(path, dir));
+            }
         }
     }
 

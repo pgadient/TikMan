@@ -49,7 +49,20 @@ public class AppData
     /// <summary>When true, the device list and its config (encrypted credentials included) are
     /// persisted to disk. Off by default – devices then only live for the current session.</summary>
     public bool PersistDeviceList { get; set; }
+    /// <summary>Saved device-list column layout (order + width), only kept while
+    /// <see cref="PersistDeviceList"/> is on. One entry per column in creation order.</summary>
+    public List<ColumnState> ColumnLayout { get; set; } = new();
+    /// <summary>Sorted column (index in creation order, -1 = none) and its direction.</summary>
+    public int SortColumn { get; set; } = -1;
+    public bool SortDescending { get; set; }
     public List<Device> Devices { get; set; } = new();
+}
+
+/// <summary>Persisted layout of one device-list column.</summary>
+public class ColumnState
+{
+    public double Width { get; set; }
+    public int DisplayIndex { get; set; }
 }
 
 /// <summary>Loads/saves the app data as JSON under %AppData%\TikMan.</summary>
