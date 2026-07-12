@@ -381,7 +381,12 @@ public class DeviceViewModel : INotifyPropertyChanged
             foreach (var port in Model.OpenPorts.Distinct().OrderBy(p => p))
             {
                 var svc = SubnetScanner.ServiceName(port);
-                var url = svc is "ssh" ? $"ssh://{hostPart}" : WebUrl(port, hostPart);
+                var url = svc switch
+                {
+                    "ssh" => $"ssh://{hostPart}",
+                    "ftp" => $"ftp://{hostPart}/",
+                    _ => WebUrl(port, hostPart),
+                };
                 list.Add(new ProtocolVm(svc, url, ProtocolVm.BrushFor(svc)));
             }
         }
@@ -935,7 +940,9 @@ public class ProtocolVm
     public bool IsWeb => Url.StartsWith("http", StringComparison.OrdinalIgnoreCase);
     /// <summary>ssh badges open an interactive terminal session on click.</summary>
     public bool IsSsh => Url.StartsWith("ssh://", StringComparison.OrdinalIgnoreCase);
-    public bool IsClickable => IsWeb || IsSsh;
+    /// <summary>ftp badges open the site in Windows File Explorer on click.</summary>
+    public bool IsFtp => Url.StartsWith("ftp://", StringComparison.OrdinalIgnoreCase);
+    public bool IsClickable => IsWeb || IsSsh || IsFtp;
 
     private static readonly Dictionary<string, Brush> Cache = new();
 

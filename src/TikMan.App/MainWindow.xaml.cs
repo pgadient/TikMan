@@ -388,6 +388,13 @@ public partial class MainWindow : Window
             LaunchSshTerminal(proto.Url["ssh://".Length..].Trim('[', ']'), RowDeviceFromVisual(sender));
             e.Handled = true;
         }
+        else if (proto.IsFtp)
+        {
+            // File Explorer still browses ftp:// (browsers dropped it); go straight to explorer.exe.
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", proto.Url) { UseShellExecute = true }); }
+            catch { /* explorer missing / blocked */ }
+            e.Handled = true;
+        }
         else if (proto.IsWeb)
         {
             try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(proto.Url) { UseShellExecute = true }); }
