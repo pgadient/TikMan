@@ -2,110 +2,113 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:TikMan.App.Localization"
-        Title="{loc:Loc Set_Title}" Width="480" SizeToContent="Height" Icon="pack://application:,,,/TikMan;component/tikman.png"
-        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False">
-    <StackPanel Margin="16">
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="150"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="34"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="34"/>
-            </Grid.RowDefinitions>
-
-            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" FontWeight="SemiBold" Text="{loc:Loc Set_Language}"/>
-            <ComboBox x:Name="LanguageCombo" Grid.Row="0" Grid.Column="1" Width="220" HorizontalAlignment="Left"
-                      VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag"
-                      SelectionChanged="LanguageCombo_SelectionChanged">
-                <ComboBoxItem Tag="System"><StackPanel Orientation="Horizontal"><TextBlock Text="🌐 "/><TextBlock Text="{loc:Loc Set_LangSystem}"/></StackPanel></ComboBoxItem>
-                <ComboBoxItem Tag="SwissGerman"><StackPanel Orientation="Horizontal"><TextBlock Text="🇨🇭 "/><TextBlock Text="{loc:Loc Set_LangSwiss}"/></StackPanel></ComboBoxItem>
-                <ComboBoxItem Tag="German"><StackPanel Orientation="Horizontal"><TextBlock Text="🇩🇪 "/><TextBlock Text="{loc:Loc Set_LangGerman}"/></StackPanel></ComboBoxItem>
-                <ComboBoxItem Tag="English"><StackPanel Orientation="Horizontal"><TextBlock Text="🇬🇧 "/><TextBlock Text="{loc:Loc Set_LangEnglish}"/></StackPanel></ComboBoxItem>
-                <ComboBoxItem Tag="French"><StackPanel Orientation="Horizontal"><TextBlock Text="🇫🇷 "/><TextBlock Text="{loc:Loc Set_LangFrench}"/></StackPanel></ComboBoxItem>
-                <ComboBoxItem Tag="Italian"><StackPanel Orientation="Horizontal"><TextBlock Text="🇮🇹 "/><TextBlock Text="{loc:Loc Set_LangItalian}"/></StackPanel></ComboBoxItem>
-                <ComboBoxItem Tag="Spanish"><StackPanel Orientation="Horizontal"><TextBlock Text="🇪🇸 "/><TextBlock Text="{loc:Loc Set_LangSpanish}"/></StackPanel></ComboBoxItem>
-                <ComboBoxItem Tag="Portuguese"><StackPanel Orientation="Horizontal"><TextBlock Text="🇵🇹 "/><TextBlock Text="{loc:Loc Set_LangPortuguese}"/></StackPanel></ComboBoxItem>
-            </ComboBox>
-
-            <TextBlock Grid.Row="1" Grid.Column="1" Foreground="#777777" FontSize="11" Margin="0,2,0,6"
-                       Text="{loc:Loc Set_LangHint}"/>
-
-            <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" FontWeight="SemiBold" Text="{loc:Loc Set_BackupMethod}"/>
-            <ComboBox x:Name="BackupMethodCombo" Grid.Row="2" Grid.Column="1" Width="220" HorizontalAlignment="Left"
-                      VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag">
-                <ComboBoxItem Tag="Auto" Content="{loc:Loc Set_BackupAuto}"/>
-                <ComboBoxItem Tag="Web" Content="{loc:Loc Set_BackupWeb}"/>
-                <ComboBoxItem Tag="Ssh" Content="{loc:Loc Set_BackupSsh}"/>
-            </ComboBox>
-        </Grid>
-
-        <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_CredsMovedHint}"/>
-
-        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-            <TextBlock Width="150" VerticalAlignment="Center" FontWeight="SemiBold" Text="{loc:Loc Set_DefaultChannel}"/>
-            <ComboBox x:Name="DefaultChannelCombo" Width="180" HorizontalAlignment="Left"
-                      VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag">
-                <ComboBoxItem Tag="stable">stable</ComboBoxItem>
-                <ComboBoxItem Tag="long-term">long-term</ComboBoxItem>
-                <ComboBoxItem Tag="testing">testing</ComboBoxItem>
-                <ComboBoxItem Tag="development">development</ComboBoxItem>
-            </ComboBox>
-        </StackPanel>
-
-        <CheckBox x:Name="IgnoreCertCheck" Margin="0,12,0,0" Content="{loc:Loc Set_IgnoreCert}"/>
-        <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_IgnoreCertHint}"/>
-
-        <CheckBox x:Name="AllowHttpCheck" Margin="0,10,0,0" Content="{loc:Loc Set_AllowHttp}"/>
-        <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#B36B00" FontSize="11" Text="{loc:Loc Set_AllowHttpHint}"/>
-
-        <CheckBox x:Name="ForceMailtoCheck" Margin="0,10,0,0" Content="{loc:Loc Set_ForceMailto}"/>
-        <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_ForceMailtoHint}"/>
-
-        <CheckBox x:Name="PersistListCheck" Margin="0,12,0,0" Content="{loc:Loc Set_PersistList}"/>
-        <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_PersistHint}"/>
-
-        <CheckBox x:Name="ExpandRowsCheck" Margin="0,12,0,0" Content="{loc:Loc Set_ExpandRows}"/>
-
-        <CheckBox x:Name="ExternalSshCheck" Margin="0,12,0,0" Content="{loc:Loc Set_UseExternalSsh}"/>
-        <DockPanel Margin="20,4,0,0">
-            <Button DockPanel.Dock="Right" Content="…" Padding="8,2" Margin="4,0,0,0" Click="SshClientBrowse_Click"/>
-            <TextBox x:Name="SshClientPathBox" Height="24" VerticalContentAlignment="Center"/>
-        </DockPanel>
-
-        <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-            <TextBlock Width="150" VerticalAlignment="Center" FontWeight="SemiBold" Text="{loc:Loc Set_CoffeeButton}"/>
-            <ComboBox x:Name="CoffeeButtonCombo" Width="180" HorizontalAlignment="Left"
-                      VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag">
-                <ComboBoxItem Tag="normal" Content="{loc:Loc Set_CoffeeNormal}"/>
-                <ComboBoxItem Tag="small" Content="{loc:Loc Set_CoffeeSmall}"/>
-                <ComboBoxItem Tag="off" Content="{loc:Loc Set_CoffeeOff}"/>
-            </ComboBox>
-        </StackPanel>
-
-        <TextBlock Margin="0,12,0,0" TextWrapping="Wrap" Foreground="#777777" Text="{loc:Loc Set_BackupInfo}"/>
-
-        <Separator Margin="0,14,0,0"/>
-        <TextBlock Margin="0,10,0,0" FontWeight="SemiBold" Text="{loc:Loc Set_OuiTitle}"/>
-        <TextBlock Margin="0,2,0,0" TextWrapping="Wrap" Foreground="#777777" Text="{loc:Loc Set_OuiInfo}"/>
-        <TextBlock Margin="0,4,0,0">
-            <Hyperlink NavigateUri="https://standards-oui.ieee.org/oui/oui.txt" RequestNavigate="Hyperlink_RequestNavigate">
-                https://standards-oui.ieee.org/oui/oui.txt
-            </Hyperlink>
-        </TextBlock>
-        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-            <Button x:Name="OuiDownloadButton" Padding="10,4" Click="OuiDownload_Click" Content="{loc:Loc Set_OuiDownload}"/>
-            <TextBlock x:Name="OuiStatusText" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="#777777" TextTrimming="CharacterEllipsis"/>
-        </StackPanel>
-
-        <DockPanel Margin="0,16,0,0">
+        Title="{loc:Loc Set_Title}" Width="500" Height="680" MinHeight="400" MaxHeight="900"
+        Icon="pack://application:,,,/TikMan;component/tikman.png"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip" ShowInTaskbar="False">
+    <DockPanel Margin="16">
+        <!-- Action buttons stay pinned; the settings scroll above them. -->
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
             <Button DockPanel.Dock="Left" Padding="14,5" Foreground="#B33030" Click="Reset_Click" Content="{loc:Loc Set_Reset}"/>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Padding="14,5" Margin="0,0,8,0" IsDefault="True" Click="Save_Click" Content="{loc:Loc Set_Save}"/>
                 <Button Padding="14,5" IsCancel="True" Content="{loc:Loc Set_Cancel}"/>
             </StackPanel>
         </DockPanel>
-    </StackPanel>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
+            <StackPanel>
+                <!-- Every setting stacks vertically: a label on its own line, the control below –
+                     so long translated labels never overlap a control. -->
+
+                <TextBlock FontWeight="SemiBold" Text="{loc:Loc Set_Language}"/>
+                <ComboBox x:Name="LanguageCombo" Width="240" HorizontalAlignment="Left" Margin="0,3,0,0"
+                          VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag"
+                          SelectionChanged="LanguageCombo_SelectionChanged">
+                    <ComboBoxItem Tag="System"><StackPanel Orientation="Horizontal"><TextBlock Text="🌐 "/><TextBlock Text="{loc:Loc Set_LangSystem}"/></StackPanel></ComboBoxItem>
+                    <ComboBoxItem Tag="SwissGerman"><StackPanel Orientation="Horizontal"><TextBlock Text="🇨🇭 "/><TextBlock Text="{loc:Loc Set_LangSwiss}"/></StackPanel></ComboBoxItem>
+                    <ComboBoxItem Tag="German"><StackPanel Orientation="Horizontal"><TextBlock Text="🇩🇪 "/><TextBlock Text="{loc:Loc Set_LangGerman}"/></StackPanel></ComboBoxItem>
+                    <ComboBoxItem Tag="English"><StackPanel Orientation="Horizontal"><TextBlock Text="🇬🇧 "/><TextBlock Text="{loc:Loc Set_LangEnglish}"/></StackPanel></ComboBoxItem>
+                    <ComboBoxItem Tag="French"><StackPanel Orientation="Horizontal"><TextBlock Text="🇫🇷 "/><TextBlock Text="{loc:Loc Set_LangFrench}"/></StackPanel></ComboBoxItem>
+                    <ComboBoxItem Tag="Italian"><StackPanel Orientation="Horizontal"><TextBlock Text="🇮🇹 "/><TextBlock Text="{loc:Loc Set_LangItalian}"/></StackPanel></ComboBoxItem>
+                    <ComboBoxItem Tag="Spanish"><StackPanel Orientation="Horizontal"><TextBlock Text="🇪🇸 "/><TextBlock Text="{loc:Loc Set_LangSpanish}"/></StackPanel></ComboBoxItem>
+                    <ComboBoxItem Tag="Portuguese"><StackPanel Orientation="Horizontal"><TextBlock Text="🇵🇹 "/><TextBlock Text="{loc:Loc Set_LangPortuguese}"/></StackPanel></ComboBoxItem>
+                </ComboBox>
+                <TextBlock Foreground="#777777" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap" Text="{loc:Loc Set_LangHint}"/>
+
+                <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_BackupMethod}"/>
+                <ComboBox x:Name="BackupMethodCombo" Width="240" HorizontalAlignment="Left" Margin="0,3,0,0"
+                          VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag">
+                    <ComboBoxItem Tag="Auto" Content="{loc:Loc Set_BackupAuto}"/>
+                    <ComboBoxItem Tag="Web" Content="{loc:Loc Set_BackupWeb}"/>
+                    <ComboBoxItem Tag="Ssh" Content="{loc:Loc Set_BackupSsh}"/>
+                </ComboBox>
+                <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_BackupInfo}"/>
+
+                <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_DefaultChannel}"/>
+                <ComboBox x:Name="DefaultChannelCombo" Width="200" HorizontalAlignment="Left" Margin="0,3,0,0"
+                          VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag">
+                    <ComboBoxItem Tag="stable">stable</ComboBoxItem>
+                    <ComboBoxItem Tag="long-term">long-term</ComboBoxItem>
+                    <ComboBoxItem Tag="testing">testing</ComboBoxItem>
+                    <ComboBoxItem Tag="development">development</ComboBoxItem>
+                </ComboBox>
+
+                <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_CoffeeButton}"/>
+                <ComboBox x:Name="CoffeeButtonCombo" Width="200" HorizontalAlignment="Left" Margin="0,3,0,0"
+                          VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag">
+                    <ComboBoxItem Tag="normal" Content="{loc:Loc Set_CoffeeNormal}"/>
+                    <ComboBoxItem Tag="small" Content="{loc:Loc Set_CoffeeSmall}"/>
+                    <ComboBoxItem Tag="off" Content="{loc:Loc Set_CoffeeOff}"/>
+                </ComboBox>
+
+                <Separator Margin="0,14,0,0"/>
+
+                <CheckBox x:Name="IgnoreCertCheck" Margin="0,12,0,0" Content="{loc:Loc Set_IgnoreCert}"/>
+                <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_IgnoreCertHint}"/>
+
+                <CheckBox x:Name="AllowHttpCheck" Margin="0,12,0,0" Content="{loc:Loc Set_AllowHttp}"/>
+                <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#B36B00" FontSize="11" Text="{loc:Loc Set_AllowHttpHint}"/>
+
+                <CheckBox x:Name="ForceMailtoCheck" Margin="0,12,0,0" Content="{loc:Loc Set_ForceMailto}"/>
+                <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_ForceMailtoHint}"/>
+
+                <CheckBox x:Name="PersistListCheck" Margin="0,12,0,0" Content="{loc:Loc Set_PersistList}"/>
+                <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_PersistHint}"/>
+
+                <CheckBox x:Name="ExpandRowsCheck" Margin="0,12,0,0" Content="{loc:Loc Set_ExpandRows}"/>
+
+                <CheckBox x:Name="ExternalSshCheck" Margin="0,12,0,0" Content="{loc:Loc Set_UseExternalSsh}"/>
+                <DockPanel Margin="20,4,0,0">
+                    <Button DockPanel.Dock="Right" Content="…" Padding="8,2" Margin="4,0,0,0" Click="SshClientBrowse_Click"/>
+                    <TextBox x:Name="SshClientPathBox" Height="24" VerticalContentAlignment="Center"/>
+                </DockPanel>
+
+                <TextBlock Margin="0,14,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_CredsMovedHint}"/>
+
+                <Separator Margin="0,14,0,0"/>
+
+                <!-- OUI database -->
+                <TextBlock Margin="0,10,0,0" FontWeight="SemiBold" Text="{loc:Loc Set_OuiTitle}"/>
+                <TextBlock Margin="0,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_OuiInfo}"/>
+                <TextBlock Margin="0,4,0,0">
+                    <Hyperlink NavigateUri="https://standards-oui.ieee.org/oui/oui.txt" RequestNavigate="Hyperlink_RequestNavigate">
+                        https://standards-oui.ieee.org/oui/oui.txt
+                    </Hyperlink>
+                </TextBlock>
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <Button x:Name="OuiDownloadButton" Padding="10,4" Click="OuiDownload_Click" Content="{loc:Loc Set_OuiDownload}"/>
+                    <TextBlock x:Name="OuiStatusText" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="#777777" TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+
+                <Separator Margin="0,14,0,0"/>
+
+                <!-- Config file locations -->
+                <TextBlock Margin="0,10,0,0" FontWeight="SemiBold" Text="{loc:Loc Set_ConfigTitle}"/>
+                <TextBlock Margin="0,2,0,0" TextWrapping="Wrap" Foreground="#B36B00" FontSize="11" Text="{loc:Loc Set_ConfigHint}"/>
+                <TextBox x:Name="ConfigPathBox" Margin="0,6,0,0" IsReadOnly="True" TextWrapping="Wrap"
+                         Background="#F7F7F7" BorderThickness="1" BorderBrush="#DDDDDD" Padding="6" FontSize="11" FontFamily="Consolas"/>
+                <Button HorizontalAlignment="Left" Margin="0,6,0,0" Padding="10,4" Click="OpenConfigFolder_Click" Content="{loc:Loc Set_OpenFolder}"/>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
 </Window>

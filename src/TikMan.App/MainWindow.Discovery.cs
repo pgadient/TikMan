@@ -57,6 +57,13 @@ public partial class MainWindow
 
     private async void ScanNow_Click(object sender, RoutedEventArgs e) => await RunDiscoveryAsync(auto: false);
 
+    /// <summary>Enter in the subnet box starts the scan; Escape clears the box.</summary>
+    private async void SubnetBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Enter) { e.Handled = true; await RunDiscoveryAsync(auto: false); }
+        else if (e.Key == System.Windows.Input.Key.Escape) { e.Handled = true; SubnetBox.Clear(); }
+    }
+
     /// <summary>Runs MNDP + IPv4 subnet + IPv6 discovery together and auto-adds every found host.
     /// Clicking the button again while running stops it.</summary>
     private async Task RunDiscoveryAsync(bool auto)
@@ -385,6 +392,23 @@ public partial class MainWindow
                 {
                     vm.ApplyRadioInfo(radio);
                     changed = false; // ApplyRadioInfo already raised the details
+                }
+            }
+            catch { /* best effort */ }
+        }
+
+        // SNMP (public community): the exact model of printers/copiers/switches/UPS lives in
+        // sysDescr, unauthenticated. Only fills what the richer probes above left blank.
+        if (vm.Board.Length == 0 && !ct.IsCancellationRequested &&
+            (vm.ModelDisplay.Length == 0 || vm.IdentifiedVendor.Length == 0 || vm.OsDisplay.Length == 0))
+        {
+            try
+            {
+                var host = vm.Ipv4Address.Length > 0 ? vm.Ipv4Address : vm.Host;
+                if (await SnmpProbe.QueryAsync(host, ct) is { } snmp)
+                {
+                    vm.ApplySnmpInfo(snmp);
+                    changed = false; // ApplySnmpInfo already raised the details
                 }
             }
             catch { /* best effort */ }

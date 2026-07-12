@@ -39,6 +39,8 @@ public partial class SettingsWindow : Window
         ExpandRowsCheck.IsChecked = data.ExpandRowsByDefault;
         ExternalSshCheck.IsChecked = data.UseExternalSshClient;
         SshClientPathBox.Text = data.ExternalSshClientPath;
+        ConfigPathBox.Text = string.Join("\n", DeviceStore.StorageFile,
+            Path.Combine(AppContext.BaseDirectory, "oui.txt") + "  (" + LocalizationManager.T("Set_ConfigOui") + ")");
         _ready = true;
     }
 
@@ -76,6 +78,16 @@ public partial class SettingsWindow : Window
         {
             OuiDownloadButton.IsEnabled = true;
         }
+    }
+
+    private void OpenConfigFolder_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Directory.CreateDirectory(DeviceStore.StorageDirectory);
+            Process.Start(new ProcessStartInfo(DeviceStore.StorageDirectory) { UseShellExecute = true });
+        }
+        catch { /* nothing to open */ }
     }
 
     private void SshClientBrowse_Click(object sender, RoutedEventArgs e)

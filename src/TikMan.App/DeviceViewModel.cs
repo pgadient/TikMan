@@ -102,6 +102,34 @@ public class DeviceViewModel : INotifyPropertyChanged
         RaiseDetailsChanged();
     }
 
+    /// <summary>Applies SNMP sysName/sysDescr. sysDescr is the exact model on printers/copiers/
+    /// switches (e.g. "TOSHIBA e-STUDIO2525AC"); on servers it is an OS string. Only fills gaps.</summary>
+    public void ApplySnmpInfo(SnmpProbe.SnmpInfo snmp)
+    {
+        bool changed = false;
+        var descr = snmp.SysDescr.Trim();
+        if (descr.Length > 0)
+        {
+            bool looksOs = System.Text.RegularExpressions.Regex.IsMatch(descr,
+                @"software:|hardware:|windows|linux|\bios\b|version\s+\d",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (looksOs)
+            {
+                if (!Model.ExtraInfo.ContainsKey("OS")) { Model.ExtraInfo["OS"] = descr.Length > 70 ? descr[..70] : descr; changed = true; }
+            }
+            else
+            {
+                if (IdentifiedVendor.Length == 0 && CleanBrandFromOui(descr.ToLowerInvariant()) is { Length: > 0 } brand)
+                { Model.ExtraInfo["Hersteller (Web)"] = brand; changed = true; }
+                if (Board.Length == 0 && !Model.ExtraInfo.ContainsKey("Produkt") && !Model.ExtraInfo.ContainsKey("Modell"))
+                { Model.ExtraInfo["Modell"] = descr; changed = true; }
+            }
+        }
+        // sysName is a hostname (no spaces); the model string above is not.
+        if (snmp.SysName.Length > 0 && !snmp.SysName.Contains(' ') && Name.Length == 0) { Name = snmp.SysName; changed = true; }
+        if (changed) RaiseDetailsChanged();
+    }
+
     /// <summary>Applies what the QNAP QTS login endpoint reported (vendor, OS, hostname, model).</summary>
     public void ApplyQnapInfo(QnapProbe.QnapInfo info)
     {
@@ -463,6 +491,7 @@ public class DeviceViewModel : INotifyPropertyChanged
         ("avm", "AVM"), ("sophos", "Sophos"), ("watchguard", "WatchGuard"),
         ("yealink", "Yealink"), ("grandstream", "Grandstream"), ("snom", "Snom"),
         ("axis comm", "Axis"), ("hikvision", "Hikvision"), ("dahua", "Dahua"),
+        ("toshiba", "Toshiba"), ("ricoh", "Ricoh"), ("xerox", "Xerox"), ("konica", "Konica Minolta"),
     };
 
     private static string CleanBrandFromOui(string macLower)
