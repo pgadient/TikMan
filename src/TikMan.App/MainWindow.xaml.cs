@@ -78,6 +78,8 @@ public partial class MainWindow : Window
         if (_appData.ShowIpv6View) AddressTabs.SelectedIndex = 1; // restore the last address view
         ContactButtonsMenuItem.IsChecked = _appData.ShowContactButtons;
         ApplyContactButtons();
+        ListInfoMenuItem.IsChecked = _appData.ShowListInfo;
+        ApplyListInfo();
         UpdateDeviceCount();
         SelectIntervalItem(_appData.PollIntervalSeconds);
         AutoRefreshCheck.IsChecked = _appData.AutoRefreshEnabled;
@@ -309,8 +311,16 @@ public partial class MainWindow : Window
 
     private async void RefreshAll_Click(object sender, RoutedEventArgs e) => await RefreshAllAsync(quiet: false);
 
-    private void ListInfo_Click(object sender, RoutedEventArgs e) =>
-        MessageBox.Show(this, T("List_InfoTip"), T("List_InfoTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
+    /// <summary>View menu: show or hide the ⓘ list-tips icon above the device list.</summary>
+    private void ListInfo_Toggled(object sender, RoutedEventArgs e)
+    {
+        _appData.ShowListInfo = ListInfoMenuItem.IsChecked;
+        ApplyListInfo();
+        SaveAppData();
+    }
+
+    private void ApplyListInfo() =>
+        ListInfoIcon.Visibility = _appData.ShowListInfo ? Visibility.Visible : Visibility.Collapsed;
 
     private void ApplyTimerSettings()
     {

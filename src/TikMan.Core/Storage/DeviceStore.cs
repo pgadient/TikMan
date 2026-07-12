@@ -41,6 +41,8 @@ public class AppData
     public bool ShowIpv6View { get; set; }
     /// <summary>Show the coloured "Report a problem" / "Request a feature" buttons (default on).</summary>
     public bool ShowContactButtons { get; set; } = true;
+    /// <summary>Show the ⓘ list-tips icon above the device list (default on).</summary>
+    public bool ShowListInfo { get; set; } = true;
     /// <summary>Open ssh sessions with an external client (see <see cref="ExternalSshClientPath"/>)
     /// instead of the built-in OpenSSH terminal.</summary>
     public bool UseExternalSshClient { get; set; }
