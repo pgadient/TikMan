@@ -365,6 +365,7 @@
                     <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding IdentifiedVendor}" Width="100" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Board}" Binding="{Binding ModelDisplay}" Width="130" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Serial}" Binding="{Binding SerialNumber}" Width="140" ElementStyle="{StaticResource VCenter}"/>
+                    <DataGridTextColumn Header="{loc:Loc Col_Os}" Binding="{Binding OsDisplay}" Width="160" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Version}" Width="110">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">

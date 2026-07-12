@@ -168,6 +168,7 @@ public partial class MainWindow : Window
     {
         var oldCoffee = _appData.CoffeeButton;
         var oldExpand = _appData.ExpandRowsByDefault;
+        var oldPersist = _appData.PersistDeviceList;
         var dialog = new SettingsWindow(_appData) { Owner = this };
         if (dialog.ShowDialog() != true) return;
         if (dialog.ResetRequested) ResetToDefaults();
@@ -175,6 +176,8 @@ public partial class MainWindow : Window
         {
             RouterOsClient.AllowInsecureCertificates = _appData.DefaultIgnoreCertErrors;
             ApplyCoffeeButton();
+            if (_appData.PersistDeviceList && !oldPersist)
+                MessageBox.Show(this, T("Set_PersistWarn"), T("Set_Title"), MessageBoxButton.OK, MessageBoxImage.Warning);
             if (_appData.ExpandRowsByDefault != oldExpand)
                 foreach (var vm in _devices)
                 {
@@ -439,6 +442,19 @@ public partial class MainWindow : Window
         else if (proto.IsTelnet)
         {
             LaunchTelnet(proto.Url["telnet://".Length..].Trim('[', ']'));
+            e.Handled = true;
+        }
+        else if (proto.IsSmb)
+        {
+            // Expand the row so the SMB share buttons become visible.
+            var d = sender as DependencyObject;
+            while (d is not null and not DataGridRow) d = VisualTreeHelper.GetParent(d);
+            if (d is DataGridRow row)
+            {
+                if (row.DataContext is DeviceViewModel dv) dv.IsExpanded = true;
+                else if (row.DataContext is Ipv6RowVm rv) rv.IsExpanded = true;
+                row.DetailsVisibility = Visibility.Visible;
+            }
             e.Handled = true;
         }
         else if (proto.IsWeb)

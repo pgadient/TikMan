@@ -47,12 +47,20 @@ public class DeviceViewModel : INotifyPropertyChanged
         Notify(nameof(ModelDisplay));     // …and WMI may have supplied a model
         Notify(nameof(DeviceType));       // …or a form factor (laptop/notebook/tablet)
         Notify(nameof(SerialNumber));
+        Notify(nameof(OsDisplay));
         Notify(nameof(FirmwareDetails));
         Notify(nameof(HasRowDetails));
     }
 
     /// <summary>Hardware serial number (RouterBOARD, Brother maintenance page, …).</summary>
     public string SerialNumber => Model.SerialNumber;
+
+    /// <summary>Operating system for the "OS" column: the WMI OS caption (e.g. "Microsoft Windows
+    /// Server 2022"), or an embedded OS name (SwOS, QTS) when known.</summary>
+    public string OsDisplay =>
+        Model.ExtraInfo.TryGetValue("OS", out var os) && os.Length > 0 ? os
+        : Model.ExtraInfo.TryGetValue("System", out var sys) ? sys
+        : "";
 
     /// <summary>Sub-firmware versions (e.g. Brother Sub1/Sub2/Sub4) for the expanded row.</summary>
     public IReadOnlyList<string> FirmwareDetails =>
@@ -439,8 +447,27 @@ public class DeviceViewModel : INotifyPropertyChanged
                 return "Signify"; // Philips Lighting BV is Signify today
             if (mac.Contains("american power") || mac.StartsWith("apc") || mac.Contains(" apc "))
                 return "APC"; // APC / American Power Conversion – almost always a UPS
-            return "";
+            return CleanBrandFromOui(mac); // last resort: a known brand hiding in the raw OUI name
         }
+    }
+
+    // Fragments of raw IEEE OUI names → the clean brand shown when nothing better identifies the
+    // vendor (e.g. "Zyxel Communications Corp" → "Zyxel").
+    private static readonly (string Fragment, string Brand)[] OuiBrands =
+    {
+        ("zyxel", "Zyxel"), ("cisco", "Cisco"), ("juniper", "Juniper"), ("netgear", "Netgear"),
+        ("d-link", "D-Link"), ("dlink", "D-Link"), ("aruba", "Aruba"), ("ubiquiti", "Ubiquiti"),
+        ("fortinet", "Fortinet"), ("qnap", "QNAP"), ("synology", "Synology"), ("brother", "Brother"),
+        ("hewlett", "HP"), ("hp inc", "HP"), ("dell", "Dell"), ("lenovo", "Lenovo"),
+        ("planet techn", "PLANET"), ("zte", "ZTE"), ("huawei", "Huawei"), ("sagemcom", "Sagemcom"),
+        ("avm", "AVM"), ("sophos", "Sophos"), ("watchguard", "WatchGuard"),
+    };
+
+    private static string CleanBrandFromOui(string macLower)
+    {
+        foreach (var (fragment, brand) in OuiBrands)
+            if (macLower.Contains(fragment)) return brand;
+        return "";
     }
 
     /// <summary>Cleans a WMI manufacturer string: drops BIOS placeholders, fixes ALL-CAPS names.</summary>
@@ -957,7 +984,9 @@ public class ProtocolVm
     public bool IsFtp => Url.StartsWith("ftp://", StringComparison.OrdinalIgnoreCase);
     /// <summary>telnet badges open a terminal session (needs the Windows Telnet Client feature).</summary>
     public bool IsTelnet => Url.StartsWith("telnet://", StringComparison.OrdinalIgnoreCase);
-    public bool IsClickable => IsWeb || IsSsh || IsFtp || IsTelnet;
+    /// <summary>smb badges expand the row to reveal the share buttons.</summary>
+    public bool IsSmb => Name is "smb" or "netbios";
+    public bool IsClickable => IsWeb || IsSsh || IsFtp || IsTelnet || IsSmb;
 
     private static readonly Dictionary<string, Brush> Cache = new();
 

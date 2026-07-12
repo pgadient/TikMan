@@ -70,6 +70,7 @@ public class Ipv6RowVm : INotifyPropertyChanged
     public object Ipv4SortKey => Device.Ipv4SortKey;
     public object TransportDisplay => Device.TransportDisplay;
     public object SerialNumber => Device.SerialNumber;
+    public object OsDisplay => Device.OsDisplay;
     public object MacVendor => Device.MacVendor;
     public object IdentifiedVendor => Device.IdentifiedVendor;
     public object ModelDisplay => Device.ModelDisplay;
