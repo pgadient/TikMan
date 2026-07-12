@@ -47,6 +47,12 @@ public static partial class HttpFingerprint
     [GeneratedRegex(@"=\s*[""']((?:USG FLEX|ATP|USG|NSG|VPN)[0-9A-Za-z \-]{1,18})[""']", RegexOptions.IgnoreCase)]
     private static partial Regex ZyxelModelConstRegex();
 
+    // Prefix-free structural fallback: Zyxel bakes the model right next to its firmware-ID code,
+    // e.g.  n="USG FLEX 500H",i="ABZH"  – a human string immediately followed by a short all-caps
+    // code. Works for future model names the prefix list above doesn't know yet.
+    [GeneratedRegex(@"=\s*[""'](?<m>[^""']{2,30})[""']\s*,\s*[A-Za-z_$]\w{0,3}\s*=\s*[""'](?<fw>[A-Z0-9]{3,8})[""']")]
+    private static partial Regex ZyxelModelPairRegex();
+
     // Keyword (lower-case) → manufacturer shown. First match wins; checked against title + metas + Server.
     private static readonly (string Key, string Name)[] Brands =
     {
@@ -255,6 +261,9 @@ public static partial class HttpFingerprint
         return m.Success ? WebUtility.HtmlDecode(m.Groups[1].Value).Trim() : "";
     }
 
+    private static string CleanModel(string raw) =>
+        Regex.Replace(WebUtility.HtmlDecode(raw).Trim(), @"\s+", " ");
+
     /// <summary>True when the page is the Zyxel uOS React admin SPA (branded "ZYXEL React" template
     /// with a <c>/static/js/main.*.chunk.js</c> bundle) – its model lives in that bundle, not the DOM.</summary>
     private static bool LooksLikeZyxelSpa(string html) =>
@@ -274,8 +283,17 @@ public static partial class HttpFingerprint
             var js = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             // The model appears as an assignment (n="USG FLEX 500H"), never as a map key ("…":6),
             // so an "=…" match reliably picks this device's own model over the capabilities table.
-            var m = ZyxelModelConstRegex().Match(js);
-            return m.Success ? Regex.Replace(WebUtility.HtmlDecode(m.Groups[1].Value).Trim(), @"\s+", " ") : "";
+            // 1) Known Zyxel product families – highest precision.
+            var known = ZyxelModelConstRegex().Match(js);
+            if (known.Success) return CleanModel(known.Groups[1].Value);
+            // 2) Prefix-free fallback: a model-shaped string (letters + digits) sitting right before
+            //    its firmware-ID code. Covers model names the list above doesn't know yet.
+            foreach (Match pair in ZyxelModelPairRegex().Matches(js))
+            {
+                var cand = pair.Groups["m"].Value.Trim();
+                if (cand.Any(char.IsDigit) && cand.Any(char.IsLetter)) return CleanModel(cand);
+            }
+            return "";
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or InvalidOperationException)
         {
