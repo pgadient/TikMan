@@ -488,19 +488,25 @@ public class DeviceViewModel : INotifyPropertyChanged
             var mac = MacVendor.ToLowerInvariant();
             if (Board.Length > 0 || mac.Contains("mikrotik") || mac.Contains("routerboard")) return "MikroTik";
             if (Model.Vendor == DeviceVendor.TpLink) return "TP-Link";
+
+            // Active probes first (web fingerprint / SNMP → "Hersteller (Web)", WMI, and the brand
+            // in the model/web-title). These describe the device itself and are identical whether the
+            // scan runs locally or over VPN. The MAC OUI only names who made the network chip and may
+            // not match the device at all, so it is used strictly as a last-resort fallback below –
+            // that way a local scan yields the same or richer results, never contradictory ones.
             if (Model.ExtraInfo.TryGetValue("Hersteller (Web)", out var web) && web.Length > 0) return web;
             if (Model.ExtraInfo.TryGetValue("Hersteller", out var wmi) && NormalizeVendor(wmi) is { Length: > 0 } v)
                 return v; // WMI manufacturer (e.g. "LENOVO" → "Lenovo")
+            var text = (Model.ExtraInfo.TryGetValue("Modell", out var m) ? m + " " : "")
+                     + (Model.ExtraInfo.TryGetValue("Web-Titel", out var w) ? w : "");
+            if (CleanBrandFromOui(text.ToLowerInvariant()) is { Length: > 0 } fromText) return fromText;
+
+            // MAC-OUI fallbacks – only reachable on a local scan, and never override a probe above.
             if (mac.Contains("philips light") || mac.Contains("signify"))
                 return "Signify"; // Philips Lighting BV is Signify today
             if (mac.Contains("american power") || mac.StartsWith("apc") || mac.Contains(" apc "))
                 return "APC"; // APC / American Power Conversion – almost always a UPS
-            if (CleanBrandFromOui(mac) is { Length: > 0 } fromOui) return fromOui; // brand in the raw OUI name
-            // No MAC (e.g. scanning over VPN) → derive the vendor from a brand in the model/web title,
-            // so a "Yealink T54W" model becomes vendor Yealink + model "T54W".
-            var text = (Model.ExtraInfo.TryGetValue("Modell", out var m) ? m + " " : "")
-                     + (Model.ExtraInfo.TryGetValue("Web-Titel", out var w) ? w : "");
-            return CleanBrandFromOui(text.ToLowerInvariant());
+            return CleanBrandFromOui(mac); // brand in the raw OUI name
         }
     }
 
