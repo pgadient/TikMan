@@ -72,6 +72,17 @@ public class DeviceViewModel : INotifyPropertyChanged
         RaiseDetailsChanged();
     }
 
+    /// <summary>Applies what a Frontier-Silicon radio (Teufel & Co.) reported.</summary>
+    public void ApplyRadioInfo(FrontierSiliconProbe.RadioInfo radio)
+    {
+        if (radio.Name.Length > 0) Model.ExtraInfo["Modell"] = radio.Name; // feeds ModelDisplay
+        if (radio.Vendor.Length > 0 && !Model.ExtraInfo.ContainsKey("Hersteller (Web)"))
+            Model.ExtraInfo["Hersteller (Web)"] = radio.Vendor;
+        if (radio.Serial.Length > 0 && Model.SerialNumber.Length == 0) Model.SerialNumber = radio.Serial;
+        if (radio.Firmware.Length > 0 && Version.Length == 0) Version = radio.Firmware;
+        RaiseDetailsChanged();
+    }
+
     /// <summary>Applies what the Swisscom Internet-Box reported (exact model, serial, firmware).</summary>
     public void ApplySwisscomInfo(SwisscomProbe.BoxInfo box)
     {

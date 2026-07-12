@@ -41,7 +41,7 @@ public static class DeviceClassifier
         ("espressif", DeviceKind.IoT), ("tuya", DeviceKind.IoT), ("sonoff", DeviceKind.IoT),
         ("shelly", DeviceKind.IoT), ("sonos", DeviceKind.IoT), ("nest", DeviceKind.IoT),
         ("gardena", DeviceKind.IoT), ("mystrom", DeviceKind.IoT), ("netatmo", DeviceKind.IoT),
-        ("tasmota", DeviceKind.IoT),
+        ("tasmota", DeviceKind.IoT), ("teufel", DeviceKind.IoT), ("frontier silicon", DeviceKind.IoT),
         ("amazon tech", DeviceKind.IoT), ("google", DeviceKind.IoT), ("signify", DeviceKind.IoT),
         ("philips lighting", DeviceKind.IoT), ("tp-link", DeviceKind.Switch),
         ("cisco", DeviceKind.Switch), ("juniper", DeviceKind.Switch), ("netgear", DeviceKind.Switch),

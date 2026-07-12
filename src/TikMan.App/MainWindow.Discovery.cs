@@ -325,8 +325,28 @@ public partial class MainWindow
             catch { /* best effort */ }
         }
 
+        // Frontier-Silicon internet radios (Teufel, Hama, …) name themselves on GET /device.
+        if (ports.Contains(80) && LooksLikeFsRadio(vm))
+        {
+            try
+            {
+                var host = vm.Ipv4Address.Length > 0 ? vm.Ipv4Address : vm.Host;
+                if (await FrontierSiliconProbe.QueryAsync(host) is { } radio)
+                {
+                    vm.ApplyRadioInfo(radio);
+                    changed = false; // ApplyRadioInfo already raised the details
+                }
+            }
+            catch { /* best effort */ }
+        }
+
         if (changed) vm.RaiseDetailsChanged();
     }
+
+    private static bool LooksLikeFsRadio(DeviceViewModel vm) =>
+        vm.MacVendor.Contains("frontier", StringComparison.OrdinalIgnoreCase) ||
+        (vm.Model.ExtraInfo.TryGetValue("Web-Titel", out var t) &&
+         t.StartsWith("Internet Radio", StringComparison.OrdinalIgnoreCase));
 
     private static bool LooksLikeInternetBox(DeviceViewModel vm) =>
         vm.IdentifiedVendor.Equals("Swisscom", StringComparison.OrdinalIgnoreCase) ||
