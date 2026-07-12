@@ -38,6 +38,8 @@ public partial class SettingsWindow : Window
         CoffeeButtonCombo.SelectedValue = data.CoffeeButton;
         if (CoffeeButtonCombo.SelectedValue is null) CoffeeButtonCombo.SelectedIndex = 0;
         ExpandRowsCheck.IsChecked = data.ExpandRowsByDefault;
+        ExternalSshCheck.IsChecked = data.UseExternalSshClient;
+        SshClientPathBox.Text = data.ExternalSshClientPath;
         DefaultUserBox.Text = data.DefaultUsername;
         _ready = true;
     }
@@ -78,6 +80,12 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void SshClientBrowse_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "*.exe|*.exe" };
+        if (dialog.ShowDialog(this) == true) SshClientPathBox.Text = dialog.FileName;
+    }
+
     private void Reset_Click(object sender, RoutedEventArgs e)
     {
         var answer = MessageBox.Show(this,
@@ -104,6 +112,8 @@ public partial class SettingsWindow : Window
         _data.ForceMailFallback = ForceMailtoCheck.IsChecked == true;
         if (CoffeeButtonCombo.SelectedValue is string coffee) _data.CoffeeButton = coffee;
         _data.ExpandRowsByDefault = ExpandRowsCheck.IsChecked == true;
+        _data.UseExternalSshClient = ExternalSshCheck.IsChecked == true;
+        _data.ExternalSshClientPath = SshClientPathBox.Text.Trim();
 
         _data.DefaultUsername = DefaultUserBox.Text.Trim();
         if (DefaultPasswordBox.Password.Length > 0)

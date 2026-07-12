@@ -348,15 +348,75 @@ public partial class MainWindow : Window
             CopyToClipboard(text);
     }
 
-    /// <summary>Single click on a web protocol badge (http/https) opens it in the browser.</summary>
+    /// <summary>Single click on a protocol badge: web badges open in the browser, the ssh badge
+    /// opens an interactive terminal session.</summary>
     private void ProtocolBadge_Click(object sender, MouseButtonEventArgs e)
     {
-        if (e.ClickCount == 1 && (sender as FrameworkElement)?.DataContext is ProtocolVm { IsWeb: true } proto)
+        if (e.ClickCount != 1 || (sender as FrameworkElement)?.DataContext is not ProtocolVm proto) return;
+        if (proto.IsSsh)
+        {
+            LaunchSshTerminal(proto.Url["ssh://".Length..].Trim('[', ']'), RowDeviceFromVisual(sender));
+            e.Handled = true;
+        }
+        else if (proto.IsWeb)
         {
             try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(proto.Url) { UseShellExecute = true }); }
             catch { /* no browser / blocked */ }
             e.Handled = true;
         }
+    }
+
+    /// <summary>Opens an interactive SSH session to the host: with the external client from the
+    /// settings when configured (e.g. PuTTY), otherwise with the built-in OpenSSH client – in
+    /// Windows Terminal when available, else in a classic console window.</summary>
+    private void LaunchSshTerminal(string host, DeviceViewModel? vm)
+    {
+        var user = vm?.Model.Username.Trim() ?? "";
+        var target = user.Length > 0 ? $"{user}@{host}" : host;
+
+        var external = _appData.ExternalSshClientPath.Trim();
+        if (_appData.UseExternalSshClient && external.Length > 0)
+        {
+            // PuTTY/KiTTY use -P for the port; everything else gets OpenSSH-style arguments.
+            var exeName = Path.GetFileNameWithoutExtension(external);
+            bool putty = exeName.Contains("putty", StringComparison.OrdinalIgnoreCase) ||
+                         exeName.Contains("kitty", StringComparison.OrdinalIgnoreCase);
+            var extArgs = putty
+                ? (_appData.SshPort != 22 ? $"-ssh {target} -P {_appData.SshPort}" : $"-ssh {target}")
+                : (_appData.SshPort != 22 ? $"-p {_appData.SshPort} {target}" : target);
+            try
+            {
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo(external, extArgs) { UseShellExecute = true });
+            }
+            catch { SetStatus(T("Ssh_LaunchFailed")); }
+            return;
+        }
+
+        var sshArgs = _appData.SshPort != 22 ? $"-p {_appData.SshPort} {target}" : target;
+        try
+        {
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo("wt.exe", $"ssh {sshArgs}") { UseShellExecute = true });
+        }
+        catch (Exception)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/k ssh {sshArgs}") { UseShellExecute = true });
+            }
+            catch { SetStatus(T("Ssh_LaunchFailed")); }
+        }
+    }
+
+    /// <summary>Finds the device VM of the row a badge/button lives in (works for both views).</summary>
+    private static DeviceViewModel? RowDeviceFromVisual(object sender)
+    {
+        var d = sender as DependencyObject;
+        while (d is not null and not DataGridRow)
+            d = VisualTreeHelper.GetParent(d);
+        return RowDevice((d as DataGridRow)?.DataContext);
     }
 
     /// <summary>Walks up from the clicked element to its DataGridCell and returns the cell text

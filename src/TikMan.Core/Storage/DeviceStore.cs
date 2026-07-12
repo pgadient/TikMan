@@ -37,6 +37,11 @@ public class AppData
     /// <summary>Expand device rows by default, so all IPv6 addresses and SMB shares are visible
     /// without clicking the + expander.</summary>
     public bool ExpandRowsByDefault { get; set; }
+    /// <summary>Open ssh sessions with an external client (see <see cref="ExternalSshClientPath"/>)
+    /// instead of the built-in OpenSSH terminal.</summary>
+    public bool UseExternalSshClient { get; set; }
+    /// <summary>Path to the external SSH client executable (e.g. PuTTY).</summary>
+    public string ExternalSshClientPath { get; set; } = "";
     /// <summary>When false (default), the device list is not written to disk – devices only live
     /// for the current session. When true, the list and its config are persisted.</summary>
     public bool PersistDeviceList { get; set; }

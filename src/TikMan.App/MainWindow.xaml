@@ -303,7 +303,7 @@
                                                 <Border.Style>
                                                     <Style TargetType="Border">
                                                         <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsWeb}" Value="True">
+                                                            <DataTrigger Binding="{Binding IsClickable}" Value="True">
                                                                 <Setter Property="Cursor" Value="Hand"/>
                                                             </DataTrigger>
                                                         </Style.Triggers>

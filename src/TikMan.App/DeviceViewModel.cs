@@ -359,15 +359,16 @@ public class DeviceViewModel : INotifyPropertyChanged
             foreach (var port in Model.OpenPorts.Distinct().OrderBy(p => p))
             {
                 var svc = SubnetScanner.ServiceName(port);
-                list.Add(new ProtocolVm(svc, WebUrl(port, hostPart), ProtocolVm.BrushFor(svc)));
+                var url = svc is "ssh" ? $"ssh://{hostPart}" : WebUrl(port, hostPart);
+                list.Add(new ProtocolVm(svc, url, ProtocolVm.BrushFor(svc)));
             }
         }
         else
         {
-            // Manually added device: offer the web schemes + ssh (double-click a web badge opens it).
+            // Manually added device: offer the web schemes + ssh (a click opens them).
             list.Add(new ProtocolVm("http", $"http://{hostPart}/", ProtocolVm.BrushFor("http")));
             list.Add(new ProtocolVm("https", $"https://{hostPart}/", ProtocolVm.BrushFor("https")));
-            list.Add(new ProtocolVm("ssh", "", ProtocolVm.BrushFor("ssh")));
+            list.Add(new ProtocolVm("ssh", $"ssh://{hostPart}", ProtocolVm.BrushFor("ssh")));
         }
         return list;
     }
@@ -905,7 +906,10 @@ public class ProtocolVm
     public string Name { get; }
     public string Url { get; }
     public Brush Color { get; }
-    public bool IsWeb => Url.Length > 0;
+    public bool IsWeb => Url.StartsWith("http", StringComparison.OrdinalIgnoreCase);
+    /// <summary>ssh badges open an interactive terminal session on click.</summary>
+    public bool IsSsh => Url.StartsWith("ssh://", StringComparison.OrdinalIgnoreCase);
+    public bool IsClickable => IsWeb || IsSsh;
 
     private static readonly Dictionary<string, Brush> Cache = new();
 
