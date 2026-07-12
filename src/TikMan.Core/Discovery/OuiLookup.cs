@@ -32,9 +32,10 @@ public static class OuiLookup
     {
         if (Interlocked.CompareExchange(ref _fileLoaded, 1, 0) == 0)
         {
-            TryLoadEmbedded();                              // full IEEE list bundled into the assembly (gzip)
-            foreach (var kv in BuiltIn) Db[kv.Key] = kv.Value; // friendly names (e.g. "MikroTik") win over raw IEEE
-            TryLoadFile();                                  // optional newer oui.txt provided by the user wins last
+            // The MAC-vendor column shows the raw IEEE names ("Routerboard.com", "Mikrotikls SIA"):
+            // the built-in MikroTik set only serves as fallback when no IEEE list is available.
+            TryLoadEmbedded();  // full IEEE list bundled into the assembly (gzip) – overrides built-in
+            TryLoadFile();      // optional newer oui.txt provided by the user wins last
         }
 
         var prefix = NormalizePrefix(mac);
