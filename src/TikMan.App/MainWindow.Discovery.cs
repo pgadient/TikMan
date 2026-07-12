@@ -182,7 +182,7 @@ public partial class MainWindow
         await Task.WhenAll(targets.Select(async vm =>
         {
             if (!ct.IsCancellationRequested)
-                await EnrichDetailsAsync(vm);
+                await EnrichDetailsAsync(vm, ct);
             bar.Value = ++done; // continuations resume on the UI thread
         }));
         row.Visibility = Visibility.Collapsed;
@@ -274,7 +274,7 @@ public partial class MainWindow
 
     /// <summary>Best-effort background enrichment for the Details tab: the web server (Server header +
     /// page title) for web hosts, and WMI facts (manufacturer/model/OS) for Windows hosts (port 135).</summary>
-    private async Task EnrichDetailsAsync(DeviceViewModel vm)
+    private async Task EnrichDetailsAsync(DeviceViewModel vm, CancellationToken ct = default)
     {
         var ports = vm.Model.OpenPorts;
         var info = vm.Model.ExtraInfo;
@@ -282,12 +282,12 @@ public partial class MainWindow
 
         // QNAP NAS: the GUI is usually on 8080 and returns HTTP errors on plain paths – ask its
         // QTS login endpoint instead so we never mistake a "403 Forbidden" page for a model.
-        if (ports.Contains(8080) || ports.Contains(443) || ports.Contains(80))
+        if ((ports.Contains(8080) || ports.Contains(443) || ports.Contains(80)) && !ct.IsCancellationRequested)
         {
             try
             {
                 var host = vm.Ipv4Address.Length > 0 ? vm.Ipv4Address : vm.Host;
-                if (await QnapProbe.QueryAsync(host, ports) is { } qnap)
+                if (await QnapProbe.QueryAsync(host, ports, ct) is { } qnap)
                 {
                     vm.ApplyQnapInfo(qnap);
                     return; // QNAP identified – its plain web pages would only add noise
@@ -296,11 +296,11 @@ public partial class MainWindow
             catch { /* best effort */ }
         }
 
-        if (ports.Contains(80) || ports.Contains(443))
+        if ((ports.Contains(80) || ports.Contains(443)) && !ct.IsCancellationRequested)
         {
             try
             {
-                var fp = await HttpFingerprint.ProbeAsync(vm.Host);
+                var fp = await HttpFingerprint.ProbeAsync(vm.Host, ct);
                 if (fp.WebServer.Length > 0) { info["Webserver"] = fp.WebServer; changed = true; }
                 if (fp.Vendor.Length > 0) { info["Hersteller (Web)"] = fp.Vendor; changed = true; }
                 if (fp.Title.Length > 0) { info["Web-Titel"] = fp.Title; changed = true; }
@@ -308,11 +308,11 @@ public partial class MainWindow
             catch { /* best effort */ }
         }
 
-        if (ports.Contains(135) && OperatingSystem.IsWindows())
+        if (ports.Contains(135) && OperatingSystem.IsWindows() && !ct.IsCancellationRequested)
         {
             try
             {
-                foreach (var kv in await WmiProbe.QueryAsync(vm.Host)) { info[kv.Key] = kv.Value; changed = true; }
+                foreach (var kv in await WmiProbe.QueryAsync(vm.Host, ct)) { info[kv.Key] = kv.Value; changed = true; }
                 // The BIOS serial lives in the serial-number column, not in the details rows.
                 if (info.TryGetValue("Seriennummer", out var sn))
                 {
@@ -324,12 +324,12 @@ public partial class MainWindow
         }
 
         // Brother printers expose serial + main/sub firmware on an unauthenticated EWS page.
-        if ((ports.Contains(80) || ports.Contains(443)) && LooksLikeBrother(vm))
+        if ((ports.Contains(80) || ports.Contains(443)) && LooksLikeBrother(vm) && !ct.IsCancellationRequested)
         {
             try
             {
                 var host = vm.Ipv4Address.Length > 0 ? vm.Ipv4Address : vm.Host;
-                if (await BrotherProbe.QueryAsync(host) is { } brother)
+                if (await BrotherProbe.QueryAsync(host, ct) is { } brother)
                 {
                     vm.ApplyBrotherInfo(brother);
                     changed = false; // ApplyBrotherInfo already raised the details
@@ -339,12 +339,12 @@ public partial class MainWindow
         }
 
         // Swisscom Internet-Boxes name their exact model over the SoftAtHome API / login page.
-        if ((ports.Contains(80) || ports.Contains(443)) && LooksLikeInternetBox(vm))
+        if ((ports.Contains(80) || ports.Contains(443)) && LooksLikeInternetBox(vm) && !ct.IsCancellationRequested)
         {
             try
             {
                 var host = vm.Ipv4Address.Length > 0 ? vm.Ipv4Address : vm.Host;
-                if (await SwisscomProbe.QueryAsync(host) is { } box)
+                if (await SwisscomProbe.QueryAsync(host, ct) is { } box)
                 {
                     vm.ApplySwisscomInfo(box);
                     changed = false; // ApplySwisscomInfo already raised the details
@@ -356,7 +356,7 @@ public partial class MainWindow
         // Generic SSH probe: reveals model/serial/firmware over read-only "show"/"print" commands,
         // ordered per vendor (MikroTik included – it serves as fallback when the REST API is off;
         // a filled board name means the RouterOS/TP-Link connector already delivered).
-        if (ports.Contains(22) && vm.Board.Length == 0 &&
+        if (ports.Contains(22) && vm.Board.Length == 0 && !ct.IsCancellationRequested &&
             vm.Model.Username.Trim().Length > 0 && vm.Model.EncryptedPassword.Length > 0 &&
             (vm.SerialNumber.Length == 0 || vm.Version.Length == 0))
         {
@@ -366,7 +366,7 @@ public partial class MainWindow
                 var password = CredentialProtector.Unprotect(vm.Model.EncryptedPassword);
                 if (password.Length > 0 &&
                     await SshInfoProbe.QueryAsync(host, vm.Model.SshPort, vm.Model.Username.Trim(),
-                        password, $"{vm.IdentifiedVendor} {vm.MacVendor}") is { } sshInfo)
+                        password, $"{vm.IdentifiedVendor} {vm.MacVendor}", ct) is { } sshInfo)
                 {
                     vm.ApplySshInfo(sshInfo);
                     changed = false; // ApplySshInfo already raised the details
@@ -376,12 +376,12 @@ public partial class MainWindow
         }
 
         // Frontier-Silicon internet radios (Teufel, Hama, …) name themselves on GET /device.
-        if (ports.Contains(80) && LooksLikeFsRadio(vm))
+        if (ports.Contains(80) && LooksLikeFsRadio(vm) && !ct.IsCancellationRequested)
         {
             try
             {
                 var host = vm.Ipv4Address.Length > 0 ? vm.Ipv4Address : vm.Host;
-                if (await FrontierSiliconProbe.QueryAsync(host) is { } radio)
+                if (await FrontierSiliconProbe.QueryAsync(host, ct) is { } radio)
                 {
                     vm.ApplyRadioInfo(radio);
                     changed = false; // ApplyRadioInfo already raised the details

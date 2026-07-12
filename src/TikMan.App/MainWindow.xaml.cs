@@ -399,6 +399,19 @@ public partial class MainWindow : Window
         SetStatus(T("Msg_DevicesUpdated", vms.Count));
     }
 
+    /// <summary>Toolbar "Clear": empties the whole device list (both address views) after a confirm.</summary>
+    private void ClearAll_Click(object sender, RoutedEventArgs e)
+    {
+        if (_devices.Count == 0) return;
+        var answer = MessageBox.Show(this, T("Msg_ClearConfirm", _devices.Count),
+            T("Tb_Clear"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (answer != MessageBoxResult.Yes) return;
+        _devices.Clear();
+        _v6Rows.Clear();
+        SaveAppData();
+        SetStatus(T("Status_Ready"));
+    }
+
     private void RemoveDevice_Click(object sender, RoutedEventArgs e)
     {
         if (SelectedDevice is not { } vm)

@@ -461,6 +461,8 @@ public class DeviceViewModel : INotifyPropertyChanged
         ("hewlett", "HP"), ("hp inc", "HP"), ("dell", "Dell"), ("lenovo", "Lenovo"),
         ("planet techn", "PLANET"), ("zte", "ZTE"), ("huawei", "Huawei"), ("sagemcom", "Sagemcom"),
         ("avm", "AVM"), ("sophos", "Sophos"), ("watchguard", "WatchGuard"),
+        ("yealink", "Yealink"), ("grandstream", "Grandstream"), ("snom", "Snom"),
+        ("axis comm", "Axis"), ("hikvision", "Hikvision"), ("dahua", "Dahua"),
     };
 
     private static string CleanBrandFromOui(string macLower)
