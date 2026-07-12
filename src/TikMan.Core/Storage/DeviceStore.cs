@@ -44,9 +44,9 @@ public class AppData
     public bool UseExternalSshClient { get; set; }
     /// <summary>Path to the external SSH client executable (e.g. PuTTY).</summary>
     public string ExternalSshClientPath { get; set; } = "";
-    /// <summary>When false (default), the device list is not written to disk – devices only live
-    /// for the current session. When true, the list and its config are persisted.</summary>
-    public bool PersistDeviceList { get; set; }
+    /// <summary>When true (default), the device list and its config are persisted to disk. When
+    /// false, devices only live for the current session.</summary>
+    public bool PersistDeviceList { get; set; } = true;
     public List<Device> Devices { get; set; } = new();
 }
 

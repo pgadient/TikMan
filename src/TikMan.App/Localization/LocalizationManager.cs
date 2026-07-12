@@ -44,6 +44,8 @@ public sealed class LocalizationManager : INotifyPropertyChanged
             AppLanguage.SwissGerman => Strings.SwissGerman,
             AppLanguage.Spanish => Strings.Spanish,
             AppLanguage.Italian => Strings.Italian,
+            AppLanguage.French => Strings.French,
+            AppLanguage.Portuguese => Strings.Portuguese,
             _ => Strings.English,
         };
         Culture = CultureInfo.GetCultureInfo(Effective switch
@@ -51,6 +53,8 @@ public sealed class LocalizationManager : INotifyPropertyChanged
             AppLanguage.English => "en-US",
             AppLanguage.Spanish => "es-ES",
             AppLanguage.Italian => "it-IT",
+            AppLanguage.French => "fr-FR",
+            AppLanguage.Portuguese => "pt-PT",
             _ => "de-CH", // German / Swiss German
         });
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));
@@ -69,6 +73,8 @@ public sealed class LocalizationManager : INotifyPropertyChanged
             "de" => AppLanguage.German,
             "es" => AppLanguage.Spanish,
             "it" => AppLanguage.Italian,
+            "fr" => AppLanguage.French,
+            "pt" => AppLanguage.Portuguese,
             _ => AppLanguage.English,
         };
     }

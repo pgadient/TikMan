@@ -20,12 +20,14 @@
             <ComboBox x:Name="LanguageCombo" Grid.Row="0" Grid.Column="1" Width="220" HorizontalAlignment="Left"
                       VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag"
                       SelectionChanged="LanguageCombo_SelectionChanged">
-                <ComboBoxItem Tag="System" Content="{loc:Loc Set_LangSystem}"/>
-                <ComboBoxItem Tag="SwissGerman" Content="{loc:Loc Set_LangSwiss}"/>
-                <ComboBoxItem Tag="German" Content="{loc:Loc Set_LangGerman}"/>
-                <ComboBoxItem Tag="English" Content="{loc:Loc Set_LangEnglish}"/>
-                <ComboBoxItem Tag="Spanish" Content="{loc:Loc Set_LangSpanish}"/>
-                <ComboBoxItem Tag="Italian" Content="{loc:Loc Set_LangItalian}"/>
+                <ComboBoxItem Tag="System"><StackPanel Orientation="Horizontal"><TextBlock Text="🌐 "/><TextBlock Text="{loc:Loc Set_LangSystem}"/></StackPanel></ComboBoxItem>
+                <ComboBoxItem Tag="SwissGerman"><StackPanel Orientation="Horizontal"><TextBlock Text="🇨🇭 "/><TextBlock Text="{loc:Loc Set_LangSwiss}"/></StackPanel></ComboBoxItem>
+                <ComboBoxItem Tag="German"><StackPanel Orientation="Horizontal"><TextBlock Text="🇩🇪 "/><TextBlock Text="{loc:Loc Set_LangGerman}"/></StackPanel></ComboBoxItem>
+                <ComboBoxItem Tag="English"><StackPanel Orientation="Horizontal"><TextBlock Text="🇬🇧 "/><TextBlock Text="{loc:Loc Set_LangEnglish}"/></StackPanel></ComboBoxItem>
+                <ComboBoxItem Tag="French"><StackPanel Orientation="Horizontal"><TextBlock Text="🇫🇷 "/><TextBlock Text="{loc:Loc Set_LangFrench}"/></StackPanel></ComboBoxItem>
+                <ComboBoxItem Tag="Italian"><StackPanel Orientation="Horizontal"><TextBlock Text="🇮🇹 "/><TextBlock Text="{loc:Loc Set_LangItalian}"/></StackPanel></ComboBoxItem>
+                <ComboBoxItem Tag="Spanish"><StackPanel Orientation="Horizontal"><TextBlock Text="🇪🇸 "/><TextBlock Text="{loc:Loc Set_LangSpanish}"/></StackPanel></ComboBoxItem>
+                <ComboBoxItem Tag="Portuguese"><StackPanel Orientation="Horizontal"><TextBlock Text="🇵🇹 "/><TextBlock Text="{loc:Loc Set_LangPortuguese}"/></StackPanel></ComboBoxItem>
             </ComboBox>
 
             <TextBlock Grid.Row="1" Grid.Column="1" Foreground="#777777" FontSize="11" Margin="0,2,0,6"
