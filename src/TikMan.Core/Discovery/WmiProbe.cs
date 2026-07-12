@@ -38,6 +38,13 @@ public static class WmiProbe
                 foreach (ManagementBaseObject o in Query(scope, "SELECT ChassisTypes FROM Win32_SystemEnclosure"))
                     if (o["ChassisTypes"] is ushort[] { Length: > 0 } types && Chassis(types[0]) is { Length: > 0 } c)
                         info["Bauform"] = c;
+
+                // BIOS serial (e.g. Lenovo "PF1MA5TJ") and the friendly product name ("ThinkPad P52" –
+                // Win32_ComputerSystem.Model only holds the machine-type code like "20M9CTO1WW").
+                foreach (ManagementBaseObject o in Query(scope, "SELECT SerialNumber FROM Win32_BIOS"))
+                    if (Meaningful(o["SerialNumber"]) is { } sn) info["Seriennummer"] = sn;
+                foreach (ManagementBaseObject o in Query(scope, "SELECT Version FROM Win32_ComputerSystemProduct"))
+                    if (Meaningful(o["Version"]) is { } product) info["Produkt"] = product;
             }, ct).WaitAsync(TimeSpan.FromSeconds(12), ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is ManagementException or UnauthorizedAccessException
@@ -55,6 +62,18 @@ public static class WmiProbe
     {
         var s = value?.ToString()?.Trim();
         if (!string.IsNullOrEmpty(s)) info[key] = s;
+    }
+
+    /// <summary>Returns the trimmed value, or null for the usual BIOS placeholder junk.</summary>
+    private static string? Meaningful(object? value)
+    {
+        var s = value?.ToString()?.Trim();
+        if (string.IsNullOrEmpty(s)) return null;
+        return s.Contains("to be filled", StringComparison.OrdinalIgnoreCase) ||
+               s.Contains("default string", StringComparison.OrdinalIgnoreCase) ||
+               s.Contains("system version", StringComparison.OrdinalIgnoreCase) ||
+               s.Contains("system serial", StringComparison.OrdinalIgnoreCase) ||
+               s is "None" or "0" ? null : s;
     }
 
     private static string FormFactor(int pcSystemType) => pcSystemType switch

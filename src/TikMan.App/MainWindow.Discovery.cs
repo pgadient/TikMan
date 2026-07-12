@@ -291,6 +291,12 @@ public partial class MainWindow
             try
             {
                 foreach (var kv in await WmiProbe.QueryAsync(vm.Host)) { info[kv.Key] = kv.Value; changed = true; }
+                // The BIOS serial lives in the serial-number column, not in the details rows.
+                if (info.TryGetValue("Seriennummer", out var sn))
+                {
+                    info.Remove("Seriennummer");
+                    if (vm.Model.SerialNumber.Length == 0) { vm.Model.SerialNumber = sn; changed = true; }
+                }
             }
             catch { /* best effort */ }
         }
