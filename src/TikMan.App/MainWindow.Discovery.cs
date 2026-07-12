@@ -413,18 +413,23 @@ public partial class MainWindow
             catch { /* best effort */ }
         }
 
-        // SNMP (public community): the exact model of printers/copiers/switches/UPS lives in
-        // sysDescr, unauthenticated. Only fills what the richer probes above left blank.
-        if (vm.Board.Length == 0 && !ct.IsCancellationRequested &&
-            (vm.ModelDisplay.Length == 0 || vm.IdentifiedVendor.Length == 0 || vm.OsDisplay.Length == 0))
+        // SNMP (public community) on every recognised IP: a responding host gets an "snmp" badge
+        // like the other protocols. In addition – only when the richer probes above left the model/
+        // vendor/OS blank – the exact model from sysDescr fills those gaps, unauthenticated.
+        if (!ct.IsCancellationRequested)
         {
             try
             {
                 var host = vm.Ipv4Address.Length > 0 ? vm.Ipv4Address : vm.Host;
                 if (await SnmpProbe.QueryAsync(host, ct) is { } snmp)
                 {
-                    vm.ApplySnmpInfo(snmp);
-                    changed = false; // ApplySnmpInfo already raised the details
+                    vm.MarkSnmpOpen(); // badge (also raises SupportedProtocols)
+                    if (vm.Board.Length == 0 &&
+                        (vm.ModelDisplay.Length == 0 || vm.IdentifiedVendor.Length == 0 || vm.OsDisplay.Length == 0))
+                    {
+                        vm.ApplySnmpInfo(snmp);
+                        changed = false; // ApplySnmpInfo already raised the details
+                    }
                 }
             }
             catch { /* best effort */ }

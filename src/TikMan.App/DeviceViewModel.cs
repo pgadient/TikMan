@@ -104,6 +104,16 @@ public class DeviceViewModel : INotifyPropertyChanged
 
     /// <summary>Applies SNMP sysName/sysDescr. sysDescr is the exact model on printers/copiers/
     /// switches (e.g. "TOSHIBA e-STUDIO2525AC"); on servers it is an OS string. Only fills gaps.</summary>
+    /// <summary>Marks SNMP (UDP 161) as reachable so it gets a badge like the other services.
+    /// UDP can't be found by the TCP port scan, so the SNMP probe reports openness this way.</summary>
+    public void MarkSnmpOpen()
+    {
+        if (Model.OpenPorts.Contains(161)) return;
+        Model.OpenPorts.Add(161);
+        Notify(nameof(SupportedProtocols));
+        Notify(nameof(DeviceType)); // the classifier weighs the open-port set
+    }
+
     public void ApplySnmpInfo(SnmpProbe.SnmpInfo snmp)
     {
         bool changed = false;

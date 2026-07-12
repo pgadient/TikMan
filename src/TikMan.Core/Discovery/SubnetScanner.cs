@@ -21,8 +21,10 @@ public static class SubnetScanner
         (8080, "http-alt"), (8291, "winbox"), (8728, "api"), (8729, "api-ssl"),
     };
 
+    // SNMP (UDP 161) can't be found by the TCP connect scan, so it's detected out-of-band with a
+    // real SNMP GET (see SnmpProbe) and only its name is registered here for the badge.
     private static readonly Dictionary<int, string> PortNames =
-        ServicePorts.ToDictionary(p => p.Port, p => p.Name);
+        ServicePorts.Append((Port: 161, Name: "snmp")).ToDictionary(p => p.Port, p => p.Name);
 
     /// <summary>Service name for a port, or the number as text if unknown.</summary>
     public static string ServiceName(int port) =>
