@@ -349,8 +349,17 @@ public partial class MainWindow : Window
             _devices.Add(vm);
             MarkGateways();
             SaveAppData();
-            _ = RefreshAndCheckAsync(vm);
+            _ = RefreshAndProbeAsync(vm);
         }
+    }
+
+    /// <summary>After credentials changed: monitors the device and re-probes the various services
+    /// (SSH info, web fingerprint, WMI, SNMP, …) so model/serial/firmware can now be read with the
+    /// new login – the user never has to pick a port or protocol.</summary>
+    private async Task RefreshAndProbeAsync(DeviceViewModel vm)
+    {
+        await RefreshAndCheckAsync(vm);
+        try { await EnrichDetailsAsync(vm); } catch { /* best effort */ }
     }
 
     /// <summary>Refreshes a freshly added device, then checks it for updates automatically.
@@ -412,7 +421,7 @@ public partial class MainWindow : Window
             targets[0].ResetClient();
             MarkGateways();
             SaveAppData();
-            _ = RefreshAndCheckAsync(targets[0]);
+            _ = RefreshAndProbeAsync(targets[0]);
         }
         else EditMultiple(targets);
     }
@@ -434,7 +443,7 @@ public partial class MainWindow : Window
         foreach (var vm in vms) vm.ResetClient();
         MarkGateways();
         SaveAppData();
-        foreach (var vm in vms) _ = RefreshAndCheckAsync(vm);
+        foreach (var vm in vms) _ = RefreshAndProbeAsync(vm);
         SetStatus(T("Msg_DevicesUpdated", vms.Count));
     }
 

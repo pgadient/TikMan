@@ -168,12 +168,8 @@
                 </DataGrid.Resources>
                 <DataGrid.ContextMenu>
                     <ContextMenu>
-                        <MenuItem Header="{loc:Loc Ctx_SetCredsSel}" Click="SetLogin_Click" FontWeight="SemiBold">
-                            <MenuItem.Icon><TextBlock Text="✏️"/></MenuItem.Icon>
-                        </MenuItem>
-                        <MenuItem Header="{loc:Loc Ctx_SshTerminal}" Click="ContextSsh_Click">
-                            <MenuItem.Icon><TextBlock Text="🖥️"/></MenuItem.Icon>
-                        </MenuItem>
+                        <MenuItem Header="{loc:Loc Ctx_SetCredsSel}" Click="SetLogin_Click" FontWeight="SemiBold"/>
+                        <MenuItem Header="{loc:Loc Ctx_SshTerminal}" Click="ContextSsh_Click"/>
                         <Separator/>
                         <MenuItem Header="{loc:Loc Tb_Remove}" Click="RemoveDevice_Click"/>
                     </ContextMenu>

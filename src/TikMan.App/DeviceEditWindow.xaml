@@ -16,7 +16,6 @@
                 <RowDefinition x:Name="RowAddress" Height="34"/>
                 <RowDefinition Height="34"/>
                 <RowDefinition Height="34"/>
-                <RowDefinition Height="34"/>
             </Grid.RowDefinitions>
 
             <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc De_Address}"/>
@@ -27,10 +26,6 @@
 
             <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc De_Password}"/>
             <PasswordBox x:Name="PasswordBox" Grid.Row="2" Grid.Column="1" VerticalContentAlignment="Center" Height="26"/>
-
-            <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc De_SshPort}"/>
-            <TextBox x:Name="SshPortBox" Grid.Row="3" Grid.Column="1" Width="70" HorizontalAlignment="Left"
-                     VerticalContentAlignment="Center" Height="26" Text="22"/>
         </Grid>
 
         <TextBlock x:Name="PasswordHint" Foreground="#777777" FontSize="11" Margin="120,4,0,0"

@@ -35,7 +35,6 @@ public partial class DeviceEditWindow : Window
         MultiBanner.Visibility = Visibility.Visible;
         RowAddress.Height = new GridLength(0); // address stays per-device
         UserBox.Text = first.Username;
-        SshPortBox.Text = first.SshPort.ToString();
         PasswordHint.Visibility = Visibility.Visible;
         TestButton.IsEnabled = false; // no single host to test against
     }
@@ -50,7 +49,6 @@ public partial class DeviceEditWindow : Window
             Title = $"{T("De_TitleEdit")} – {existing.Host}"; // address in the title, not the body
             RowAddress.Height = new GridLength(0);
             UserBox.Text = existing.Username;
-            SshPortBox.Text = existing.SshPort.ToString();
             PasswordHint.Visibility = Visibility.Visible;
         }
         else
@@ -62,12 +60,8 @@ public partial class DeviceEditWindow : Window
 
     private readonly bool _defaultIgnoreCert = true;
 
-    /// <summary>The SSH port from its box, or the current value when the box is empty/invalid.</summary>
-    private int ParseSshPort(int fallback) =>
-        int.TryParse(SshPortBox.Text.Trim(), out var p) && p is >= 1 and <= 65535 ? p : fallback;
-
-    /// <summary>Builds the device for the add flow (address + credentials; scheme defaults to HTTPS,
-    /// which the refresh downgrades to HTTP only when the user allowed it in Settings).</summary>
+    /// <summary>Builds the device for the add flow (address + credentials; connection scheme/ports
+    /// are auto-probed on the next refresh, so no manual port is asked here).</summary>
     private Device? BuildDevice(out string error)
     {
         error = "";
@@ -77,7 +71,6 @@ public partial class DeviceEditWindow : Window
         var device = _existing ?? new Device { UseHttps = true, Port = 443, IgnoreCertErrors = _defaultIgnoreCert };
         device.Host = host;
         device.Username = UserBox.Text.Trim();
-        device.SshPort = ParseSshPort(device.SshPort);
         if (PasswordBox.Password.Length > 0 || _existing is null)
             device.EncryptedPassword = CredentialProtector.Protect(PasswordBox.Password);
         return device;
@@ -136,7 +129,6 @@ public partial class DeviceEditWindow : Window
         if (_existing is not null)
         {
             _existing.Username = UserBox.Text.Trim();
-            _existing.SshPort = ParseSshPort(_existing.SshPort);
             if (PasswordBox.Password.Length > 0)
                 _existing.EncryptedPassword = CredentialProtector.Protect(PasswordBox.Password);
             DialogResult = true;
@@ -154,12 +146,10 @@ public partial class DeviceEditWindow : Window
     private void ApplyToAll()
     {
         var user = UserBox.Text.Trim();
-        var sshPort = ParseSshPort(22);
         var newPassword = PasswordBox.Password.Length > 0 ? CredentialProtector.Protect(PasswordBox.Password) : null;
         foreach (var d in _multi!)
         {
             d.Username = user;
-            d.SshPort = sshPort;
             if (newPassword is not null) d.EncryptedPassword = newPassword;
         }
     }
