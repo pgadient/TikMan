@@ -122,7 +122,12 @@ public class DeviceViewModel : INotifyPropertyChanged
                 if (IdentifiedVendor.Length == 0 && CleanBrandFromOui(descr.ToLowerInvariant()) is { Length: > 0 } brand)
                 { Model.ExtraInfo["Hersteller (Web)"] = brand; changed = true; }
                 if (Board.Length == 0 && !Model.ExtraInfo.ContainsKey("Produkt") && !Model.ExtraInfo.ContainsKey("Modell"))
-                { Model.ExtraInfo["Modell"] = descr; changed = true; }
+                {
+                    // Toshiba writes "e-STUDIO 2525AC" with a space before the number.
+                    Model.ExtraInfo["Modell"] = System.Text.RegularExpressions.Regex.Replace(
+                        descr, @"(e-?STUDIO)(\d)", "$1 $2", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    changed = true;
+                }
             }
         }
         // sysName is a hostname (no spaces); the model string above is not.

@@ -15,6 +15,9 @@ public partial class MainWindow
 {
     private CancellationTokenSource? _scanCts;
     private bool _scanning;
+    /// <summary>IPv4 targets of a manual scan – MNDP hits outside this set are then filtered out
+    /// (so a manual scan of one subnet doesn't list MikroTik devices from another). Null = no filter.</summary>
+    private HashSet<string>? _scanTargets;
     private List<LocalSubnet> _subnets = new();
     private int _subnetIndex;
     private const int AutoScanMaxHosts = 8192; // don't ping-sweep a huge subnet automatically
@@ -96,6 +99,14 @@ public partial class MainWindow
 
             Task subnet = Task.CompletedTask;
             var target = SubnetBox.Text.Trim();
+            // A manual scan of a specific subnet only lists devices in that range – MNDP would
+            // otherwise add MikroTik devices from anywhere on the L2 segment.
+            _scanTargets = null;
+            if (!auto && target.Length > 0)
+            {
+                try { _scanTargets = SubnetScanner.EnumerateTargets(target).Select(ip => ip.ToString()).ToHashSet(); }
+                catch (ArgumentException) { /* invalid target – no filter */ }
+            }
             if (target.Length > 0)
             {
                 try
@@ -157,6 +168,7 @@ public partial class MainWindow
         finally
         {
             _scanning = false;
+            _scanTargets = null;
             ScanButton.Content = T("Tb_Scan");
             _ipv6ProgressTimer.Stop();
             _mndpProgressTimer.Stop();
@@ -235,6 +247,10 @@ public partial class MainWindow
     {
         var byIp = _devices.FirstOrDefault(v => v.HasAddress(d.IpAddress));
         if (byIp is not null) { EnrichExisting(byIp, d); ApplyDefaultExpansion(byIp); return; }
+
+        // Manual subnet scan: ignore IPv4 hits (e.g. from MNDP broadcast) outside the entered range.
+        if (_scanTargets is not null && !d.IpAddress.Contains(':') && !_scanTargets.Contains(d.IpAddress))
+            return;
 
         // Same physical device (same MAC) → attach this address. A NIC often has several IPv6
         // addresses (global, ULA, link-local, privacy), so we collect them all, not just one.
