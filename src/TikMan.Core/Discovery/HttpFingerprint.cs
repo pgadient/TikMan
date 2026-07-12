@@ -39,6 +39,14 @@ public static partial class HttpFingerprint
     [GeneratedRegex(@"[?&]model=([A-Za-z0-9][A-Za-z0-9._/-]{2,30})", RegexOptions.IgnoreCase)]
     private static partial Regex HelpModelRegex();
 
+    // Zyxel uOS firewalls (USG FLEX H series) serve a React SPA whose <title> is empty; the exact
+    // model is a constant in the main JS bundle, e.g.  n="USG FLEX 500H",i="ABZH".
+    [GeneratedRegex(@"src=[""'](/static/js/main\.[A-Za-z0-9]+\.chunk\.js)[""']", RegexOptions.IgnoreCase)]
+    private static partial Regex SpaMainChunkRegex();
+
+    [GeneratedRegex(@"=\s*[""']((?:USG FLEX|ATP|USG|NSG|VPN)[0-9A-Za-z \-]{1,18})[""']", RegexOptions.IgnoreCase)]
+    private static partial Regex ZyxelModelConstRegex();
+
     // Keyword (lower-case) → manufacturer shown. First match wins; checked against title + metas + Server.
     private static readonly (string Key, string Name)[] Brands =
     {
@@ -117,6 +125,15 @@ public static partial class HttpFingerprint
                 // (e.g. nebula.zyxel.com on a Nebula-managed switch whose title is just "Login").
                 var vendor = BrandFrom($"{title} {server} {metas}");
                 if (vendor.Length == 0) vendor = BrandFromDomains(html);
+
+                // Zyxel uOS firewalls hide the model in the JS bundle – fetch it once when the page
+                // is that React SPA and we still have no model.
+                if (title.Length == 0 && resp.IsSuccessStatusCode && LooksLikeZyxelSpa(html)
+                    && await ZyxelSpaModelAsync(http, $"{scheme}://{hostPart}", html, ct).ConfigureAwait(false) is { Length: > 0 } spaModel)
+                {
+                    title = spaModel;
+                    if (vendor.Length == 0) vendor = "Zyxel";
+                }
                 // Web-UI product names (TopAccess, QTS, IIS) identify the vendor but are not a model.
                 if (IsUiName(title)) title = "";
 
@@ -236,6 +253,34 @@ public static partial class HttpFingerprint
         }
         m = HelpModelRegex().Match(html);
         return m.Success ? WebUtility.HtmlDecode(m.Groups[1].Value).Trim() : "";
+    }
+
+    /// <summary>True when the page is the Zyxel uOS React admin SPA (branded "ZYXEL React" template
+    /// with a <c>/static/js/main.*.chunk.js</c> bundle) – its model lives in that bundle, not the DOM.</summary>
+    private static bool LooksLikeZyxelSpa(string html) =>
+        html.Contains("zyxel react", StringComparison.OrdinalIgnoreCase)
+        && SpaMainChunkRegex().IsMatch(html);
+
+    /// <summary>Downloads the SPA's main JS bundle once and reads the model constant baked into it,
+    /// e.g. <c>n="USG FLEX 500H"</c>. Returns "" on any error or if no model constant is present.</summary>
+    private static async Task<string> ZyxelSpaModelAsync(HttpClient http, string baseUrl, string html, CancellationToken ct)
+    {
+        var chunk = SpaMainChunkRegex().Match(html);
+        if (!chunk.Success) return "";
+        try
+        {
+            using var resp = await http.GetAsync($"{baseUrl}/{chunk.Groups[1].Value.TrimStart('/')}", ct).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode) return "";
+            var js = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            // The model appears as an assignment (n="USG FLEX 500H"), never as a map key ("…":6),
+            // so an "=…" match reliably picks this device's own model over the capabilities table.
+            var m = ZyxelModelConstRegex().Match(js);
+            return m.Success ? Regex.Replace(WebUtility.HtmlDecode(m.Groups[1].Value).Trim(), @"\s+", " ") : "";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or InvalidOperationException)
+        {
+            return "";
+        }
     }
 
     /// <summary>Last-resort vendor guess from manufacturer domains linked on the page (e.g. a

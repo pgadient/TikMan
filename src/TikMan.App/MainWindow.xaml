@@ -63,16 +63,16 @@
                         <Button Style="{StaticResource ToolButton}" Click="ClearAll_Click" Content="{loc:Loc Tb_Clear}"/>
                         <Separator Margin="6,2" Width="1" Background="#CCCCCC"/>
                         <Button Style="{StaticResource ToolButton}" Click="RefreshAll_Click" Content="{loc:Loc Tb_RefreshAll}"/>
-                        <Button x:Name="ListInfoButton" Click="ListInfo_Click" Content="ⓘ" Cursor="Hand"
-                                Background="Transparent" BorderThickness="0" Foreground="#2266CC" FontSize="20" FontWeight="Bold"
-                                Padding="6,0" Margin="4,0,0,0" VerticalAlignment="Center" ToolTip="{loc:Loc List_InfoTip}"/>
                     </StackPanel>
 
                 </WrapPanel>
                 </DockPanel>
 
-                <!-- Row 2: list filter (leftmost) + the auto-refresh option. -->
+                <!-- Row 2: list-tips ⓘ, then the list filter, then the auto-refresh option. -->
                 <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,6,0,0">
+                    <Button x:Name="ListInfoButton" Click="ListInfo_Click" Content="ⓘ" Cursor="Hand"
+                            Background="Transparent" BorderThickness="0" Foreground="#2266CC" FontSize="18" FontWeight="Bold"
+                            Padding="4,0" Margin="0,0,10,0" VerticalAlignment="Center" ToolTip="{loc:Loc List_InfoTip}"/>
                     <TextBlock VerticalAlignment="Center" Margin="0,0,4,0" Text="{loc:Loc Filter_Label}"/>
                     <TextBox x:Name="DeviceFilterBox" Width="200" VerticalContentAlignment="Center" Height="24"
                              ToolTip="{loc:Loc Filter_Tip}" TextChanged="DeviceFilterBox_TextChanged"
