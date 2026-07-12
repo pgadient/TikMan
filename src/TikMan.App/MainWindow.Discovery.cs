@@ -303,9 +303,15 @@ public partial class MainWindow
         var info = vm.Model.ExtraInfo;
         bool changed = false;
 
+        // A web UI is worth probing when a web port is open OR when we simply don't know the ports
+        // yet (manually added device, or a host that only answered ping) – identifying the vendor is
+        // what lets the per-vendor probes below run, especially over VPN where there is no MAC.
+        bool webMaybe = ports.Count == 0 || ports.Contains(80) || ports.Contains(443);
+        bool webOrAlt = webMaybe || ports.Contains(8080);
+
         // QNAP NAS: the GUI is usually on 8080 and returns HTTP errors on plain paths – ask its
         // QTS login endpoint instead so we never mistake a "403 Forbidden" page for a model.
-        if ((ports.Contains(8080) || ports.Contains(443) || ports.Contains(80)) && !ct.IsCancellationRequested)
+        if (webOrAlt && !ct.IsCancellationRequested)
         {
             try
             {
@@ -319,7 +325,7 @@ public partial class MainWindow
             catch { /* best effort */ }
         }
 
-        if ((ports.Contains(80) || ports.Contains(443)) && !ct.IsCancellationRequested)
+        if (webMaybe && !ct.IsCancellationRequested)
         {
             try
             {
@@ -347,7 +353,7 @@ public partial class MainWindow
         }
 
         // Brother printers expose serial + main/sub firmware on an unauthenticated EWS page.
-        if ((ports.Contains(80) || ports.Contains(443)) && LooksLikeBrother(vm) && !ct.IsCancellationRequested)
+        if (webMaybe && LooksLikeBrother(vm) && !ct.IsCancellationRequested)
         {
             try
             {
@@ -362,7 +368,7 @@ public partial class MainWindow
         }
 
         // Swisscom Internet-Boxes name their exact model over the SoftAtHome API / login page.
-        if ((ports.Contains(80) || ports.Contains(443)) && LooksLikeInternetBox(vm) && !ct.IsCancellationRequested)
+        if (webMaybe && LooksLikeInternetBox(vm) && !ct.IsCancellationRequested)
         {
             try
             {
@@ -399,7 +405,7 @@ public partial class MainWindow
         }
 
         // Frontier-Silicon internet radios (Teufel, Hama, …) name themselves on GET /device.
-        if (ports.Contains(80) && LooksLikeFsRadio(vm) && !ct.IsCancellationRequested)
+        if (webMaybe && LooksLikeFsRadio(vm) && !ct.IsCancellationRequested)
         {
             try
             {
@@ -438,21 +444,27 @@ public partial class MainWindow
         if (changed) vm.RaiseDetailsChanged();
     }
 
+    /// <summary>Every vendor signal we hold for a device, merged into one lowercase haystack: the OUI
+    /// MAC vendor, the identified (web/WMI/model-derived) vendor, the model and the scraped web title.
+    /// The per-vendor probes match against this so they fire off the manufacturer even when there is
+    /// no MAC (e.g. VPN scans, where the vendor comes from the web UI, not the OUI).</summary>
+    private static string VendorHint(DeviceViewModel vm)
+    {
+        var title = vm.Model.ExtraInfo.TryGetValue("Web-Titel", out var t) ? t : "";
+        return $"{vm.MacVendor} {vm.IdentifiedVendor} {vm.ModelDisplay} {title}".ToLowerInvariant();
+    }
+
     private static bool LooksLikeFsRadio(DeviceViewModel vm) =>
-        vm.MacVendor.Contains("frontier", StringComparison.OrdinalIgnoreCase) ||
+        VendorHint(vm).Contains("frontier") ||
         (vm.Model.ExtraInfo.TryGetValue("Web-Titel", out var t) &&
          t.StartsWith("Internet Radio", StringComparison.OrdinalIgnoreCase));
 
     private static bool LooksLikeInternetBox(DeviceViewModel vm) =>
-        vm.IdentifiedVendor.Equals("Swisscom", StringComparison.OrdinalIgnoreCase) ||
-        (vm.Model.ExtraInfo.TryGetValue("Web-Titel", out var t) &&
-         t.Replace("-", "").Replace(" ", "").Contains("internetbox", StringComparison.OrdinalIgnoreCase));
+        VendorHint(vm).Contains("swisscom") ||
+        VendorHint(vm).Replace("-", "").Replace(" ", "").Contains("internetbox");
 
     private static bool LooksLikeBrother(DeviceViewModel vm) =>
-        vm.MacVendor.Contains("brother", StringComparison.OrdinalIgnoreCase) ||
-        vm.IdentifiedVendor.Equals("Brother", StringComparison.OrdinalIgnoreCase) ||
-        (vm.Model.ExtraInfo.TryGetValue("Web-Titel", out var t) &&
-         t.Contains("brother", StringComparison.OrdinalIgnoreCase));
+        VendorHint(vm).Contains("brother");
 
     /// <summary>Fills in facts a later discovery source learned about a device already in the list.</summary>
     private static void EnrichExisting(DeviceViewModel vm, DiscoveredDevice d)
