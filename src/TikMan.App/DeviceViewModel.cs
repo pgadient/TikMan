@@ -500,6 +500,9 @@ public class DeviceViewModel : INotifyPropertyChanged
             var text = (Model.ExtraInfo.TryGetValue("Modell", out var m) ? m + " " : "")
                      + (Model.ExtraInfo.TryGetValue("Web-Titel", out var w) ? w : "");
             if (CleanBrandFromOui(text.ToLowerInvariant()) is { Length: > 0 } fromText) return fromText;
+            // Bare model code (e.g. "NWA5123-AC-HD") → vendor from its family prefix. Path-independent,
+            // and it runs after the explicit brand check above so it never overrides a real mention.
+            if (ModelVendor.FromModel(text) is { Length: > 0 } fromPrefix) return fromPrefix;
 
             // MAC-OUI fallbacks – only reachable on a local scan, and never override a probe above.
             if (mac.Contains("philips light") || mac.Contains("signify"))

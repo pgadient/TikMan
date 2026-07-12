@@ -131,10 +131,10 @@ public static partial class HttpFingerprint
                 // (e.g. nebula.zyxel.com on a Nebula-managed switch whose title is just "Login").
                 var vendor = BrandFrom($"{title} {server} {metas}");
                 if (vendor.Length == 0) vendor = BrandFromDomains(html);
-                // Some Zyxel APs/switches show only the bare model (e.g. "NWA5123-AC-HD") with no
-                // "Zyxel" anywhere on the page – infer the vendor from the model's family prefix so
-                // it is known even without a MAC (VPN scans).
-                if (vendor.Length == 0) vendor = VendorFromModel(title);
+                // Some devices show only the bare model (e.g. "NWA5123-AC-HD") with no brand name on
+                // the page – infer the vendor from the model's family prefix so it is known even
+                // without a MAC (VPN scans). Explicit brand text above always wins over this guess.
+                if (vendor.Length == 0) vendor = ModelVendor.FromModel(title);
 
                 // Zyxel uOS firewalls hide the model in the JS bundle – fetch it once when the page
                 // is that React SPA and we still have no model.
@@ -250,18 +250,6 @@ public static partial class HttpFingerprint
             if (lower.Contains(key)) return name;
         return "";
     }
-
-    // Distinctive Zyxel product-family prefixes (APs / switches / firewalls / gateways). Ambiguous
-    // ones shared with other vendors (bare "GS"/"XS" – also Netgear) are deliberately left out.
-    private static readonly string[] ZyxelModelPrefixes =
-        { "NWA", "WAC", "WAX", "NAP", "XGS", "XMG", "USG", "ATP", "NSG", "VMG", "EMG", "SBG", "ZyWALL" };
-
-    /// <summary>Infers "Zyxel" from a model code whose family prefix is unmistakably Zyxel (and that
-    /// carries a digit, so it's a real product code), else "". Used only when no vendor was found.</summary>
-    private static string VendorFromModel(string model) =>
-        model.Length > 0 && model.Any(char.IsDigit)
-        && ZyxelModelPrefixes.Any(p => model.StartsWith(p, StringComparison.OrdinalIgnoreCase))
-            ? "Zyxel" : "";
 
     /// <summary>Reads a model code from device-specific markers in the page body: the Zyxel
     /// <c>login-model</c> div and any <c>?model=…</c> help/support link. Returns "" if none.</summary>
