@@ -28,7 +28,9 @@ public static class WmiProbe
                 foreach (ManagementBaseObject o in Query(scope, "SELECT Manufacturer, Model, PCSystemType FROM Win32_ComputerSystem"))
                 {
                     Put(info, "Hersteller", o["Manufacturer"]);
-                    Put(info, "Modell", o["Model"]);
+                    // Only keep a real model; BIOS placeholders ("System Product Name", …) must not
+                    // crowd out a web-scraped title.
+                    if (Meaningful(o["Model"]) is { } model) info["Modell"] = model;
                     if (o["PCSystemType"] is { } t) info["Bauform"] = FormFactor(Convert.ToInt32(t));
                 }
                 foreach (ManagementBaseObject o in Query(scope, "SELECT Caption FROM Win32_OperatingSystem"))
@@ -73,6 +75,9 @@ public static class WmiProbe
                s.Contains("default string", StringComparison.OrdinalIgnoreCase) ||
                s.Contains("system version", StringComparison.OrdinalIgnoreCase) ||
                s.Contains("system serial", StringComparison.OrdinalIgnoreCase) ||
+               s.Contains("system product name", StringComparison.OrdinalIgnoreCase) ||
+               s.Contains("system manufacturer", StringComparison.OrdinalIgnoreCase) ||
+               s.Contains("system name", StringComparison.OrdinalIgnoreCase) ||
                s is "None" or "0" ? null : s;
     }
 

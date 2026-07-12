@@ -7,6 +7,8 @@ public enum AppLanguage
     German,
     English,
     SwissGerman,
+    Spanish,
+    Italian,
 }
 
 /// <summary>How a binary full backup (.backup) is fetched from the device.</summary>

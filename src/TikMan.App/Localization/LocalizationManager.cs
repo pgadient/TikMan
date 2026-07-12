@@ -42,10 +42,17 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         {
             AppLanguage.German => Strings.German,
             AppLanguage.SwissGerman => Strings.SwissGerman,
+            AppLanguage.Spanish => Strings.Spanish,
+            AppLanguage.Italian => Strings.Italian,
             _ => Strings.English,
         };
-        // German/Swiss German use de-CH formats, English uses en-US.
-        Culture = CultureInfo.GetCultureInfo(Effective == AppLanguage.English ? "en-US" : "de-CH");
+        Culture = CultureInfo.GetCultureInfo(Effective switch
+        {
+            AppLanguage.English => "en-US",
+            AppLanguage.Spanish => "es-ES",
+            AppLanguage.Italian => "it-IT",
+            _ => "de-CH", // German / Swiss German
+        });
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));
     }
 
@@ -57,8 +64,13 @@ public sealed class LocalizationManager : INotifyPropertyChanged
 
         var ui = CultureInfo.CurrentUICulture;
         if (ui.Name.Equals("de-CH", StringComparison.OrdinalIgnoreCase)) return AppLanguage.SwissGerman;
-        if (ui.TwoLetterISOLanguageName.Equals("de", StringComparison.OrdinalIgnoreCase)) return AppLanguage.German;
-        return AppLanguage.English;
+        return ui.TwoLetterISOLanguageName.ToLowerInvariant() switch
+        {
+            "de" => AppLanguage.German,
+            "es" => AppLanguage.Spanish,
+            "it" => AppLanguage.Italian,
+            _ => AppLanguage.English,
+        };
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

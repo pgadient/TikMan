@@ -24,6 +24,8 @@
                 <ComboBoxItem Tag="SwissGerman" Content="{loc:Loc Set_LangSwiss}"/>
                 <ComboBoxItem Tag="German" Content="{loc:Loc Set_LangGerman}"/>
                 <ComboBoxItem Tag="English" Content="{loc:Loc Set_LangEnglish}"/>
+                <ComboBoxItem Tag="Spanish" Content="{loc:Loc Set_LangSpanish}"/>
+                <ComboBoxItem Tag="Italian" Content="{loc:Loc Set_LangItalian}"/>
             </ComboBox>
 
             <TextBlock Grid.Row="1" Grid.Column="1" Foreground="#777777" FontSize="11" Margin="0,2,0,6"
