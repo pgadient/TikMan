@@ -72,6 +72,17 @@ public class DeviceViewModel : INotifyPropertyChanged
         RaiseDetailsChanged();
     }
 
+    /// <summary>Applies facts the discovery announcement itself carried (MNDP: board, version) –
+    /// that is everything a SwOS switch offers without credentials, since SwOS has no SSH/REST.</summary>
+    public void ApplyDiscoveryFacts(string board, string version, bool swos)
+    {
+        bool changed = false;
+        if (board.Length > 0 && !Model.ExtraInfo.ContainsKey("Modell")) { Model.ExtraInfo["Modell"] = board; changed = true; }
+        if (swos && !Model.ExtraInfo.ContainsKey("System")) { Model.ExtraInfo["System"] = "SwOS"; changed = true; }
+        if (version.Length > 0 && Version.Length == 0) { Version = version; changed = true; }
+        if (changed) RaiseDetailsChanged();
+    }
+
     /// <summary>Applies what the generic SSH probe (Zyxel/Netgear/D-Link/…) reported.</summary>
     public void ApplySshInfo(SshInfoProbe.SshDeviceInfo info)
     {
@@ -436,6 +447,10 @@ public class DeviceViewModel : INotifyPropertyChanged
         get
         {
             if (Model.Vendor == DeviceVendor.TpLink) return T("Dev_Switch");
+            // SwOS devices (CSS/CRS in switch mode) are switches, not routers.
+            if (Model.ExtraInfo.TryGetValue("System", out var os) && os == "SwOS") return T("Dev_Switch");
+            if (Model.ExtraInfo.TryGetValue("Modell", out var mdl) &&
+                mdl.StartsWith("CSS", StringComparison.OrdinalIgnoreCase)) return T("Dev_Switch");
             if (Board.Length > 0) return T("Dev_Router");
             if (Model.ExtraInfo.TryGetValue("Bauform", out var ff))
             {

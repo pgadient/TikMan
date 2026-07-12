@@ -243,7 +243,10 @@ public partial class MainWindow
             }
         }
 
-        bool likely = d.IsLikelyMikroTik || d.Source == "MNDP";
+        // SwOS announces itself via MNDP with a 2.x version (RouterOS is 6.x/7.x). It has no
+        // REST/SSH API, so monitoring would only produce errors – ping status covers it.
+        bool swos = d.Source == "MNDP" && d.Version.TrimStart().StartsWith("2.");
+        bool likely = (d.IsLikelyMikroTik || d.Source == "MNDP") && !swos;
         var device = new Device
         {
             // No hostname learned → leave the name empty (an IP address as name reads poorly).
@@ -260,6 +263,7 @@ public partial class MainWindow
             MonitoringEnabled = likely,
         };
         var vm = new DeviceViewModel(device) { IsSelected = MainSelectAll.IsChecked == true };
+        vm.ApplyDiscoveryFacts(d.Board, d.Version, swos); // MNDP already names board + version (SwOS!)
         _devices.Add(vm);
         ApplyDefaultExpansion(vm);
         if (likely) _ = RefreshAndCheckAsync(vm);
@@ -395,6 +399,8 @@ public partial class MainWindow
         if (vm.Model.MacAddress.Length == 0 && d.MacAddress.Length > 0) { vm.Model.MacAddress = d.MacAddress; changed = true; }
         if (vm.Model.OpenPorts.Count == 0 && d.OpenPorts.Count > 0) { vm.Model.OpenPorts = d.OpenPorts; changed = true; }
         if (!vm.Model.HasSmb && (d.OpenPorts.Contains(445) || d.OpenPorts.Contains(139))) { vm.Model.HasSmb = true; changed = true; }
+        vm.ApplyDiscoveryFacts(d.Board, d.Version,
+            swos: d.Source == "MNDP" && d.Version.TrimStart().StartsWith("2."));
         if (changed) vm.RaiseDiscoveryChanged();
     }
 
