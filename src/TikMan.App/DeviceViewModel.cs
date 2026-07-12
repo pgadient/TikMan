@@ -150,6 +150,27 @@ public class DeviceViewModel : INotifyPropertyChanged
         if (changed) RaiseDetailsChanged();
     }
 
+    /// <summary>Applies device facts read from the TLS certificate (Cisco SPA and similar embed the
+    /// model, serial and MAC in the cert subject). Fills only gaps the richer probes left blank.</summary>
+    public void ApplyTlsCertInfo(TlsCertProbe.CertInfo cert)
+    {
+        bool changed = false;
+        // Vendor: map the cert's organisation (e.g. "Cisco Systems, Inc.") or the model to a brand.
+        if (!Model.ExtraInfo.ContainsKey("Hersteller (Web)"))
+        {
+            var brand = CleanBrandFromOui(cert.Vendor.ToLowerInvariant());
+            if (brand.Length == 0) brand = ModelVendor.FromModel(cert.Model);
+            if (brand.Length > 0) { Model.ExtraInfo["Hersteller (Web)"] = brand; changed = true; }
+        }
+        if (cert.Model.Length > 0 && Board.Length == 0 && ModelDisplay.Length == 0
+            && !Model.ExtraInfo.ContainsKey("Modell"))
+        { Model.ExtraInfo["Modell"] = cert.Model; changed = true; }
+        if (cert.Serial.Length > 0 && Model.SerialNumber.Length == 0) { Model.SerialNumber = cert.Serial; changed = true; }
+        // No MAC on the wire (VPN) but the cert carries it → fill it, which also yields the OUI vendor.
+        if (cert.Mac.Length > 0 && Model.MacAddress.Length == 0) { Model.MacAddress = cert.Mac; changed = true; Notify(nameof(MacVendor)); }
+        if (changed) RaiseDetailsChanged();
+    }
+
     /// <summary>Applies what the QNAP QTS login endpoint reported (vendor, OS, hostname, model).</summary>
     public void ApplyQnapInfo(QnapProbe.QnapInfo info)
     {

@@ -331,8 +331,25 @@ public partial class MainWindow
             {
                 var fp = await HttpFingerprint.ProbeAsync(vm.Host, ct);
                 if (fp.WebServer.Length > 0) { info["Webserver"] = fp.WebServer; changed = true; }
-                if (fp.Vendor.Length > 0) { info["Hersteller (Web)"] = fp.Vendor; changed = true; }
+                if (fp.Vendor.Length > 0 && !info.ContainsKey("Hersteller (Web)")) { info["Hersteller (Web)"] = fp.Vendor; changed = true; }
                 if (fp.Title.Length > 0) { info["Web-Titel"] = fp.Title; changed = true; }
+            }
+            catch { /* best effort */ }
+        }
+
+        // TLS certificate (port 443): some devices embed model/serial/MAC in the cert subject and
+        // speak only legacy TLS the HTTP client can't fetch a page over (e.g. a Cisco SPA122 ATA).
+        // Runs after the web fingerprint so a clean web-title model keeps precedence over the cert.
+        if ((ports.Contains(443) || ports.Count == 0) && !ct.IsCancellationRequested)
+        {
+            try
+            {
+                var host = vm.Ipv4Address.Length > 0 ? vm.Ipv4Address : vm.Host;
+                if (await TlsCertProbe.QueryAsync(host, 443, ct) is { } tls)
+                {
+                    vm.ApplyTlsCertInfo(tls);
+                    changed = false; // ApplyTlsCertInfo already raised the details
+                }
             }
             catch { /* best effort */ }
         }

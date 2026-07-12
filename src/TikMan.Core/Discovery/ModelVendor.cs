@@ -18,7 +18,7 @@ public static class ModelVendor
         ("Fortinet", new[] { "FortiGate", "FGT", "FortiSwitch", "FortiAP", "FAP-", "FSW" }),
         ("D-Link",   new[] { "DGS-", "DES-", "DIR-", "DAP-", "DXS-", "DSR-", "DWL-" }),
         ("QNAP",     new[] { "TS-", "TVS-", "TBS-", "TES-", "QGD-", "QSW-" }),
-        ("Cisco",    new[] { "WS-C", "CBS", "CBW", "AIR-", "C9", "SG350", "SG250", "SG550" }),
+        ("Cisco",    new[] { "WS-C", "CBS", "CBW", "AIR-", "C9", "SG350", "SG250", "SG550", "SPA", "PAP" }),
         ("Aruba",    new[] { "IAP-" }),
         ("Netgear",  new[] { "Nighthawk", "Orbi", "RBR", "RBS", "GSM7" }),
     };
