@@ -13,72 +13,34 @@ public readonly record struct DeviceFacts(string Name, string Model, string Hard
 /// differences between models.</summary>
 public static class TpLinkSshConnector
 {
-    /// <summary>Connects over SSH (Device.Port is the SSH port), runs <c>show system-info</c> and
-    /// returns the parsed facts. Throws on connection/authentication failure.</summary>
+    /// <summary>Connects over SSH (Device.Port is the SSH port), runs <c>show system-info</c> via
+    /// the shared <see cref="SshExec"/> runner and returns the parsed facts. Throws on
+    /// connection/authentication failure so monitoring can show a meaningful status.</summary>
     public static async Task<DeviceFacts> GetFactsAsync(Device device, string password, CancellationToken ct = default)
     {
         var port = device.Port is > 0 and <= 65535 ? device.Port : 22;
-        var work = Task.Run(() =>
-        {
-            var info = new ConnectionInfo(device.Host, port, device.Username,
-                new PasswordAuthenticationMethod(device.Username, password))
-            {
-                Timeout = TimeSpan.FromSeconds(10),
-            };
-            using var ssh = new SshClient(info);
-            try
-            {
-                ssh.Connect();
-                var output = RunSystemInfo(ssh);
-                return ParseSystemInfo(output);
-            }
-            catch (SshAuthenticationException ex)
-            {
-                throw new RouterOsApiException(401, $"SSH login failed: {ex.Message}.");
-            }
-            catch (SshConnectionException ex)
-            {
-                throw new RouterOsApiException(0, $"SSH connection failed: {ex.Message}. Is SSH enabled (port {port})?");
-            }
-            finally
-            {
-                if (ssh.IsConnected) ssh.Disconnect();
-            }
-        }, ct);
-
-        // Hard backstop: SSH.NET's own timeout doesn't always cover a stalled handshake, so never
-        // let the UI hang on "connecting".
         try
         {
-            return await work.WaitAsync(TimeSpan.FromSeconds(20), ct).ConfigureAwait(false);
+            var results = await SshExec.RunAsync(device.Host, port, device.Username, password,
+                ["show system-info"], stopWhen: null, ct).ConfigureAwait(false);
+            return ParseSystemInfo(results.Count > 0 ? results[0].Output : "");
+        }
+        catch (SshAuthenticationException ex)
+        {
+            throw new RouterOsApiException(401, $"SSH login failed: {ex.Message}.");
+        }
+        catch (SshConnectionException ex)
+        {
+            throw new RouterOsApiException(0, $"SSH connection failed: {ex.Message}. Is SSH enabled (port {port})?");
+        }
+        catch (System.Net.Sockets.SocketException ex)
+        {
+            throw new RouterOsApiException(0, $"SSH connection failed: {ex.Message}.");
         }
         catch (TimeoutException)
         {
             throw new RouterOsApiException(0, $"SSH connection to {device.Host}:{port} timed out.");
         }
-    }
-
-    /// <summary>Runs the command via a plain exec channel; if the switch only offers an interactive
-    /// shell (no exec), falls back to a shell stream.</summary>
-    private static string RunSystemInfo(SshClient ssh)
-    {
-        try
-        {
-            using var cmd = ssh.RunCommand("show system-info");
-            if (cmd.Result.Trim().Length > 0) return cmd.Result;
-        }
-        catch (SshException) { /* exec not supported – try the shell */ }
-
-        try
-        {
-            using var shell = ssh.CreateShellStream("vt100", 80, 200, 800, 600, 4096);
-            System.Threading.Thread.Sleep(600);
-            shell.Read();                       // drain the banner/prompt
-            shell.WriteLine("show system-info");
-            System.Threading.Thread.Sleep(1200);
-            return shell.Read();
-        }
-        catch (SshException) { return ""; }
     }
 
     /// <summary>Parses <c>show system-info</c> output. Lines look like

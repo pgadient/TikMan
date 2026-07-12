@@ -72,6 +72,17 @@ public class DeviceViewModel : INotifyPropertyChanged
         RaiseDetailsChanged();
     }
 
+    /// <summary>Applies what the generic SSH probe (Zyxel/Netgear/D-Link/…) reported.</summary>
+    public void ApplySshInfo(SshInfoProbe.SshDeviceInfo info)
+    {
+        if (info.Model.Length > 0 &&
+            !Model.ExtraInfo.ContainsKey("Produkt") && !Model.ExtraInfo.ContainsKey("Modell"))
+            Model.ExtraInfo["Modell"] = info.Model;
+        if (info.Serial.Length > 0 && Model.SerialNumber.Length == 0) Model.SerialNumber = info.Serial;
+        if (info.Firmware.Length > 0 && Version.Length == 0) Version = info.Firmware;
+        RaiseDetailsChanged();
+    }
+
     /// <summary>Applies what a Frontier-Silicon radio (Teufel & Co.) reported.</summary>
     public void ApplyRadioInfo(FrontierSiliconProbe.RadioInfo radio)
     {

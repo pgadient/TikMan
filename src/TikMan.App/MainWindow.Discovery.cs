@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Threading;
 using TikMan.Core.Discovery;
 using TikMan.Core.Models;
+using TikMan.Core.Storage;
 using static TikMan.App.Localization.LocalizationManager;
 
 namespace TikMan.App;
@@ -268,7 +269,7 @@ public partial class MainWindow
 
     /// <summary>Best-effort background enrichment for the Details tab: the web server (Server header +
     /// page title) for web hosts, and WMI facts (manufacturer/model/OS) for Windows hosts (port 135).</summary>
-    private static async Task EnrichDetailsAsync(DeviceViewModel vm)
+    private async Task EnrichDetailsAsync(DeviceViewModel vm)
     {
         var ports = vm.Model.OpenPorts;
         var info = vm.Model.ExtraInfo;
@@ -326,6 +327,29 @@ public partial class MainWindow
                 {
                     vm.ApplySwisscomInfo(box);
                     changed = false; // ApplySwisscomInfo already raised the details
+                }
+            }
+            catch { /* best effort */ }
+        }
+
+        // Generic SSH probe: managed/smart switches (Zyxel, Netgear, D-Link, PLANET, …) reveal
+        // model/serial/firmware over "show" commands. Only with credentials, only read-only
+        // commands, and never for MikroTik/TP-Link (they have their own connectors).
+        if (ports.Contains(22) && vm.Board.Length == 0 && !vm.IsTpLink &&
+            !vm.IdentifiedVendor.Equals("MikroTik", StringComparison.OrdinalIgnoreCase) &&
+            vm.Model.Username.Trim().Length > 0 && vm.Model.EncryptedPassword.Length > 0 &&
+            (vm.SerialNumber.Length == 0 || vm.Version.Length == 0))
+        {
+            try
+            {
+                var host = vm.Ipv4Address.Length > 0 ? vm.Ipv4Address : vm.Host;
+                var password = CredentialProtector.Unprotect(vm.Model.EncryptedPassword);
+                if (password.Length > 0 &&
+                    await SshInfoProbe.QueryAsync(host, _appData.SshPort, vm.Model.Username.Trim(),
+                        password, $"{vm.IdentifiedVendor} {vm.MacVendor}") is { } sshInfo)
+                {
+                    vm.ApplySshInfo(sshInfo);
+                    changed = false; // ApplySshInfo already raised the details
                 }
             }
             catch { /* best effort */ }
