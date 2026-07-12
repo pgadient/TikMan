@@ -121,7 +121,12 @@ public class DeviceViewModel : INotifyPropertyChanged
             {
                 if (IdentifiedVendor.Length == 0 && CleanBrandFromOui(descr.ToLowerInvariant()) is { Length: > 0 } brand)
                 { Model.ExtraInfo["Hersteller (Web)"] = brand; changed = true; }
-                if (Board.Length == 0 && !Model.ExtraInfo.ContainsKey("Produkt") && !Model.ExtraInfo.ContainsKey("Modell"))
+                // Only fill the model if nothing better (web/WMI) already has one, and skip a print
+                // server / network-card string (e.g. Brother "NC-17002h") – that's not the device model.
+                bool networkCard = System.Text.RegularExpressions.Regex.IsMatch(descr,
+                    @"\bNC-\d|print server|network card|print ?adapter",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (Board.Length == 0 && ModelDisplay.Length == 0 && !networkCard)
                 {
                     // Toshiba writes "e-STUDIO 2525AC" with a space before the number.
                     Model.ExtraInfo["Modell"] = System.Text.RegularExpressions.Regex.Replace(
