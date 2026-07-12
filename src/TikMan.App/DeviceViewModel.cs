@@ -485,7 +485,12 @@ public class DeviceViewModel : INotifyPropertyChanged
                 return "Signify"; // Philips Lighting BV is Signify today
             if (mac.Contains("american power") || mac.StartsWith("apc") || mac.Contains(" apc "))
                 return "APC"; // APC / American Power Conversion – almost always a UPS
-            return CleanBrandFromOui(mac); // last resort: a known brand hiding in the raw OUI name
+            if (CleanBrandFromOui(mac) is { Length: > 0 } fromOui) return fromOui; // brand in the raw OUI name
+            // No MAC (e.g. scanning over VPN) → derive the vendor from a brand in the model/web title,
+            // so a "Yealink T54W" model becomes vendor Yealink + model "T54W".
+            var text = (Model.ExtraInfo.TryGetValue("Modell", out var m) ? m + " " : "")
+                     + (Model.ExtraInfo.TryGetValue("Web-Titel", out var w) ? w : "");
+            return CleanBrandFromOui(text.ToLowerInvariant());
         }
     }
 
