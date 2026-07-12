@@ -332,11 +332,10 @@ public partial class MainWindow
             catch { /* best effort */ }
         }
 
-        // Generic SSH probe: managed/smart switches (Zyxel, Netgear, D-Link, PLANET, …) reveal
-        // model/serial/firmware over "show" commands. Only with credentials, only read-only
-        // commands, and never for MikroTik/TP-Link (they have their own connectors).
-        if (ports.Contains(22) && vm.Board.Length == 0 && !vm.IsTpLink &&
-            !vm.IdentifiedVendor.Equals("MikroTik", StringComparison.OrdinalIgnoreCase) &&
+        // Generic SSH probe: reveals model/serial/firmware over read-only "show"/"print" commands,
+        // ordered per vendor (MikroTik included – it serves as fallback when the REST API is off;
+        // a filled board name means the RouterOS/TP-Link connector already delivered).
+        if (ports.Contains(22) && vm.Board.Length == 0 &&
             vm.Model.Username.Trim().Length > 0 && vm.Model.EncryptedPassword.Length > 0 &&
             (vm.SerialNumber.Length == 0 || vm.Version.Length == 0))
         {

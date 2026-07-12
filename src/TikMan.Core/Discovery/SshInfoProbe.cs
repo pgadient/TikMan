@@ -17,6 +17,8 @@ public static partial class SshInfoProbe
     public static string[] CommandsFor(string vendorHint)
     {
         var v = (vendorHint ?? "").ToLowerInvariant();
+        // RouterOS: resource print first (RouterOS version + board), routerboard print adds the serial.
+        if (v.Contains("mikrotik") || v.Contains("routerboard")) return ["/system resource print", "/system routerboard print"];
         if (v.Contains("tp-link") || v.Contains("tplink") || v.Contains("pharos")) return ["show system-info", "show version"];
         if (v.Contains("zyxel")) return ["show system-information", "show version"];
         if (v.Contains("d-link") || v.Contains("dlink")) return ["show switch", "show version"];
@@ -34,14 +36,21 @@ public static partial class SshInfoProbe
     {
         try
         {
-            var results = await SshExec.RunAsync(host, port, user, password, CommandsFor(vendorHint),
-                stopWhen: output => HasAnyFact(Parse(output)), ct).ConfigureAwait(false);
-            foreach (var (_, output) in results)
+            // Facts merge across commands (e.g. RouterOS: version from resource print, serial from
+            // routerboard print); later commands only run while something is still missing.
+            var acc = new SshDeviceInfo("", "", "");
+            bool MergeAndCheckDone(string output)
             {
-                var parsed = Parse(output);
-                if (HasAnyFact(parsed)) return parsed;
+                var p = Parse(output);
+                acc = new SshDeviceInfo(
+                    acc.Model.Length > 0 ? acc.Model : p.Model,
+                    acc.Serial.Length > 0 ? acc.Serial : p.Serial,
+                    acc.Firmware.Length > 0 ? acc.Firmware : p.Firmware);
+                return acc is { Model.Length: > 0, Serial.Length: > 0, Firmware.Length: > 0 };
             }
-            return null;
+            await SshExec.RunAsync(host, port, user, password, CommandsFor(vendorHint),
+                stopWhen: MergeAndCheckDone, ct).ConfigureAwait(false);
+            return acc.Model.Length > 0 || acc.Serial.Length > 0 || acc.Firmware.Length > 0 ? acc : null;
         }
         catch (Exception ex) when (ex is TimeoutException or SshException or System.Net.Sockets.SocketException)
         {
@@ -49,14 +58,11 @@ public static partial class SshInfoProbe
         }
     }
 
-    private static bool HasAnyFact(SshDeviceInfo info) =>
-        info.Model.Length > 0 || info.Serial.Length > 0 || info.Firmware.Length > 0;
-
-    [GeneratedRegex(@"^\s*(?:model|system model|device model|machine model|model name|product name|device type|machine type)\s*(?:name|id)?[ .:\-\t]*(\S[^\r\n]*)",
+    [GeneratedRegex(@"^\s*(?:model|system model|device model|machine model|model name|product name|device type|machine type|board-name)\s*(?:name|id)?[ .:\-\t]*(\S[^\r\n]*)",
         RegexOptions.IgnoreCase | RegexOptions.Multiline)]
     private static partial Regex ModelRegex();
 
-    [GeneratedRegex(@"^\s*serial\s*(?:number|no\.?|num)?[ .:\-\t]*(\S[^\r\n]*)",
+    [GeneratedRegex(@"^\s*serial(?:[-\s]*(?:number|no\.?|num))?[ .:\-\t]*(\S[^\r\n]*)",
         RegexOptions.IgnoreCase | RegexOptions.Multiline)]
     private static partial Regex SerialRegex();
 
@@ -64,7 +70,9 @@ public static partial class SshInfoProbe
         RegexOptions.IgnoreCase | RegexOptions.Multiline)]
     private static partial Regex VersionRegex();
 
-    [GeneratedRegex(@"^\s*(?:firmware|software)\s*(?:version)?[ .:\-\t]*(\S[^\r\n]*)",
+    // The lookahead keeps RouterOS's "firmware-type"/"upgrade-firmware" lines from matching, while
+    // "current-firmware: 7.16" and "Firmware Version - 6.20" still do.
+    [GeneratedRegex(@"^\s*(?:current[-\s]*)?(?:firmware|software)(?:[-\s]+version)?(?=[ .:\t])[ .:\-\t]*(\S[^\r\n]*)",
         RegexOptions.IgnoreCase | RegexOptions.Multiline)]
     private static partial Regex FirmwareRegex();
 
