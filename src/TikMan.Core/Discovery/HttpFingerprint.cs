@@ -29,6 +29,16 @@ public static partial class HttpFingerprint
     [GeneratedRegex(@"<h1[^>]*>(.*?)</h1>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex H1Regex();
 
+    // Zyxel switches/APs put the exact model in <div class="login-model">XGS1930-52HP</div> on the
+    // login page (title is just "Login"). Nebula-managed units keep SNMP off, so this is the only hint.
+    [GeneratedRegex(@"class=[""'][^""']*\blogin-model\b[^""']*[""'][^>]*>\s*([^<]+)", RegexOptions.IgnoreCase)]
+    private static partial Regex LoginModelRegex();
+
+    // Many vendors deep-link to their online help with the model in the query, e.g.
+    // webhelp.zyxel.com/…?model=XGS1930-52HP&…  – a reliable model source when the title is generic.
+    [GeneratedRegex(@"[?&]model=([A-Za-z0-9][A-Za-z0-9._/-]{2,30})", RegexOptions.IgnoreCase)]
+    private static partial Regex HelpModelRegex();
+
     // Keyword (lower-case) → manufacturer shown. First match wins; checked against title + metas + Server.
     private static readonly (string Key, string Name)[] Brands =
     {
@@ -99,7 +109,14 @@ public static partial class HttpFingerprint
                 var metas = ExtractMetas(html);
                 var title = resp.IsSuccessStatusCode ? CleanTitle(ExtractTitle(html)) : "";
                 if (title.Length == 0 && resp.IsSuccessStatusCode) title = CleanTitle(ExtractAltTitle(html));
+                // Model markers in the page body (Zyxel login-model div, help-link ?model=…) beat a
+                // generic/empty title – they carry the real product code even behind a bland "Login".
+                if (title.Length == 0 && resp.IsSuccessStatusCode && ExtractModelHint(html) is { Length: > 0 } model)
+                    title = model;
+                // Vendor: title/server/metas first, then vendor domains referenced on the page
+                // (e.g. nebula.zyxel.com on a Nebula-managed switch whose title is just "Login").
                 var vendor = BrandFrom($"{title} {server} {metas}");
+                if (vendor.Length == 0) vendor = BrandFromDomains(html);
                 // Web-UI product names (TopAccess, QTS, IIS) identify the vendor but are not a model.
                 if (IsUiName(title)) title = "";
 
@@ -206,4 +223,39 @@ public static partial class HttpFingerprint
             if (lower.Contains(key)) return name;
         return "";
     }
+
+    /// <summary>Reads a model code from device-specific markers in the page body: the Zyxel
+    /// <c>login-model</c> div and any <c>?model=…</c> help/support link. Returns "" if none.</summary>
+    private static string ExtractModelHint(string html)
+    {
+        var m = LoginModelRegex().Match(html);
+        if (m.Success)
+        {
+            var text = WebUtility.HtmlDecode(m.Groups[1].Value).Trim();
+            if (text.Length is >= 2 and <= 40 && Regex.IsMatch(text, @"[A-Za-z].*\d|\d.*[A-Za-z]")) return text;
+        }
+        m = HelpModelRegex().Match(html);
+        return m.Success ? WebUtility.HtmlDecode(m.Groups[1].Value).Trim() : "";
+    }
+
+    /// <summary>Last-resort vendor guess from manufacturer domains linked on the page (e.g. a
+    /// Nebula-managed Zyxel switch links to nebula.zyxel.com / webhelp.zyxel.com). Only well-known
+    /// vendor hostnames are matched, so it won't fire on generic third-party links.</summary>
+    private static string BrandFromDomains(string html)
+    {
+        var lower = html.ToLowerInvariant();
+        foreach (var (domain, name) in VendorDomains)
+            if (lower.Contains(domain)) return name;
+        return "";
+    }
+
+    // Manufacturer support/cloud domains that a device's own UI links to. Kept specific (full host
+    // fragments) to avoid the false positives a bare brand-word scan over the whole page would cause.
+    private static readonly (string Domain, string Name)[] VendorDomains =
+    {
+        ("zyxel.com", "Zyxel"), ("nebula.zyxel", "Zyxel"),
+        ("mikrotik.com", "MikroTik"), ("tp-link.com", "TP-Link"), ("tplink", "TP-Link"),
+        ("netgear.com", "Netgear"), ("synology.com", "Synology"), ("qnap.com", "QNAP"),
+        ("ui.com", "Ubiquiti"), ("ubnt.com", "Ubiquiti"),
+    };
 }

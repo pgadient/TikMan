@@ -63,6 +63,9 @@
                         <Button Style="{StaticResource ToolButton}" Click="ClearAll_Click" Content="{loc:Loc Tb_Clear}"/>
                         <Separator Margin="6,2" Width="1" Background="#CCCCCC"/>
                         <Button Style="{StaticResource ToolButton}" Click="RefreshAll_Click" Content="{loc:Loc Tb_RefreshAll}"/>
+                        <Button x:Name="ListInfoButton" Click="ListInfo_Click" Content="ⓘ" Cursor="Hand"
+                                Background="Transparent" BorderThickness="0" Foreground="#2266CC" FontSize="20" FontWeight="Bold"
+                                Padding="6,0" Margin="4,0,0,0" VerticalAlignment="Center" ToolTip="{loc:Loc List_InfoTip}"/>
                     </StackPanel>
 
                 </WrapPanel>
@@ -137,11 +140,8 @@
 
             <DockPanel Grid.Row="0">
                 <!-- IPv4/IPv6 view switch: same device list, only the address column and sorting flip.
-                     The ⓘ explains multi-select and the gateway highlight. -->
+                     The list hints (multi-select, gateway highlight) live on the ⓘ button up in the toolbar. -->
                 <DockPanel DockPanel.Dock="Top">
-                    <TextBlock DockPanel.Dock="Right" Text="ⓘ" VerticalAlignment="Center" HorizontalAlignment="Right"
-                               Margin="10,0,8,0" Foreground="#2266CC" FontSize="22" FontWeight="Bold"
-                               Cursor="Help" ToolTip="{loc:Loc List_InfoTip}"/>
                     <TabControl x:Name="AddressTabs" BorderThickness="0" Padding="0"
                                 Background="Transparent" SelectionChanged="AddressTabs_SelectionChanged">
                         <TabItem Header="IPv4"/>
@@ -297,12 +297,12 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding DeviceType}" Width="85" ElementStyle="{StaticResource VCenter}"/>
-                    <DataGridTextColumn Header="{loc:Loc Col_Name}" Binding="{Binding Name}" Width="170" ElementStyle="{StaticResource VCenter}"/>
-                    <DataGridTextColumn x:Name="Ipv4Column" Header="IPv4" Binding="{Binding Ipv4Address}" Width="130" SortMemberPath="Ipv4SortKey" ElementStyle="{StaticResource VCenter}"/>
-                    <DataGridTextColumn x:Name="Ipv6Column" Header="IPv6" Binding="{Binding Ipv6Summary}" Width="240"
+                    <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding DeviceType}" Width="Auto" MaxWidth="200" ElementStyle="{StaticResource VCenter}"/>
+                    <DataGridTextColumn Header="{loc:Loc Col_Name}" Binding="{Binding Name}" Width="Auto" MaxWidth="200" ElementStyle="{StaticResource VCenter}"/>
+                    <DataGridTextColumn x:Name="Ipv4Column" Header="IPv4" Binding="{Binding Ipv4Address}" Width="Auto" MaxWidth="200" SortMemberPath="Ipv4SortKey" ElementStyle="{StaticResource VCenter}"/>
+                    <DataGridTextColumn x:Name="Ipv6Column" Header="IPv6" Binding="{Binding Ipv6Summary}" Width="Auto" MaxWidth="200"
                                         SortMemberPath="Ipv6Display" ElementStyle="{StaticResource VCenter}"/>
-                    <DataGridTemplateColumn Header="{loc:Loc Col_Protocol}" Width="280" SortMemberPath="TransportDisplay">
+                    <DataGridTemplateColumn Header="{loc:Loc Col_Protocol}" Width="Auto" MaxWidth="200" SortMemberPath="TransportDisplay">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <ItemsControl ItemsSource="{Binding SupportedProtocols}" VerticalAlignment="Center">
@@ -330,8 +330,8 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="{loc:Loc Col_Mac}" Binding="{Binding Model.MacAddress}" Width="140" ElementStyle="{StaticResource VCenter}"/>
-                    <DataGridTemplateColumn Header="{loc:Loc Col_MacVendor}" Width="130" SortMemberPath="MacVendor">
+                    <DataGridTextColumn Header="{loc:Loc Col_Mac}" Binding="{Binding Model.MacAddress}" Width="Auto" MaxWidth="200" ElementStyle="{StaticResource VCenter}"/>
+                    <DataGridTemplateColumn Header="{loc:Loc Col_MacVendor}" Width="Auto" MaxWidth="200" SortMemberPath="MacVendor">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -359,11 +359,11 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding IdentifiedVendor}" Width="100" ElementStyle="{StaticResource VCenter}"/>
-                    <DataGridTextColumn Header="{loc:Loc Col_Board}" Binding="{Binding ModelDisplay}" Width="130" ElementStyle="{StaticResource VCenter}"/>
-                    <DataGridTextColumn Header="{loc:Loc Col_Serial}" Binding="{Binding SerialNumber}" Width="140" ElementStyle="{StaticResource VCenter}"/>
-                    <DataGridTextColumn Header="{loc:Loc Col_Os}" Binding="{Binding OsDisplay}" Width="160" ElementStyle="{StaticResource VCenter}"/>
-                    <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Version}" Width="110">
+                    <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding IdentifiedVendor}" Width="Auto" MaxWidth="200" ElementStyle="{StaticResource VCenter}"/>
+                    <DataGridTextColumn Header="{loc:Loc Col_Board}" Binding="{Binding ModelDisplay}" Width="Auto" MaxWidth="200" ElementStyle="{StaticResource VCenter}"/>
+                    <DataGridTextColumn Header="{loc:Loc Col_Serial}" Binding="{Binding SerialNumber}" Width="Auto" MaxWidth="200" ElementStyle="{StaticResource VCenter}"/>
+                    <DataGridTextColumn Header="{loc:Loc Col_Os}" Binding="{Binding OsDisplay}" Width="Auto" MaxWidth="200" ElementStyle="{StaticResource VCenter}"/>
+                    <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Version}" Width="Auto" MaxWidth="200">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
                                 <Setter Property="VerticalAlignment" Value="Center"/>
@@ -379,7 +379,7 @@
                             </Style>
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
-                    <DataGridTextColumn Header="{loc:Loc Col_Latest}" Binding="{Binding LatestWithChannel}" Width="130">
+                    <DataGridTextColumn Header="{loc:Loc Col_Latest}" Binding="{Binding LatestWithChannel}" Width="Auto" MaxWidth="200">
                         <DataGridTextColumn.CellStyle>
                             <Style TargetType="DataGridCell">
                                 <Setter Property="VerticalContentAlignment" Value="Center"/>
@@ -392,11 +392,11 @@
                             </Style>
                         </DataGridTextColumn.CellStyle>
                     </DataGridTextColumn>
-                    <DataGridTextColumn Header="{loc:Loc Col_InstalledRel}" Binding="{Binding InstalledReleaseText}" Width="95" ElementStyle="{StaticResource VCenter}"/>
-                    <DataGridTextColumn Header="{loc:Loc Col_UpdateRel}" Binding="{Binding UpdateReleaseText}" Width="95" ElementStyle="{StaticResource VCenter}"/>
-                    <DataGridTextColumn Header="{loc:Loc Col_Cpu}" Binding="{Binding CpuText}" Width="55" ElementStyle="{StaticResource VCenter}"/>
-                    <DataGridTextColumn Header="{loc:Loc Col_Ram}" Binding="{Binding MemoryText}" Width="120" ElementStyle="{StaticResource VCenter}"/>
-                    <DataGridTextColumn Header="{loc:Loc Col_Uptime}" Binding="{Binding Uptime}" Width="100" ElementStyle="{StaticResource VCenter}"/>
+                    <DataGridTextColumn Header="{loc:Loc Col_InstalledRel}" Binding="{Binding InstalledReleaseText}" Width="Auto" MaxWidth="200" ElementStyle="{StaticResource VCenter}"/>
+                    <DataGridTextColumn Header="{loc:Loc Col_UpdateRel}" Binding="{Binding UpdateReleaseText}" Width="Auto" MaxWidth="200" ElementStyle="{StaticResource VCenter}"/>
+                    <DataGridTextColumn Header="{loc:Loc Col_Cpu}" Binding="{Binding CpuText}" Width="Auto" MaxWidth="200" ElementStyle="{StaticResource VCenter}"/>
+                    <DataGridTextColumn Header="{loc:Loc Col_Ram}" Binding="{Binding MemoryText}" Width="Auto" MaxWidth="200" ElementStyle="{StaticResource VCenter}"/>
+                    <DataGridTextColumn Header="{loc:Loc Col_Uptime}" Binding="{Binding Uptime}" Width="Auto" MaxWidth="200" ElementStyle="{StaticResource VCenter}"/>
                 </DataGrid.Columns>
             </DataGrid>
             </DockPanel>

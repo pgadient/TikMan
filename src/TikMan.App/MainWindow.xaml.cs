@@ -309,6 +309,9 @@ public partial class MainWindow : Window
 
     private async void RefreshAll_Click(object sender, RoutedEventArgs e) => await RefreshAllAsync(quiet: false);
 
+    private void ListInfo_Click(object sender, RoutedEventArgs e) =>
+        MessageBox.Show(this, T("List_InfoTip"), T("List_InfoTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
+
     private void ApplyTimerSettings()
     {
         _pollTimer.Interval = TimeSpan.FromSeconds(SelectedIntervalSeconds());
