@@ -106,10 +106,16 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// switches (e.g. "TOSHIBA e-STUDIO2525AC"); on servers it is an OS string. Only fills gaps.</summary>
     /// <summary>Marks SNMP (UDP 161) as reachable so it gets a badge like the other services.
     /// UDP can't be found by the TCP port scan, so the SNMP probe reports openness this way.</summary>
-    public void MarkSnmpOpen()
+    public void MarkSnmpOpen() => MarkUdpService(161);
+
+    /// <summary>Marks DNS (UDP 53) as reachable so it gets a badge – a UDP-only DNS forwarder (e.g. a
+    /// Swisscom Internet-Box) isn't found by the TCP port scan.</summary>
+    public void MarkDnsOpen() => MarkUdpService(53);
+
+    private void MarkUdpService(int port)
     {
-        if (Model.OpenPorts.Contains(161)) return;
-        Model.OpenPorts.Add(161);
+        if (Model.OpenPorts.Contains(port)) return;
+        Model.OpenPorts.Add(port);
         Notify(nameof(SupportedProtocols));
         Notify(nameof(DeviceType)); // the classifier weighs the open-port set
     }

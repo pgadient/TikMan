@@ -458,6 +458,14 @@ public partial class MainWindow
             catch { /* best effort */ }
         }
 
+        // DNS (UDP 53) on every recognised IP: a UDP-only forwarder (Swisscom Internet-Box, dnsmasq,
+        // …) isn't seen by the TCP scan, so probe it directly and add a "dns" badge when it answers.
+        if (!ct.IsCancellationRequested)
+        {
+            try { if (await DnsProbe.IsOpenAsync(vm.Ipv4Address.Length > 0 ? vm.Ipv4Address : vm.Host, ct)) vm.MarkDnsOpen(); }
+            catch { /* best effort */ }
+        }
+
         if (changed) vm.RaiseDetailsChanged();
     }
 
