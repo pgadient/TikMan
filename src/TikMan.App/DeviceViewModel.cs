@@ -521,10 +521,16 @@ public class DeviceViewModel : INotifyPropertyChanged
     {
         get
         {
+            // WMI product name first ("ThinkPad P52"), with the machine-type code appended in
+            // parentheses when it adds anything: "ThinkPad P52 (20M9CTO1WW)".
+            Model.ExtraInfo.TryGetValue("Produkt", out var product);
+            Model.ExtraInfo.TryGetValue("Modell", out var wmi);
             var model = Board.Length > 0 ? Board
-                // The WMI product name ("ThinkPad P52") beats the machine-type code ("20M9CTO1WW").
-                : Model.ExtraInfo.TryGetValue("Produkt", out var product) && product.Length > 0 ? product
-                : Model.ExtraInfo.TryGetValue("Modell", out var wmi) && wmi.Length > 0 ? wmi
+                : !string.IsNullOrEmpty(product)
+                    ? !string.IsNullOrEmpty(wmi) && !product.Contains(wmi, StringComparison.OrdinalIgnoreCase)
+                        ? $"{product} ({wmi})"
+                        : product
+                : !string.IsNullOrEmpty(wmi) ? wmi
                 : Model.ExtraInfo.TryGetValue("Web-Titel", out var web) ? web
                 : "";
             var vendor = IdentifiedVendor;
