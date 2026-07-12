@@ -52,6 +52,7 @@ public partial class MainWindow : Window
                 foreach (DeviceViewModel vm in args.NewItems)
                     vm.PropertyChanged += Device_PropertyChangedForV6;
             if (_v6Mode) BuildV6Rows();
+            UpdateDeviceCount();
         };
         _pollTimer.Tick += async (_, _) => await RefreshAllAsync(quiet: true);
         _logTimer.Tick += (_, _) => { if (SelectedDevice is { } vm) _ = LoadLogsAsync(vm, quiet: true); };
@@ -76,6 +77,7 @@ public partial class MainWindow : Window
         if (_appData.ShowIpv6View) AddressTabs.SelectedIndex = 1; // restore the last address view
         ContactButtonsMenuItem.IsChecked = _appData.ShowContactButtons;
         ApplyContactButtons();
+        UpdateDeviceCount();
         SelectIntervalItem(_appData.PollIntervalSeconds);
         AutoRefreshCheck.IsChecked = _appData.AutoRefreshEnabled;
         LogAutoRefreshCheck.IsChecked = _appData.LogAutoRefresh;
@@ -120,9 +122,45 @@ public partial class MainWindow : Window
         _ => null,
     };
 
-    /// <summary>The devices the user has highlighted in the list (multi-select via Ctrl/Shift-click).</summary>
+    /// <summary>The devices the user has highlighted in the list (multi-select via Ctrl/Shift-click
+    /// or by dragging with the mouse).</summary>
     private List<DeviceViewModel> MarkedDevices() =>
         DeviceGrid.SelectedItems.Cast<object>().Select(RowDevice).OfType<DeviceViewModel>().Distinct().ToList();
+
+    /// <summary>Refreshes the "X IPv4 · Y IPv6" counter under the list.</summary>
+    private void UpdateDeviceCount() =>
+        DeviceCountText.Text = T("Cnt_Devices", _devices.Count(d => d.HasIpv4), _devices.Count(d => d.HasIpv6));
+
+    // ----- Drag selection: press a row and drag to mark a range -----
+    private int _dragAnchor = -1;
+
+    private void DeviceGrid_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        // Don't start a drag from an interactive cell element (expander, badge, checkbox).
+        if (e.OriginalSource is System.Windows.Controls.Primitives.ButtonBase) { _dragAnchor = -1; return; }
+        _dragAnchor = RowIndexFrom(e.OriginalSource as DependencyObject);
+    }
+
+    private void DeviceGrid_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed || _dragAnchor < 0) return;
+        var cur = RowIndexFrom(e.OriginalSource as DependencyObject);
+        if (cur < 0 || cur == _dragAnchor) return;
+        int lo = Math.Min(_dragAnchor, cur), hi = Math.Max(_dragAnchor, cur);
+        DeviceGrid.SelectedItems.Clear();
+        for (int i = lo; i <= hi && i < DeviceGrid.Items.Count; i++)
+            DeviceGrid.SelectedItems.Add(DeviceGrid.Items[i]);
+        e.Handled = true;
+    }
+
+    private void DeviceGrid_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e) => _dragAnchor = -1;
+
+    /// <summary>Row index of the DataGridRow under a clicked element, or -1.</summary>
+    private static int RowIndexFrom(DependencyObject? d)
+    {
+        while (d is not null and not DataGridRow) d = VisualTreeHelper.GetParent(d);
+        return d is DataGridRow row ? row.GetIndex() : -1;
+    }
 
     // ----- Settings -----
 

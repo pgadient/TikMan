@@ -39,6 +39,9 @@ public static partial class HttpFingerprint
         ("hikvision", "Hikvision"), ("dahua", "Dahua"), ("axis", "Axis"), ("reolink", "Reolink"), ("mobotix", "Mobotix"),
         ("tp-link", "TP-Link"), ("tplink", "TP-Link"), ("omada", "TP-Link Omada"), ("archer", "TP-Link"),
         ("pharos", "TP-Link Pharos"),
+        ("qts", "QNAP"), ("turbonas", "QNAP"), ("quts", "QNAP"),          // QNAP NAS web UIs
+        ("topaccess", "Toshiba"), ("e-studio", "Toshiba"), ("estudio", "Toshiba"), // Toshiba MFPs
+        ("microsoft-iis", "Microsoft"),                                  // IIS on Windows Server
         ("netgear", "Netgear"), ("zyxel", "Zyxel"), ("d-link", "D-Link"), ("asuswrt", "ASUS"), ("asus", "ASUS"),
         ("mikrotik", "MikroTik"), ("routeros", "MikroTik"), ("openwrt", "OpenWrt"), ("dd-wrt", "DD-WRT"),
         ("pfsense", "pfSense"), ("opnsense", "OPNsense"), ("proxmox", "Proxmox"), ("truecharts", "TrueNAS"),
@@ -92,9 +95,13 @@ public static partial class HttpFingerprint
                     }
                 }
 
-                var title = CleanTitle(ExtractTitle(html));
-                if (title.Length == 0) title = CleanTitle(ExtractAltTitle(html));
-                var vendor = BrandFrom($"{title} {server} {ExtractMetas(html)}");
+                // An error page (403/404/…) is not a device title – keep the server header only.
+                var metas = ExtractMetas(html);
+                var title = resp.IsSuccessStatusCode ? CleanTitle(ExtractTitle(html)) : "";
+                if (title.Length == 0 && resp.IsSuccessStatusCode) title = CleanTitle(ExtractAltTitle(html));
+                var vendor = BrandFrom($"{title} {server} {metas}");
+                // Web-UI product names (TopAccess, QTS, IIS) identify the vendor but are not a model.
+                if (IsUiName(title)) title = "";
 
                 if (server.Length > 0 || title.Length > 0 || vendor.Length > 0)
                     return new HttpInfo(server, title, vendor);
@@ -168,13 +175,28 @@ public static partial class HttpFingerprint
         return sb.ToString();
     }
 
-    /// <summary>Keeps a title that looks like a device name; drops empty/very long/generic ones.</summary>
+    /// <summary>Keeps a title that looks like a device name; drops empty/very long/generic ones,
+    /// HTTP error phrases ("403 Forbidden") and JavaScript-templated titles.</summary>
     private static string CleanTitle(string title)
     {
         title = Regex.Replace(title, @"\s+", " ").Trim();
         if (title.Length is < 2 or > 80) return "";
-        return title.ToLowerInvariant().TrimEnd('.', '…') is "login" or "index" or "home" or "welcome" or "anmelden"
+        if (title.Contains("location.") || title.Contains("==") || title.Contains("indexOf")) return ""; // JS template
+        var low = title.ToLowerInvariant();
+        if (Regex.IsMatch(low, @"^\d{3}\b") ||  // "403 Forbidden", "404 Not Found", …
+            low is "forbidden" or "not found" or "unauthorized" or "bad request" or "access denied"
+                or "error" or "bad gateway" or "service unavailable" or "internal server error")
+            return "";
+        return low.TrimEnd('.', '…') is "login" or "index" or "home" or "welcome" or "anmelden"
             or "loading" or "please wait" or "redirect" or "redirecting" ? "" : title;
+    }
+
+    /// <summary>True for web-UI product names that identify the vendor but aren't a device model.</summary>
+    private static bool IsUiName(string title)
+    {
+        var low = title.ToLowerInvariant();
+        return low is "topaccess" or "qts" or "quts hero" or "turbonas" or "webfig"
+            || low.Contains("iis windows server") || low.StartsWith("iis ");
     }
 
     private static string BrandFrom(string haystack)

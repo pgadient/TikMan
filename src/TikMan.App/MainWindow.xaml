@@ -136,19 +136,29 @@
             </Grid.RowDefinitions>
 
             <DockPanel Grid.Row="0">
-                <!-- IPv4/IPv6 view switch: same device list, only the address column and sorting flip. -->
-                <TabControl x:Name="AddressTabs" DockPanel.Dock="Top" BorderThickness="0" Padding="0"
-                            Background="Transparent" SelectionChanged="AddressTabs_SelectionChanged">
-                    <TabItem Header="IPv4"/>
-                    <TabItem Header="IPv6"/>
-                </TabControl>
+                <!-- IPv4/IPv6 view switch: same device list, only the address column and sorting flip.
+                     The ⓘ explains multi-select and the gateway highlight. -->
+                <DockPanel DockPanel.Dock="Top">
+                    <TextBlock DockPanel.Dock="Right" Text="ⓘ" VerticalAlignment="Center" Margin="6,0,6,0"
+                               Foreground="#2266CC" FontSize="14" Cursor="Help" ToolTip="{loc:Loc List_InfoTip}"/>
+                    <TabControl x:Name="AddressTabs" BorderThickness="0" Padding="0"
+                                Background="Transparent" SelectionChanged="AddressTabs_SelectionChanged">
+                        <TabItem Header="IPv4"/>
+                        <TabItem Header="IPv6"/>
+                    </TabControl>
+                </DockPanel>
+                <TextBlock x:Name="DeviceCountText" DockPanel.Dock="Bottom" Foreground="#666666" FontSize="11"
+                           Margin="4,3,0,0"/>
             <DataGrid x:Name="DeviceGrid"
                       HorizontalScrollBarVisibility="Auto"
                       RowDetailsVisibilityMode="Collapsed"
                       SelectionMode="Extended"
                       LoadingRow="DeviceGrid_LoadingRow"
                       SelectionChanged="DeviceGrid_SelectionChanged"
-                      MouseDoubleClick="DeviceGrid_MouseDoubleClick">
+                      MouseDoubleClick="DeviceGrid_MouseDoubleClick"
+                      PreviewMouseLeftButtonDown="DeviceGrid_PreviewMouseLeftButtonDown"
+                      PreviewMouseMove="DeviceGrid_PreviewMouseMove"
+                      PreviewMouseLeftButtonUp="DeviceGrid_PreviewMouseLeftButtonUp">
                 <DataGrid.Resources>
                     <!-- Centre cell text via ElementStyle (a bare DataGridCell style can disturb row-height
                          measurement, so it's avoided here). -->
@@ -161,7 +171,9 @@
                         <MenuItem Header="{loc:Loc Ctx_SetCredsSel}" Click="SetLogin_Click" FontWeight="SemiBold">
                             <MenuItem.Icon><TextBlock Text="✏️"/></MenuItem.Icon>
                         </MenuItem>
-                        <MenuItem Header="{loc:Loc Ctx_SshTerminal}" Click="ContextSsh_Click"/>
+                        <MenuItem Header="{loc:Loc Ctx_SshTerminal}" Click="ContextSsh_Click">
+                            <MenuItem.Icon><TextBlock Text="🖥️"/></MenuItem.Icon>
+                        </MenuItem>
                         <Separator/>
                         <MenuItem Header="{loc:Loc Tb_Remove}" Click="RemoveDevice_Click"/>
                     </ContextMenu>

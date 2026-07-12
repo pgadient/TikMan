@@ -94,6 +94,16 @@ public class DeviceViewModel : INotifyPropertyChanged
         RaiseDetailsChanged();
     }
 
+    /// <summary>Applies what the QNAP QTS login endpoint reported (vendor, OS, hostname, model).</summary>
+    public void ApplyQnapInfo(QnapProbe.QnapInfo info)
+    {
+        Model.ExtraInfo["Hersteller (Web)"] = "QNAP"; // feeds IdentifiedVendor
+        if (info.Os.Length > 0) Model.ExtraInfo["System"] = info.Os;
+        if (info.Model.Length > 0) Model.ExtraInfo["Modell"] = info.Model;
+        if (info.Hostname.Length > 0 && Name.Length == 0) Name = info.Hostname;
+        RaiseDetailsChanged();
+    }
+
     /// <summary>Applies what a Frontier-Silicon radio (Teufel & Co.) reported.</summary>
     public void ApplyRadioInfo(FrontierSiliconProbe.RadioInfo radio)
     {
@@ -163,7 +173,7 @@ public class DeviceViewModel : INotifyPropertyChanged
             try
             {
                 var listTask = SmbShares.ListAsync(candidate);
-                if (await Task.WhenAny(listTask, Task.Delay(TimeSpan.FromSeconds(10))) != listTask)
+                if (await Task.WhenAny(listTask, Task.Delay(TimeSpan.FromSeconds(5))) != listTask)
                 {
                     timedOut = true; // NetShareEnum keeps blocking its pool thread; just move on
                     continue;
@@ -577,8 +587,10 @@ public class DeviceViewModel : INotifyPropertyChanged
     public string Uptime { get => _uptime; private set { _uptime = value; Notify(); } }
 
     private int _cpuLoad;
-    public int CpuLoad { get => _cpuLoad; private set { _cpuLoad = value; Notify(); Notify(nameof(CpuText)); } }
-    public string CpuText => Status == DeviceStatus.Online || Version != "" ? $"{CpuLoad} %" : "";
+    private bool _cpuKnown;
+    public int CpuLoad { get => _cpuLoad; private set { _cpuLoad = value; _cpuKnown = true; Notify(); Notify(nameof(CpuText)); } }
+    /// <summary>Empty until an actual CPU sample was read (non-MikroTik devices never report one).</summary>
+    public string CpuText => _cpuKnown ? $"{CpuLoad} %" : "";
 
     private string _memoryText = "";
     public string MemoryText { get => _memoryText; private set { _memoryText = value; Notify(); } }

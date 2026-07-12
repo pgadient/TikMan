@@ -157,6 +157,7 @@ public partial class MainWindow
             DiscoveryProgressPanel.Visibility = Visibility.Collapsed;
             MarkGateways();
             ApplyDeviceFilter(); // re-evaluate tab membership after v4/v6 merges
+            UpdateDeviceCount();
             SaveAppData();
         }
     }
@@ -278,6 +279,22 @@ public partial class MainWindow
         var ports = vm.Model.OpenPorts;
         var info = vm.Model.ExtraInfo;
         bool changed = false;
+
+        // QNAP NAS: the GUI is usually on 8080 and returns HTTP errors on plain paths – ask its
+        // QTS login endpoint instead so we never mistake a "403 Forbidden" page for a model.
+        if (ports.Contains(8080) || ports.Contains(443) || ports.Contains(80))
+        {
+            try
+            {
+                var host = vm.Ipv4Address.Length > 0 ? vm.Ipv4Address : vm.Host;
+                if (await QnapProbe.QueryAsync(host, ports) is { } qnap)
+                {
+                    vm.ApplyQnapInfo(qnap);
+                    return; // QNAP identified – its plain web pages would only add noise
+                }
+            }
+            catch { /* best effort */ }
+        }
 
         if (ports.Contains(80) || ports.Contains(443))
         {
