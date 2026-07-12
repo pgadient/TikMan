@@ -384,6 +384,7 @@ public class DeviceViewModel : INotifyPropertyChanged
                 var url = svc switch
                 {
                     "ssh" => $"ssh://{hostPart}",
+                    "telnet" => $"telnet://{hostPart}",
                     "ftp" => $"ftp://{hostPart}/",
                     _ => WebUrl(port, hostPart),
                 };
@@ -942,7 +943,9 @@ public class ProtocolVm
     public bool IsSsh => Url.StartsWith("ssh://", StringComparison.OrdinalIgnoreCase);
     /// <summary>ftp badges open the site in Windows File Explorer on click.</summary>
     public bool IsFtp => Url.StartsWith("ftp://", StringComparison.OrdinalIgnoreCase);
-    public bool IsClickable => IsWeb || IsSsh || IsFtp;
+    /// <summary>telnet badges open a terminal session (needs the Windows Telnet Client feature).</summary>
+    public bool IsTelnet => Url.StartsWith("telnet://", StringComparison.OrdinalIgnoreCase);
+    public bool IsClickable => IsWeb || IsSsh || IsFtp || IsTelnet;
 
     private static readonly Dictionary<string, Brush> Cache = new();
 

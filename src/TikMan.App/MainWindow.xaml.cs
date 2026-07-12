@@ -395,6 +395,11 @@ public partial class MainWindow : Window
             catch { /* explorer missing / blocked */ }
             e.Handled = true;
         }
+        else if (proto.IsTelnet)
+        {
+            LaunchTelnet(proto.Url["telnet://".Length..].Trim('[', ']'));
+            e.Handled = true;
+        }
         else if (proto.IsWeb)
         {
             try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(proto.Url) { UseShellExecute = true }); }
@@ -445,6 +450,32 @@ public partial class MainWindow : Window
                     new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/k ssh {sshArgs}") { UseShellExecute = true });
             }
             catch { SetStatus(T("Ssh_LaunchFailed")); }
+        }
+    }
+
+    /// <summary>Opens a telnet session in a terminal. Telnet is an optional Windows feature that is
+    /// off by default, so a missing client is reported with a hint instead of a silent failure.</summary>
+    private void LaunchTelnet(string host)
+    {
+        var telnet = Path.Combine(Environment.SystemDirectory, "telnet.exe");
+        if (!File.Exists(telnet))
+        {
+            MessageBox.Show(this, T("Telnet_NotInstalled"), "TikMan", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        try
+        {
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo("wt.exe", $"telnet {host}") { UseShellExecute = true });
+        }
+        catch
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/k telnet {host}") { UseShellExecute = true });
+            }
+            catch { SetStatus(T("Telnet_NotInstalled")); }
         }
     }
 
