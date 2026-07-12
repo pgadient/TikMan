@@ -16,6 +16,10 @@
                 <MenuItem Header="{loc:Loc Tb_BackupAll}" Click="BackupAll_Click"/>
                 <MenuItem Header="{loc:Loc Tb_InstallUpdates}" Click="InstallUpdates_Click"/>
             </MenuItem>
+            <MenuItem Header="{loc:Loc Menu_View}">
+                <MenuItem x:Name="ContactButtonsMenuItem" Header="{loc:Loc Menu_ContactButtons}"
+                          IsCheckable="True" IsChecked="True" Click="ContactButtons_Toggled"/>
+            </MenuItem>
         </Menu>
         <Border DockPanel.Dock="Top" Background="#F3F3F3" BorderBrush="#DDDDDD" BorderThickness="0,0,0,1" Padding="6,5">
             <!-- Row 1: scan + device actions left, coloured contact buttons right (one shared
@@ -27,10 +31,10 @@
                 </Grid.RowDefinitions>
 
                 <DockPanel Grid.Row="0">
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Stretch" Margin="10,0,0,0">
-                    <Button Style="{StaticResource ToolButton}" Click="ReportProblem_Click" Content="{loc:Loc Tb_ReportProblem}"
+                <StackPanel x:Name="ContactButtonsPanel" DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Stretch" Margin="10,0,0,0">
+                    <Button x:Name="ReportProblemButton" Style="{StaticResource ToolButton}" Click="ReportProblem_Click" Content="{loc:Loc Tb_ReportProblem}"
                             Background="#F68500" Foreground="White" BorderThickness="0" Cursor="Hand" FontWeight="SemiBold"/>
-                    <Button Style="{StaticResource ToolButton}" Click="RequestFeature_Click" Content="{loc:Loc Tb_RequestFeature}"
+                    <Button x:Name="RequestFeatureButton" Style="{StaticResource ToolButton}" Click="RequestFeature_Click" Content="{loc:Loc Tb_RequestFeature}"
                             Background="#2266CC" Foreground="White" BorderThickness="0" Margin="6,0,0,0" Cursor="Hand" FontWeight="SemiBold"/>
                     <Button x:Name="CoffeeButton" Style="{StaticResource ToolButton}" Click="BuyCoffee_Click" Content="{loc:Loc Tb_BuyCoffee}"
                             Background="#7B5233" Foreground="White" BorderThickness="0" Margin="6,0,0,0" Cursor="Hand" FontWeight="SemiBold"
@@ -49,13 +53,13 @@
                             <TextBlock x:Name="SubnetSourceText" Foreground="#999999" FontSize="10" Margin="3,1,0,0" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
                         <Button x:Name="CycleAdapterButton" Style="{StaticResource ToolButton}" Click="CycleAdapter_Click"
-                                Content="⟳" ToolTip="{loc:Loc Tb_CycleAdapterTip}" Margin="4,0,0,0"/>
+                                Content="⏭" ToolTip="{loc:Loc Tb_CycleAdapterTip}" Margin="4,0,0,0"/>
                     </StackPanel>
 
                     <!-- Group B: device actions -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Stretch" Margin="0,2,14,2">
                         <Button Style="{StaticResource ToolButton}" Click="AddDevice_Click" Content="{loc:Loc Tb_Add}"/>
-                        <Button Style="{StaticResource ToolButton}" Click="EditDevice_Click" Content="{loc:Loc Tb_Edit}"/>
+                        <Button Style="{StaticResource ToolButton}" Click="SetLogin_Click" Content="{loc:Loc Tb_SetCreds}"/>
                         <Button Style="{StaticResource ToolButton}" Click="RemoveDevice_Click" Content="{loc:Loc Tb_Remove}"/>
                         <Separator Margin="6,2" Width="1" Background="#CCCCCC"/>
                         <Button Style="{StaticResource ToolButton}" Click="RefreshAll_Click" Content="{loc:Loc Tb_RefreshAll}"/>
@@ -68,7 +72,9 @@
                 <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,6,0,0">
                     <TextBlock VerticalAlignment="Center" Margin="0,0,4,0" Text="{loc:Loc Filter_Label}"/>
                     <TextBox x:Name="DeviceFilterBox" Width="200" VerticalContentAlignment="Center" Height="24"
-                             ToolTip="{loc:Loc Filter_Tip}" TextChanged="DeviceFilterBox_TextChanged"/>
+                             ToolTip="{loc:Loc Filter_Tip}" TextChanged="DeviceFilterBox_TextChanged"
+                             PreviewKeyDown="DeviceFilterBox_PreviewKeyDown"/>
+                    <TextBlock x:Name="FilterSpinner" Text="⏳" VerticalAlignment="Center" Margin="4,0,0,0" Visibility="Collapsed"/>
                     <CheckBox x:Name="AutoRefreshCheck" VerticalAlignment="Center" Margin="16,0,8,0"
                               Checked="AutoRefresh_Changed" Unchecked="AutoRefresh_Changed" Content="{loc:Loc Tb_AutoRefresh}"/>
                     <ComboBox x:Name="IntervalCombo" Width="70" VerticalAlignment="Center"
@@ -139,6 +145,7 @@
             <DataGrid x:Name="DeviceGrid"
                       HorizontalScrollBarVisibility="Auto"
                       RowDetailsVisibilityMode="Collapsed"
+                      SelectionMode="Extended"
                       LoadingRow="DeviceGrid_LoadingRow"
                       SelectionChanged="DeviceGrid_SelectionChanged"
                       MouseDoubleClick="DeviceGrid_MouseDoubleClick">
@@ -151,8 +158,9 @@
                 </DataGrid.Resources>
                 <DataGrid.ContextMenu>
                     <ContextMenu>
-                        <MenuItem Header="{loc:Loc Ctx_SetLogin}" Click="SetLogin_Click" FontWeight="SemiBold"/>
-                        <MenuItem Header="{loc:Loc Tb_Edit}" Click="EditDevice_Click"/>
+                        <MenuItem Header="{loc:Loc Ctx_SetCredsSel}" Click="SetLogin_Click" FontWeight="SemiBold">
+                            <MenuItem.Icon><TextBlock Text="✏️"/></MenuItem.Icon>
+                        </MenuItem>
                         <MenuItem Header="{loc:Loc Ctx_SshTerminal}" Click="ContextSsh_Click"/>
                         <Separator/>
                         <MenuItem Header="{loc:Loc Tb_Remove}" Click="RemoveDevice_Click"/>
@@ -246,19 +254,6 @@
                     </DataTemplate>
                 </DataGrid.RowDetailsTemplate>
                 <DataGrid.Columns>
-                    <DataGridTemplateColumn Width="30" CanUserResize="False" CanUserSort="False">
-                        <DataGridTemplateColumn.Header>
-                            <CheckBox x:Name="MainSelectAll" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                      Checked="MainSelectAll_Changed" Unchecked="MainSelectAll_Changed"
-                                      ToolTip="{loc:Loc Col_MarkAllTip}"/>
-                        </DataGridTemplateColumn.Header>
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}"
-                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="26" CanUserResize="False" CanUserSort="False">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -462,7 +457,7 @@
                             <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding Model.Notes}" TextWrapping="Wrap"/>
                         </Grid>
                         <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                            <Button Style="{StaticResource ToolButton}" Click="EditDevice_Click" Content="{loc:Loc Det_Edit}"/>
+                            <Button Style="{StaticResource ToolButton}" Click="SetLogin_Click" Content="{loc:Loc Det_Edit}"/>
                             <Button Style="{StaticResource ToolButton}" Click="BackupSingle_Click" Content="{loc:Loc Det_BackupRsc}"/>
                             <Button Style="{StaticResource ToolButton}" Click="BinaryBackupSingle_Click" Content="{loc:Loc Det_BackupFull}"/>
                             <Button Click="OpenFirmwarePage_Click" Content="{loc:Loc Det_FirmwarePage}">

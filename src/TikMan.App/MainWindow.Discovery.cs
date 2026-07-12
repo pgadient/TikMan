@@ -262,7 +262,7 @@ public partial class MainWindow
             IgnoreCertErrors = _appData.DefaultIgnoreCertErrors,
             MonitoringEnabled = likely,
         };
-        var vm = new DeviceViewModel(device) { IsSelected = MainSelectAll.IsChecked == true };
+        var vm = new DeviceViewModel(device);
         vm.ApplyDiscoveryFacts(d.Board, d.Version, swos); // MNDP already names board + version (SwOS!)
         _devices.Add(vm);
         ApplyDefaultExpansion(vm);

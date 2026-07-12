@@ -39,6 +39,8 @@ public class AppData
     public bool ExpandRowsByDefault { get; set; }
     /// <summary>Which address tab the list last showed: false = IPv4 (default), true = IPv6.</summary>
     public bool ShowIpv6View { get; set; }
+    /// <summary>Show the coloured "Report a problem" / "Request a feature" buttons (default on).</summary>
+    public bool ShowContactButtons { get; set; } = true;
     /// <summary>Open ssh sessions with an external client (see <see cref="ExternalSshClientPath"/>)
     /// instead of the built-in OpenSSH terminal.</summary>
     public bool UseExternalSshClient { get; set; }

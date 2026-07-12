@@ -26,6 +26,7 @@ public partial class MainWindow : Window
     private static readonly Brush Ipv6GroupBrush = new SolidColorBrush(Color.FromRgb(0xE7, 0xF2, 0xFA)); // ice blue
     private readonly DispatcherTimer _pollTimer = new();
     private readonly DispatcherTimer _logTimer = new() { Interval = TimeSpan.FromSeconds(3) };
+    private readonly DispatcherTimer _filterDebounce = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private AppData _appData;
 
     public MainWindow() : this(new AppData()) { }
@@ -54,6 +55,7 @@ public partial class MainWindow : Window
         };
         _pollTimer.Tick += async (_, _) => await RefreshAllAsync(quiet: true);
         _logTimer.Tick += (_, _) => { if (SelectedDevice is { } vm) _ = LoadLogsAsync(vm, quiet: true); };
+        _filterDebounce.Tick += FilterDebounce_Tick;
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
@@ -72,6 +74,8 @@ public partial class MainWindow : Window
         foreach (var vm in _devices) ApplyDefaultExpansion(vm); // persisted devices
 
         if (_appData.ShowIpv6View) AddressTabs.SelectedIndex = 1; // restore the last address view
+        ContactButtonsMenuItem.IsChecked = _appData.ShowContactButtons;
+        ApplyContactButtons();
         SelectIntervalItem(_appData.PollIntervalSeconds);
         AutoRefreshCheck.IsChecked = _appData.AutoRefreshEnabled;
         LogAutoRefreshCheck.IsChecked = _appData.LogAutoRefresh;
@@ -115,6 +119,10 @@ public partial class MainWindow : Window
         Ipv6RowVm r => r.Device,
         _ => null,
     };
+
+    /// <summary>The devices the user has highlighted in the list (multi-select via Ctrl/Shift-click).</summary>
+    private List<DeviceViewModel> MarkedDevices() =>
+        DeviceGrid.SelectedItems.Cast<object>().Select(RowDevice).OfType<DeviceViewModel>().Distinct().ToList();
 
     // ----- Settings -----
 
@@ -257,7 +265,7 @@ public partial class MainWindow : Window
         var dialog = new DeviceEditWindow((Device?)null, _appData.DefaultIgnoreCertErrors) { Owner = this };
         if (dialog.ShowDialog() == true && dialog.Result is { } device)
         {
-            var vm = new DeviceViewModel(device) { IsSelected = MainSelectAll.IsChecked == true };
+            var vm = new DeviceViewModel(device);
             _devices.Add(vm);
             MarkGateways();
             SaveAppData();
@@ -293,33 +301,28 @@ public partial class MainWindow : Window
         foreach (var d in _devices) d.IsGateway = gateways.Contains(d.Host);
     }
 
-    private void EditDevice_Click(object sender, RoutedEventArgs e)
+    /// <summary>View menu: show or hide the coloured contact buttons (report / request feature).</summary>
+    private void ContactButtons_Toggled(object sender, RoutedEventArgs e)
     {
-        // More than one device marked → edit them together (shared settings for all).
-        var marked = _devices.Where(d => d.IsSelected).ToList();
-        if (marked.Count > 1) { EditMultiple(marked); return; }
-
-        var vm = SelectedDevice ?? marked.FirstOrDefault();
-        if (vm is null)
-        {
-            SetStatus(T("Msg_SelectDeviceFirst"));
-            return;
-        }
-        var dialog = new DeviceEditWindow(vm.Model) { Owner = this };
-        if (dialog.ShowDialog() == true)
-        {
-            vm.ResetClient();
-            MarkGateways();
-            SaveAppData();
-            _ = RefreshAndCheckAsync(vm);
-        }
+        _appData.ShowContactButtons = ContactButtonsMenuItem.IsChecked;
+        ApplyContactButtons();
+        SaveAppData();
     }
 
-    /// <summary>Context menu: set login/connection info for the marked devices (or the selected row
-    /// when nothing is marked). Opens the single or multi editor accordingly.</summary>
+    private void ApplyContactButtons()
+    {
+        // Only the report/feature buttons – the coffee button has its own setting.
+        var vis = _appData.ShowContactButtons ? Visibility.Visible : Visibility.Collapsed;
+        ReportProblemButton.Visibility = vis;
+        RequestFeatureButton.Visibility = vis;
+    }
+
+    /// <summary>Toolbar/context menu: set credentials for the marked devices (or the selected row
+    /// when nothing is marked). One device → single editor; several → the same values are applied
+    /// 1:1 to every marked device.</summary>
     private void SetLogin_Click(object sender, RoutedEventArgs e)
     {
-        var targets = _devices.Where(d => d.IsSelected).ToList();
+        var targets = MarkedDevices();
         if (targets.Count == 0 && SelectedDevice is { } sel) targets.Add(sel);
         if (targets.Count == 0) { SetStatus(T("Msg_SelectDeviceFirst")); return; }
         if (targets.Count == 1)
@@ -577,7 +580,27 @@ public partial class MainWindow : Window
 
     // ----- Main list filter -----
 
-    private void DeviceFilterBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyDeviceFilter();
+    /// <summary>Debounced so typing stays responsive: filtering runs shortly after the user pauses,
+    /// with a spinner shown meanwhile, instead of re-filtering on every keystroke.</summary>
+    private void DeviceFilterBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        FilterSpinner.Visibility = Visibility.Visible;
+        _filterDebounce.Stop();
+        _filterDebounce.Start();
+    }
+
+    private void FilterDebounce_Tick(object? sender, EventArgs e)
+    {
+        _filterDebounce.Stop();
+        ApplyDeviceFilter();
+        FilterSpinner.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>Escape clears the filter box.</summary>
+    private void DeviceFilterBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape) { DeviceFilterBox.Clear(); e.Handled = true; }
+    }
 
     private void ApplyDeviceFilter()
     {
@@ -715,7 +738,7 @@ public partial class MainWindow : Window
     private async void BackupAll_Click(object sender, RoutedEventArgs e)
     {
         // Nothing marked → back up every device.
-        var targets = _devices.Where(d => d.IsSelected).ToList();
+        var targets = MarkedDevices();
         if (targets.Count == 0) targets = _devices.ToList();
         if (targets.Count == 0)
         {
@@ -770,7 +793,7 @@ public partial class MainWindow : Window
     private void InstallUpdates_Click(object sender, RoutedEventArgs e)
     {
         // Nothing marked → offer the update list for every device.
-        var targets = _devices.Where(d => d.IsSelected).ToList();
+        var targets = MarkedDevices();
         if (targets.Count == 0) targets = _devices.ToList();
         if (targets.Count == 0)
         {
@@ -781,12 +804,6 @@ public partial class MainWindow : Window
     }
 
     // ----- Selection / progress -----
-
-    private void MainSelectAll_Changed(object sender, RoutedEventArgs e)
-    {
-        var value = MainSelectAll.IsChecked == true;
-        foreach (var d in _devices) d.IsSelected = value;
-    }
 
     private void BeginProgress(int max)
     {

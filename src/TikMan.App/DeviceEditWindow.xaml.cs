@@ -11,17 +11,18 @@ using static TikMan.App.Localization.LocalizationManager;
 
 namespace TikMan.App;
 
-/// <summary>Dialog for creating (existing == null) or editing a device.</summary>
+/// <summary>Dialog for adding a device (existing == null) or setting credentials for one or several
+/// existing devices. Vendor, name and connection scheme are detected automatically, so the dialog
+/// only asks for the address (when adding), user, password and SSH port.</summary>
 public partial class DeviceEditWindow : Window
 {
     private readonly Device? _existing;
     private readonly IReadOnlyList<Device>? _multi;
 
-    /// <summary>The created/edited device after OK.</summary>
+    /// <summary>The created device after OK (add flow only).</summary>
     public Device? Result { get; private set; }
 
-    /// <summary>Edits many devices at once: name and address stay per-device, everything else below
-    /// is applied to all of them (password only when a new one is entered).</summary>
+    /// <summary>Sets credentials for several existing devices at once (applied 1:1 to all).</summary>
     public DeviceEditWindow(IReadOnlyList<Device> devices)
     {
         if (devices is null || devices.Count == 0)
@@ -32,18 +33,9 @@ public partial class DeviceEditWindow : Window
 
         Title = T("De_TitleEditMulti");
         MultiBanner.Visibility = Visibility.Visible;
-        VendorPanel.Visibility = Visibility.Collapsed; // vendor/model stay per-device in a bulk edit
-        RowName.Height = new GridLength(0); // hide Name and Address rows
-        RowHost.Height = new GridLength(0);
-
-        PortBox.Text = first.Port.ToString();
-        SshPortBox.Text = first.SshPort.ToString();
-        HttpsCheck.IsChecked = first.UseHttps;
-        IgnoreCertCheck.IsChecked = first.IgnoreCertErrors;
+        RowAddress.Height = new GridLength(0); // address stays per-device
         UserBox.Text = first.Username;
-        MonitoringCheck.IsChecked = first.MonitoringEnabled;
-        NotesBox.Text = first.Notes;
-        SelectChannel(first.UpdateChannel);
+        SshPortBox.Text = first.SshPort.ToString();
         PasswordHint.Visibility = Visibility.Visible;
         TestButton.IsEnabled = false; // no single host to test against
     }
@@ -55,128 +47,55 @@ public partial class DeviceEditWindow : Window
 
         if (existing is not null)
         {
-            Title = T("De_TitleEdit");
-            NameBox.Text = existing.Name;
-            HostBox.Text = existing.Host;
-            PortBox.Text = existing.Port.ToString();
-            SshPortBox.Text = existing.SshPort.ToString();
-            HttpsCheck.IsChecked = existing.UseHttps;
-            IgnoreCertCheck.IsChecked = existing.IgnoreCertErrors;
+            Title = $"{T("De_TitleEdit")} – {existing.Host}"; // address in the title, not the body
+            RowAddress.Height = new GridLength(0);
             UserBox.Text = existing.Username;
-            MonitoringCheck.IsChecked = existing.MonitoringEnabled;
-            NotesBox.Text = existing.Notes;
-            SelectChannel(existing.UpdateChannel);
-            ModelBox.Text = existing.Model;
-            HwRevBox.Text = existing.HardwareRevision;
-            VendorCombo.SelectedValue = existing.Vendor.ToString();
-            if (VendorCombo.SelectedValue is null) VendorCombo.SelectedIndex = 0;
+            SshPortBox.Text = existing.SshPort.ToString();
             PasswordHint.Visibility = Visibility.Visible;
         }
         else
         {
             Title = T("De_TitleAdd");
-            ChannelCombo.SelectedIndex = 0; // (Default)
-            VendorCombo.SelectedIndex = 0;  // MikroTik
-            IgnoreCertCheck.IsChecked = defaultIgnoreCert;
+            _defaultIgnoreCert = defaultIgnoreCert;
         }
     }
 
-    /// <summary>Toggles the vendor-specific fields: TP-Link shows model/revision and hides the
-    /// RouterOS update channel; the default port follows (443 HTTPS ↔ 22 SSH).</summary>
-    private void VendorCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (TpLinkPanel is null) return; // fires before the visual tree exists
-        var tpLink = (VendorCombo.SelectedValue as string) == nameof(DeviceVendor.TpLink);
-        TpLinkPanel.Visibility = tpLink ? Visibility.Visible : Visibility.Collapsed;
-        RowChannel.Height = tpLink ? new GridLength(0) : new GridLength(32);
-        if (tpLink && PortBox.Text is "443") { HttpsCheck.IsChecked = false; PortBox.Text = "22"; }
-        else if (!tpLink && PortBox.Text is "22") { HttpsCheck.IsChecked = true; PortBox.Text = "443"; }
-    }
+    private readonly bool _defaultIgnoreCert = true;
 
     /// <summary>The SSH port from its box, or the current value when the box is empty/invalid.</summary>
     private int ParseSshPort(int fallback) =>
         int.TryParse(SshPortBox.Text.Trim(), out var p) && p is >= 1 and <= 65535 ? p : fallback;
 
-    private void SelectChannel(string channel)
-    {
-        foreach (var item in ChannelCombo.Items.OfType<ComboBoxItem>())
-            if ((item.Tag as string ?? "") == channel) { ChannelCombo.SelectedItem = item; return; }
-        ChannelCombo.SelectedIndex = 0;
-    }
-
-    private void HttpsCheck_Changed(object sender, RoutedEventArgs e)
-    {
-        // Fires already during InitializeComponent (IsChecked="True" in the XAML) – PortBox doesn't exist yet at that point
-        if (PortBox is null) return;
-
-        // Switch the default port along, as long as the other default is still set
-        if (HttpsCheck.IsChecked == true && PortBox.Text == "80") PortBox.Text = "443";
-        else if (HttpsCheck.IsChecked == false && PortBox.Text == "443") PortBox.Text = "80";
-    }
-
+    /// <summary>Builds the device for the add flow (address + credentials; scheme defaults to HTTPS,
+    /// which the refresh downgrades to HTTP only when the user allowed it in Settings).</summary>
     private Device? BuildDevice(out string error)
     {
         error = "";
         var host = HostBox.Text.Trim();
-        if (host.Length == 0)
-        {
-            error = T("De_ErrAddressEmpty");
-            return null;
-        }
-        if (!int.TryParse(PortBox.Text.Trim(), out var port) || port is < 1 or > 65535)
-        {
-            error = T("De_ErrPort");
-            return null;
-        }
+        if (host.Length == 0) { error = T("De_ErrAddressEmpty"); return null; }
 
-        var device = _existing ?? new Device();
-        device.Name = NameBox.Text.Trim().Length > 0 ? NameBox.Text.Trim() : host;
+        var device = _existing ?? new Device { UseHttps = true, Port = 443, IgnoreCertErrors = _defaultIgnoreCert };
         device.Host = host;
-        device.Port = port;
-        device.SshPort = ParseSshPort(device.SshPort);
-        device.UseHttps = HttpsCheck.IsChecked == true;
-        device.IgnoreCertErrors = IgnoreCertCheck.IsChecked == true;
         device.Username = UserBox.Text.Trim();
-        device.MonitoringEnabled = MonitoringCheck.IsChecked == true;
-        device.Notes = NotesBox.Text.Trim();
-        device.UpdateChannel = (ChannelCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
-        device.Vendor = Enum.TryParse<DeviceVendor>(VendorCombo.SelectedValue as string, out var vendor) ? vendor : DeviceVendor.MikroTik;
-        device.Model = ModelBox.Text.Trim();
-        device.HardwareRevision = HwRevBox.Text.Trim();
-
+        device.SshPort = ParseSshPort(device.SshPort);
         if (PasswordBox.Password.Length > 0 || _existing is null)
             device.EncryptedPassword = CredentialProtector.Protect(PasswordBox.Password);
-
         return device;
     }
 
     private async void Test_Click(object sender, RoutedEventArgs e)
     {
         var device = BuildDevice(out var error);
-        if (device is null)
-        {
-            ShowTestResult(error, ok: false);
-            return;
-        }
+        if (device is null) { ShowTestResult(error, ok: false); return; }
 
         TestButton.IsEnabled = false;
         ShowTestResult(T("De_Connecting"), ok: true);
         try
         {
-            if (device.Vendor == DeviceVendor.TpLink)
-            {
-                var facts = await TpLinkSshConnector.GetFactsAsync(device, CredentialProtector.Unprotect(device.EncryptedPassword));
-                ShowTestResult(T("De_TestOkTp", facts.Model, facts.HardwareVersion, facts.FirmwareVersion), ok: true);
-                if (NameBox.Text.Trim().Length == 0 && facts.Name.Length > 0) NameBox.Text = facts.Name;
-                return;
-            }
-
             using var client = RouterOsClient.For(device, CredentialProtector.Unprotect(device.EncryptedPassword));
             var resource = await client.GetSystemResourceAsync();
             var identity = await client.GetIdentityAsync();
             ShowTestResult(T("De_TestOk", identity, resource.BoardName, resource.Version), ok: true);
-            if (NameBox.Text.Trim().Length == 0 && identity.Length > 0)
-                NameBox.Text = identity;
         }
         catch (Exception ex)
         {
@@ -201,10 +120,7 @@ public partial class DeviceEditWindow : Window
             using var resp = await http.GetAsync($"http://{host}/rest/system/identity");
             return resp.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.OK;
         }
-        catch
-        {
-            return false;
-        }
+        catch { return false; }
     }
 
     private void ShowTestResult(string text, bool ok)
@@ -215,54 +131,36 @@ public partial class DeviceEditWindow : Window
 
     private void Ok_Click(object sender, RoutedEventArgs e)
     {
-        if (_multi is not null)
+        if (_multi is not null) { ApplyToAll(); DialogResult = true; return; }
+
+        if (_existing is not null)
         {
-            if (ApplyToAll(out var multiError)) DialogResult = true;
-            else ShowTestResult(multiError, ok: false);
+            _existing.Username = UserBox.Text.Trim();
+            _existing.SshPort = ParseSshPort(_existing.SshPort);
+            if (PasswordBox.Password.Length > 0)
+                _existing.EncryptedPassword = CredentialProtector.Protect(PasswordBox.Password);
+            DialogResult = true;
             return;
         }
 
         var device = BuildDevice(out var error);
-        if (device is null)
-        {
-            ShowTestResult(error, ok: false);
-            return;
-        }
+        if (device is null) { ShowTestResult(error, ok: false); return; }
         Result = device;
         DialogResult = true;
     }
 
-    /// <summary>Applies the shared settings (everything except name/address) to every selected
-    /// device. The password is only changed when a new one was typed.</summary>
-    private bool ApplyToAll(out string error)
+    /// <summary>Applies the same credentials/SSH port 1:1 to every selected device (password only
+    /// when a new one was typed).</summary>
+    private void ApplyToAll()
     {
-        error = "";
-        if (!int.TryParse(PortBox.Text.Trim(), out var port) || port is < 1 or > 65535)
-        {
-            error = T("De_ErrPort");
-            return false;
-        }
-
-        var useHttps = HttpsCheck.IsChecked == true;
-        var ignoreCert = IgnoreCertCheck.IsChecked == true;
         var user = UserBox.Text.Trim();
-        var monitor = MonitoringCheck.IsChecked == true;
-        var notes = NotesBox.Text.Trim();
-        var channel = (ChannelCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+        var sshPort = ParseSshPort(22);
         var newPassword = PasswordBox.Password.Length > 0 ? CredentialProtector.Protect(PasswordBox.Password) : null;
-
         foreach (var d in _multi!)
         {
-            d.Port = port;
-            d.SshPort = ParseSshPort(d.SshPort);
-            d.UseHttps = useHttps;
-            d.IgnoreCertErrors = ignoreCert;
             d.Username = user;
-            d.MonitoringEnabled = monitor;
-            d.Notes = notes;
-            d.UpdateChannel = channel;
+            d.SshPort = sshPort;
             if (newPassword is not null) d.EncryptedPassword = newPassword;
         }
-        return true;
     }
 }
