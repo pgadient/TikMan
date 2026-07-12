@@ -46,14 +46,14 @@
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Stretch" Margin="0,2,14,2">
                         <Button x:Name="ScanButton" Style="{StaticResource ToolButton}" FontWeight="SemiBold"
                                 Click="ScanNow_Click" Content="{loc:Loc Tb_Scan}"/>
+                        <Button x:Name="CycleAdapterButton" Style="{StaticResource ToolButton}" Click="CycleAdapter_Click"
+                                Content="⏭" ToolTip="{loc:Loc Tb_CycleAdapterTip}" Margin="4,0,0,0"/>
                         <TextBlock VerticalAlignment="Center" Margin="10,0,4,0" Text="{loc:Loc Sc_Subnet}"/>
                         <StackPanel VerticalAlignment="Center">
                             <TextBox x:Name="SubnetBox" Width="210" Height="24" VerticalContentAlignment="Center"
                                      ToolTip="{loc:Loc Sc_TargetsTip}" PreviewKeyDown="SubnetBox_PreviewKeyDown"/>
                             <TextBlock x:Name="SubnetSourceText" Foreground="#999999" FontSize="10" Margin="3,1,0,0" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
-                        <Button x:Name="CycleAdapterButton" Style="{StaticResource ToolButton}" Click="CycleAdapter_Click"
-                                Content="⏭" ToolTip="{loc:Loc Tb_CycleAdapterTip}" Margin="4,0,0,0"/>
                     </StackPanel>
 
                     <!-- Group B: device actions -->
@@ -139,8 +139,9 @@
                 <!-- IPv4/IPv6 view switch: same device list, only the address column and sorting flip.
                      The ⓘ explains multi-select and the gateway highlight. -->
                 <DockPanel DockPanel.Dock="Top">
-                    <TextBlock DockPanel.Dock="Right" Text="ⓘ" VerticalAlignment="Center" Margin="6,0,6,0"
-                               Foreground="#2266CC" FontSize="14" Cursor="Help" ToolTip="{loc:Loc List_InfoTip}"/>
+                    <TextBlock DockPanel.Dock="Right" Text="ⓘ" VerticalAlignment="Center" HorizontalAlignment="Right"
+                               Margin="10,0,8,0" Foreground="#2266CC" FontSize="22" FontWeight="Bold"
+                               Cursor="Help" ToolTip="{loc:Loc List_InfoTip}"/>
                     <TabControl x:Name="AddressTabs" BorderThickness="0" Padding="0"
                                 Background="Transparent" SelectionChanged="AddressTabs_SelectionChanged">
                         <TabItem Header="IPv4"/>
