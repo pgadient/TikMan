@@ -479,6 +479,8 @@ public class DeviceViewModel : INotifyPropertyChanged
                     "ssh" => $"ssh://{hostPart}",
                     "telnet" => $"telnet://{hostPart}",
                     "ftp" => $"ftp://{hostPart}/",
+                    "rdp" => $"rdp://{hostPart}:{port}",
+                    "vnc" => $"vnc://{hostPart}:{port}",
                     _ => WebUrl(port, hostPart),
                 };
                 list.Add(new ProtocolVm(svc, url, ProtocolVm.BrushFor(svc)));
@@ -1078,7 +1080,11 @@ public class ProtocolVm
     public bool IsTelnet => Url.StartsWith("telnet://", StringComparison.OrdinalIgnoreCase);
     /// <summary>smb badges expand the row to reveal the share buttons.</summary>
     public bool IsSmb => Name is "smb" or "netbios";
-    public bool IsClickable => IsWeb || IsSsh || IsFtp || IsTelnet || IsSmb;
+    /// <summary>rdp badges open a Remote Desktop session (mstsc) on click.</summary>
+    public bool IsRdp => Url.StartsWith("rdp://", StringComparison.OrdinalIgnoreCase);
+    /// <summary>vnc badges open an external VNC viewer on click.</summary>
+    public bool IsVnc => Url.StartsWith("vnc://", StringComparison.OrdinalIgnoreCase);
+    public bool IsClickable => IsWeb || IsSsh || IsFtp || IsTelnet || IsSmb || IsRdp || IsVnc;
 
     private static readonly Dictionary<string, Brush> Cache = new();
 
@@ -1094,6 +1100,7 @@ public class ProtocolVm
             "telnet" or "ftp" => "#C0392B",
             "smb" or "netbios" or "rsync" => "#16A085",
             "winbox" => "#2B3A42",
+            "rdp" or "vnc" => "#6C5CE7", // remote-desktop access
             "api" => "#8E44AD",
             "wmi" => "#7A3EA0",
             "dns" or "snmp" or "syslog" => "#7F8C8D",

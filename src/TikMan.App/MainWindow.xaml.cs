@@ -554,6 +554,16 @@ public partial class MainWindow : Window
             LaunchTelnet(proto.Url["telnet://".Length..].Trim('[', ']'));
             e.Handled = true;
         }
+        else if (proto.IsRdp)
+        {
+            LaunchRdp(proto.Url["rdp://".Length..]);
+            e.Handled = true;
+        }
+        else if (proto.IsVnc)
+        {
+            LaunchVnc(proto.Url["vnc://".Length..]);
+            e.Handled = true;
+        }
         else if (proto.IsSmb)
         {
             // Expand the row so the SMB share buttons become visible.
@@ -644,6 +654,47 @@ public partial class MainWindow : Window
             }
             catch { SetStatus(T("Telnet_NotInstalled")); }
         }
+    }
+
+    /// <summary>Opens a Remote Desktop session to host:port with the built-in Windows client (mstsc).</summary>
+    private void LaunchRdp(string endpoint)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo("mstsc.exe", $"/v:{endpoint}") { UseShellExecute = true });
+        }
+        catch { SetStatus(T("Rdp_Failed")); }
+    }
+
+    /// <summary>Opens host:port in an installed VNC viewer. Windows has no built-in one, so we try the
+    /// common open-source viewers (TightVNC / UltraVNC / TigerVNC / RealVNC) and finally the vnc://
+    /// protocol handler; if nothing is found, the user is told to install a viewer.</summary>
+    private void LaunchVnc(string endpoint)
+    {
+        string[] candidates =
+        {
+            @"%ProgramFiles%\TightVNC\tvnviewer.exe",
+            @"%ProgramFiles%\uvnc bvba\UltraVNC\vncviewer.exe",
+            @"%ProgramFiles%\UltraVNC\vncviewer.exe",
+            @"%ProgramFiles%\TigerVNC\vncviewer.exe",
+            @"%ProgramFiles%\RealVNC\VNC Viewer\vncviewer.exe",
+            @"%ProgramFiles(x86)%\TightVNC\tvnviewer.exe",
+        };
+        foreach (var c in candidates)
+        {
+            var path = Environment.ExpandEnvironmentVariables(c);
+            if (!File.Exists(path)) continue;
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path, endpoint) { UseShellExecute = true });
+                return;
+            }
+            catch { /* try the next candidate */ }
+        }
+        // No known viewer installed – try a registered vnc:// handler, else tell the user.
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo($"vnc://{endpoint}") { UseShellExecute = true }); }
+        catch { SetStatus(T("Vnc_NoViewer")); }
     }
 
     /// <summary>Finds the device VM of the row a badge/button lives in (works for both views).</summary>
