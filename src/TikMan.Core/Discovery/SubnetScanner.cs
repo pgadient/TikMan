@@ -84,7 +84,7 @@ public static class SubnetScanner
 
         // Enrich the bare IP with the MAC (from the ARP cache, populated by the ping above) and a
         // hostname (reverse DNS). The vendor is then resolved from the MAC in the view.
-        var mac = GetMacFromArp(ip);
+        var mac = ResolveMacAddress(ip);
         var identity = await ReverseDnsAsync(ip, ct).ConfigureAwait(false);
 
         return new DiscoveredDevice
@@ -101,11 +101,32 @@ public static class SubnetScanner
     [DllImport("iphlpapi.dll", ExactSpelling = true)]
     private static extern int SendARP(int destIp, int srcIp, byte[] macAddr, ref uint macAddrLen);
 
-    /// <summary>Reads the MAC of a same-subnet IPv4 host from the ARP table (best-effort, "" if the
-    /// host is off-link or ARP failed). Windows only – SendARP.</summary>
-    private static string GetMacFromArp(IPAddress ip)
+    [DllImport("iphlpapi.dll", SetLastError = true)]
+    private static extern int GetIpNetTable(IntPtr pIpNetTable, ref int pdwSize, bool bOrder);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MIB_IPNETROW
+    {
+        public int dwIndex;
+        public int dwPhysAddrLen;
+        public byte mac0, mac1, mac2, mac3, mac4, mac5, mac6, mac7; // bPhysAddr[MAXLEN_PHYSADDR]
+        public int dwAddr;
+        public int dwType; // 3 = dynamic, 4 = static
+    }
+
+    /// <summary>Resolves the MAC of an on-link IPv4 host (Windows only, "" otherwise). An active ARP
+    /// request runs first; if the host doesn't answer it right now (SendARP fails with error 67 when
+    /// the neighbour entry is in the Probe/Stale state) it falls back to the OS ARP table, which the
+    /// scan's ping has usually populated already.</summary>
+    public static string ResolveMacAddress(IPAddress ip)
     {
         if (!OperatingSystem.IsWindows() || ip.AddressFamily != AddressFamily.InterNetwork) return "";
+        var mac = SendArpMac(ip);
+        return mac.Length > 0 ? mac : ArpTableMac(ip);
+    }
+
+    private static string SendArpMac(IPAddress ip)
+    {
         try
         {
             int dest = BitConverter.ToInt32(ip.GetAddressBytes(), 0);
@@ -113,6 +134,39 @@ public static class SubnetScanner
             uint len = (uint)mac.Length;
             if (SendARP(dest, 0, mac, ref len) != 0 || len < 6) return "";
             return string.Join(":", mac.Take(6).Select(b => b.ToString("X2")));
+        }
+        catch (DllNotFoundException) { return ""; }
+        catch (EntryPointNotFoundException) { return ""; }
+    }
+
+    /// <summary>Looks the IP up in the OS ARP/neighbour table (GetIpNetTable) – has the MAC even when
+    /// an active SendARP resolution just failed, as long as the entry is still cached from the ping.</summary>
+    private static string ArpTableMac(IPAddress ip)
+    {
+        int target = BitConverter.ToInt32(ip.GetAddressBytes(), 0);
+        int size = 0;
+        try
+        {
+            GetIpNetTable(IntPtr.Zero, ref size, false); // ask for the required buffer size
+            if (size <= 0) return "";
+            var buffer = Marshal.AllocHGlobal(size);
+            try
+            {
+                if (GetIpNetTable(buffer, ref size, false) != 0) return "";
+                int count = Marshal.ReadInt32(buffer);
+                int rowSize = Marshal.SizeOf<MIB_IPNETROW>();
+                for (int i = 0; i < count; i++)
+                {
+                    var row = Marshal.PtrToStructure<MIB_IPNETROW>(IntPtr.Add(buffer, 4 + i * rowSize));
+                    if (row.dwAddr == target && row.dwPhysAddrLen >= 6 && row.dwType is 3 or 4)
+                    {
+                        var b = new[] { row.mac0, row.mac1, row.mac2, row.mac3, row.mac4, row.mac5 };
+                        if (b.Any(x => x != 0)) return string.Join(":", b.Select(x => x.ToString("X2")));
+                    }
+                }
+                return "";
+            }
+            finally { Marshal.FreeHGlobal(buffer); }
         }
         catch (DllNotFoundException) { return ""; }
         catch (EntryPointNotFoundException) { return ""; }
