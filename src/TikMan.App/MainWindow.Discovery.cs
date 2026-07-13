@@ -104,6 +104,8 @@ public partial class MainWindow
         {
             var mndp = MndpScanner.DiscoverAsync(TimeSpan.FromSeconds(5), found, ct);
             var ipv6 = Ipv6Discovery.DiscoverContinuousAsync(TimeSpan.FromSeconds(Ipv6DurationSeconds), found, ct);
+            // Zyxel ZON/ZDP: finds Zyxel switches/APs on the local L2 with model + firmware (needs Npcap).
+            var zon = ZdpScanner.DiscoverAsync(TimeSpan.FromSeconds(5), found, ct);
 
             Task subnet = Task.CompletedTask;
             var target = SubnetBox.Text.Trim();
@@ -147,7 +149,7 @@ public partial class MainWindow
 
             // Hide each bar as soon as its own work finishes, so none sits at 100 % waiting.
             var ui = TaskScheduler.FromCurrentSynchronizationContext();
-            Task gm = Guard(mndp), gi = Guard(ipv6), gs = Guard(subnet);
+            Task gm = Guard(mndp), gi = Guard(ipv6), gs = Guard(subnet), gz = Guard(zon);
             _ = gm.ContinueWith(_ =>
                 {
                     _mndpProgressTimer.Stop();
@@ -161,7 +163,7 @@ public partial class MainWindow
             // Scans first, then the meta phase per address family – a stable base before analysis.
             async Task V4ChainAsync()
             {
-                await Task.WhenAll(gm, gs);
+                await Task.WhenAll(gm, gs, gz);
                 await RunMetaPhaseAsync(v6: false, ct);
             }
             async Task V6ChainAsync()
