@@ -703,7 +703,12 @@ public partial class MainWindow : Window
     {
         var (host, port) = SplitEndpoint(endpoint, 5900);
         if (_appData.ShowVncNotice)
-            MessageBox.Show(this, T("Vnc_NoticeText"), T("Vnc_NoticeTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
+        {
+            // Yes/No with "No" as the default, so an accidental Enter cancels.
+            var answer = MessageBox.Show(this, T("Vnc_NoticeText"), T("Vnc_NoticeTitle"),
+                MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+            if (answer != MessageBoxResult.Yes) return;
+        }
         try { new VncViewerWindow(host, port) { Owner = this }.Show(); }
         catch (Exception ex) { SetStatus($"{T("Vnc_Failed")} {ex.Message}"); }
     }
