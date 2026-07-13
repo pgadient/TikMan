@@ -315,9 +315,11 @@ public partial class MainWindow : Window
     private async void RefreshAll_Click(object sender, RoutedEventArgs e) => await RefreshAllAsync(quiet: false);
 
     /// <summary>View menu: show or hide the ⓘ list-tips icon above the device list.</summary>
-    /// <summary>Bottom-bar Npcap warning: opens the Npcap download page.</summary>
+    /// <summary>Bottom-bar Npcap warning: reminds that Npcap must be installed with WinPcap
+    /// API-compatible mode (mandatory for ZON), then opens the Npcap download page.</summary>
     private void NpcapWarn_Click(object sender, MouseButtonEventArgs e)
     {
+        MessageBox.Show(this, T("Npcap_InstallHint"), "Npcap", MessageBoxButton.OK, MessageBoxImage.Information);
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://npcap.com/#download") { UseShellExecute = true }); }
         catch { /* no browser */ }
     }
