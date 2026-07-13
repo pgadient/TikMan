@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Navigation;
 using TikMan.App.Localization;
+using TikMan.Core.Discovery;
 using TikMan.Core.Models;
 using TikMan.Core.Storage;
 
@@ -43,6 +44,12 @@ public partial class SettingsWindow : Window
         ExternalSshCheck.IsChecked = data.UseExternalSshClient;
         SshClientPathBox.Text = data.ExternalSshClientPath;
         WinScpPathBox.Text = data.WinScpPath;
+        var npcap = ZdpScanner.NpcapVersion();
+        NpcapStatusText.Text = npcap is { Length: > 0 }
+            ? LocalizationManager.T("Set_NpcapFound", npcap)
+            : LocalizationManager.T("Set_NpcapMissing");
+        NpcapStatusText.Foreground = npcap is { Length: > 0 }
+            ? System.Windows.Media.Brushes.ForestGreen : System.Windows.Media.Brushes.DarkOrange;
         ConfigPathBox.Text = string.Join("\n", DeviceStore.StorageFile,
             Path.Combine(AppContext.BaseDirectory, "oui.txt") + "  (" + LocalizationManager.T("Set_ConfigOui") + ")");
         _ready = true;

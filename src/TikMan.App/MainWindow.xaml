@@ -122,6 +122,10 @@
                     <TextBlock DockPanel.Dock="Left" Width="120" VerticalAlignment="Center" Foreground="#666666" Text="MNDP (5 s)"/>
                     <ProgressBar x:Name="MndpProgress" Height="10" Minimum="0" Maximum="5"/>
                 </DockPanel>
+                <DockPanel x:Name="ZonProgressRow" Margin="0,4,0,0" Visibility="Collapsed">
+                    <TextBlock DockPanel.Dock="Left" Width="120" VerticalAlignment="Center" Foreground="#666666" Text="Zyxel ZON (5 s)"/>
+                    <ProgressBar x:Name="ZonProgress" Height="10" IsIndeterminate="True"/>
+                </DockPanel>
                 <DockPanel x:Name="Ipv4MetaProgressRow" Margin="0,4,0,0">
                     <TextBlock DockPanel.Dock="Left" Width="120" VerticalAlignment="Center" Foreground="#666666" Text="IPv4 Meta"/>
                     <ProgressBar x:Name="Ipv4MetaProgress" Height="10" Minimum="0" Maximum="100"/>

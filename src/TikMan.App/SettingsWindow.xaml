@@ -119,6 +119,12 @@
 
                 <Separator Margin="0,14,0,0"/>
 
+                <!-- Npcap / Zyxel ZON capability -->
+                <TextBlock Margin="0,10,0,0" FontWeight="SemiBold" Text="{loc:Loc Set_NpcapTitle}"/>
+                <TextBlock x:Name="NpcapStatusText" Margin="0,2,0,0" TextWrapping="Wrap" FontSize="11"/>
+
+                <Separator Margin="0,14,0,0"/>
+
                 <!-- Config file locations -->
                 <TextBlock Margin="0,10,0,0" FontWeight="SemiBold" Text="{loc:Loc Set_ConfigTitle}"/>
                 <TextBlock Margin="0,2,0,0" TextWrapping="Wrap" Foreground="#B36B00" FontSize="11" Text="{loc:Loc Set_ConfigHint}"/>

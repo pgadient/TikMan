@@ -88,6 +88,7 @@ public partial class MainWindow
         DiscoveryProgressPanel.Visibility = Visibility.Visible;
         Ipv4ProgressRow.Visibility = Visibility.Visible;
         MndpProgressRow.Visibility = Visibility.Visible;
+        ZonProgressRow.Visibility = ZdpScanner.IsAvailable() ? Visibility.Visible : Visibility.Collapsed; // only with Npcap
         Ipv4MetaProgressRow.Visibility = Visibility.Visible;
         Ipv6ProgressRow.Visibility = Visibility.Visible;
         Ipv6MetaProgressRow.Visibility = Visibility.Visible;
@@ -158,6 +159,8 @@ public partial class MainWindow
             _ = gs.ContinueWith(_ => Ipv4ProgressRow.Visibility = Visibility.Collapsed,
                 CancellationToken.None, TaskContinuationOptions.None, ui);
             _ = gi.ContinueWith(_ => Ipv6ProgressRow.Visibility = Visibility.Collapsed,
+                CancellationToken.None, TaskContinuationOptions.None, ui);
+            _ = gz.ContinueWith(_ => ZonProgressRow.Visibility = Visibility.Collapsed,
                 CancellationToken.None, TaskContinuationOptions.None, ui);
 
             // Scans first, then the meta phase per address family – a stable base before analysis.

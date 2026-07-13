@@ -35,6 +35,14 @@ public static class ZdpScanner
         return _available.Value;
     }
 
+    /// <summary>The installed Npcap/libpcap version string (e.g. "Npcap version 1.79, based on libpcap
+    /// version 1.10.4"), or null when the capture layer isn't available.</summary>
+    public static string? NpcapVersion()
+    {
+        try { return Pcap.Version; }
+        catch { return null; }
+    }
+
     public static async Task<List<DiscoveredDevice>> DiscoverAsync(
         TimeSpan duration, IProgress<DiscoveredDevice>? onFound = null, CancellationToken ct = default)
     {
