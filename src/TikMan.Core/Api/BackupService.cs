@@ -80,7 +80,7 @@ public static class BackupService
                 new PasswordAuthenticationMethod(username, password))
             {
                 Timeout = TimeSpan.FromSeconds(12),
-            };
+            }.WithCompatibleMacs();
             using var scp = new ScpClient(info);
             try
             {

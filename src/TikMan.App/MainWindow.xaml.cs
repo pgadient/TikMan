@@ -682,7 +682,11 @@ public partial class MainWindow : Window
             return;
         }
 
-        var sshArgs = sshPort != 22 ? $"-p {sshPort} {target}" : target;
+        // Offer only the plain (non-ETM) HMACs: some embedded servers (Zyxel firewalls) miscompute the
+        // encrypt-then-MAC variants and drop every packet with "Corrupted MAC on input". Every device
+        // we reach accepts these, so this is safe for MikroTik/APs too.
+        var macs = $"-o MACs={TikMan.Core.Api.SshCompat.OpenSshMacList}";
+        var sshArgs = sshPort != 22 ? $"{macs} -p {sshPort} {target}" : $"{macs} {target}";
         try
         {
             System.Diagnostics.Process.Start(

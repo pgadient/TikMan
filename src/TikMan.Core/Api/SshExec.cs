@@ -21,7 +21,7 @@ public static class SshExec
                 new PasswordAuthenticationMethod(user, password))
             {
                 Timeout = TimeSpan.FromSeconds(6),
-            };
+            }.WithCompatibleMacs();
             using var ssh = new SshClient(conn);
             ssh.Connect();
             ShellStream? shell = null;
