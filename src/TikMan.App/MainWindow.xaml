@@ -16,6 +16,13 @@
                 <MenuItem Header="{loc:Loc Tb_BackupAll}" Click="BackupAll_Click"/>
                 <MenuItem Header="{loc:Loc Tb_InstallUpdates}" Click="InstallUpdates_Click"/>
             </MenuItem>
+            <MenuItem Header="{loc:Loc Menu_Export}">
+                <MenuItem Header="{loc:Loc Exp_Ipv4Csv}" Click="ExportIpv4Csv_Click"/>
+                <MenuItem Header="{loc:Loc Exp_Ipv4Html}" Click="ExportIpv4Html_Click"/>
+                <Separator/>
+                <MenuItem Header="{loc:Loc Exp_Ipv6Csv}" Click="ExportIpv6Csv_Click"/>
+                <MenuItem Header="{loc:Loc Exp_Ipv6Html}" Click="ExportIpv6Html_Click"/>
+            </MenuItem>
             <MenuItem Header="{loc:Loc Menu_View}">
                 <MenuItem x:Name="ContactButtonsMenuItem" Header="{loc:Loc Menu_ContactButtons}"
                           IsCheckable="True" IsChecked="True" Click="ContactButtons_Toggled"/>

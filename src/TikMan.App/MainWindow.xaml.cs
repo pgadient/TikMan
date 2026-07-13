@@ -474,6 +474,41 @@ public partial class MainWindow : Window
         SetStatus(T("Status_Ready"));
     }
 
+    private void ExportIpv4Csv_Click(object sender, RoutedEventArgs e) => ExportDevices(ipv6: false, html: false);
+    private void ExportIpv4Html_Click(object sender, RoutedEventArgs e) => ExportDevices(ipv6: false, html: true);
+    private void ExportIpv6Csv_Click(object sender, RoutedEventArgs e) => ExportDevices(ipv6: true, html: false);
+    private void ExportIpv6Html_Click(object sender, RoutedEventArgs e) => ExportDevices(ipv6: true, html: true);
+
+    /// <summary>Saves the IPv4 or IPv6 device list as CSV or a self-contained HTML table.</summary>
+    private void ExportDevices(bool ipv6, bool html)
+    {
+        var devices = _devices.Where(d => ipv6 ? d.HasIpv6 : d.HasIpv4).ToList();
+        if (devices.Count == 0) { SetStatus(T("Msg_NothingToExport")); return; }
+
+        var family = ipv6 ? "ipv6" : "ipv4";
+        var ext = html ? "html" : "csv";
+        var dlg = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = html ? "HTML (*.html)|*.html" : "CSV (*.csv)|*.csv",
+            FileName = $"tikman-{family}-{DateTime.Now:yyyyMMdd-HHmmss}.{ext}",
+        };
+        if (dlg.ShowDialog(this) != true) return;
+
+        try
+        {
+            var title = $"TikMan {(ipv6 ? "IPv6" : "IPv4")} devices";
+            var content = html
+                ? DeviceExporter.ToHtml(devices, ipv6, title, DateTime.Now.ToString("yyyy-MM-dd HH:mm"))
+                : DeviceExporter.ToCsv(devices, ipv6);
+            System.IO.File.WriteAllText(dlg.FileName, content, new System.Text.UTF8Encoding(true));
+            SetStatus(T("Msg_Exported", devices.Count, dlg.FileName));
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, T("Menu_Export"), MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private void RemoveDevice_Click(object sender, RoutedEventArgs e)
     {
         if (SelectedDevice is not { } vm)
