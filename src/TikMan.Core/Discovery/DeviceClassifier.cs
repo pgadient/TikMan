@@ -61,9 +61,9 @@ public static class DeviceClassifier
 
         // Service-based signals (strongest).
         if (Has(9100) || Has(515) || Has(631)) return DeviceKind.Printer;
-        if (Has(554)) return DeviceKind.Camera;                 // RTSP
-        if (Has(5060)) return DeviceKind.Phone;                 // SIP
-        if (Has(8291)) return DeviceKind.Router;                // MikroTik Winbox
+        if (Has(554) || Has(8554)) return DeviceKind.Camera;    // RTSP
+        if (Has(5060) || Has(5061)) return DeviceKind.Phone;    // SIP
+        if (Has(8291) || Has(8728) || Has(8729)) return DeviceKind.Router; // MikroTik Winbox / API
         // A mail stack (SMTP/IMAP/POP3/submission) means a server, whoever made the board.
         if (Has(25) || Has(587) || Has(465) || Has(143) || Has(993) || Has(110) || Has(995))
             return DeviceKind.Server;
@@ -73,9 +73,15 @@ public static class DeviceClassifier
         foreach (var (fragment, kind) in VendorHints)
             if (v.Contains(fragment)) return kind;
 
-        // Weaker port fallbacks once the vendor gave nothing away.
-        if (Has(445) || Has(139)) return DeviceKind.Pc;         // Windows/SMB host
-        if (Has(80) || Has(443)) return DeviceKind.Server;      // some web-facing box
+        // Broader service fallbacks – only reached when the vendor gave nothing away, but a running
+        // service is still a decent hint on its own.
+        if (Has(548) || Has(2049) || Has(5000) || Has(5001)) return DeviceKind.Nas;   // AFP / NFS / Synology DSM
+        if (Has(1883) || Has(8883)) return DeviceKind.IoT;                            // MQTT broker
+        if (Has(3306) || Has(5432) || Has(1433) || Has(27017) || Has(6379) ||
+            Has(32400) || Has(8096) || Has(8006)) return DeviceKind.Server;          // database / media / Proxmox
+        if (Has(3389)) return DeviceKind.Pc;                     // RDP → a Windows box
+        if (Has(445) || Has(139)) return DeviceKind.Pc;         // Windows / SMB host
+        if (Has(22) || Has(80) || Has(443)) return DeviceKind.Server; // an SSH / web-facing box
 
         return DeviceKind.Unknown;
     }
