@@ -30,6 +30,7 @@ public partial class VncViewerWindow : Window
     private RfbConnection? _connection;
     private WriteableBitmap? _bitmap;
     private MouseButtons _buttons = MouseButtons.None;
+    private volatile bool _renderQueued;
 
     // BGRA, 32bpp, little-endian: memory bytes B,G,R,A → matches WPF Bgra32.
     private static readonly VncPixelFormat Bgra32 = new(
@@ -69,9 +70,13 @@ public partial class VncViewerWindow : Window
         Closed += (_, _) =>
         {
             _cts.Cancel();
-            try { _connection?.Dispose(); } catch { /* already gone */ }
-            _target.Free();
-            Owner?.Activate(); // return focus to the main window (it used to stay unfocusable)
+            var conn = _connection;
+            _connection = null;
+            // Dispose off the UI thread: it waits for the client's worker threads to stop, and blocking
+            // the UI here (while a worker waits on the UI to render) is exactly what used to deadlock and
+            // leave the main window unclickable.
+            Task.Run(() => { try { conn?.Dispose(); } catch { /* already gone */ } _target.Free(); });
+            Owner?.Activate(); // return focus/activation to the main window
         };
     }
 
@@ -95,17 +100,25 @@ public partial class VncViewerWindow : Window
         }
     }
 
-    /// <summary>Called by the render target (on the client's thread) once a framebuffer is ready.</summary>
+    /// <summary>Called by the render target on the client's thread once a framebuffer is ready. Copies
+    /// the frame here (fast, off the UI thread) and queues a non-blocking blit — a blocking Invoke here
+    /// would deadlock against Dispose at close. Extra frames while one is queued are coalesced/dropped.</summary>
     private void Present(IntPtr address, VncSize size)
     {
-        Dispatcher.Invoke(() =>
+        if (_renderQueued) return;
+        int len = size.Width * size.Height * 4;
+        var frame = new byte[len];
+        Marshal.Copy(address, frame, 0, len);
+        _renderQueued = true;
+        Dispatcher.BeginInvoke(() =>
         {
+            _renderQueued = false;
             if (_bitmap is null || _bitmap.PixelWidth != size.Width || _bitmap.PixelHeight != size.Height)
             {
                 _bitmap = new WriteableBitmap(size.Width, size.Height, 96, 96, WpfPixelFormats.Bgra32, null);
                 Screen.Source = _bitmap;
             }
-            _bitmap.WritePixels(new Int32Rect(0, 0, size.Width, size.Height), address, size.Width * size.Height * 4, size.Width * 4);
+            _bitmap.WritePixels(new Int32Rect(0, 0, size.Width, size.Height), frame, size.Width * 4, 0);
         });
     }
 
