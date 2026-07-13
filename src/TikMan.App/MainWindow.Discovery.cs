@@ -466,6 +466,22 @@ public partial class MainWindow
             catch { /* best effort */ }
         }
 
+        // IPv6 via EUI-64: a known device that derives its link-local from the MAC (MikroTik & most
+        // embedded gear) is confirmed online over IPv6 even when it ignored the passive ff02::1 poke.
+        if (!vm.HasIpv6 && vm.Model.MacAddress.Length > 0 && OperatingSystem.IsWindows() && !ct.IsCancellationRequested)
+        {
+            try
+            {
+                if (await Ipv6LinkLocal.SolicitAsync(vm.Model.MacAddress, ct) is { } ll && !vm.HasAddress(ll))
+                {
+                    vm.Model.AltAddresses.Add(ll);
+                    vm.RefreshAddressDisplay();
+                    changed = true;
+                }
+            }
+            catch { /* best effort */ }
+        }
+
         if (changed) vm.RaiseDetailsChanged();
     }
 
