@@ -126,7 +126,8 @@ public partial class MainWindow
                             Ipv4Progress.Value = Math.Min(++scanned, hosts);
                             if (scanned >= hosts) Ipv4ProgressRow.Visibility = Visibility.Collapsed; // hide at 100 %
                         });
-                        subnet = SubnetScanner.ScanAsync(target, found, onScanned, ct);
+                        subnet = SubnetScanner.ScanAsync(target, found, onScanned, ct,
+                            _appData.PingTimeoutMs, _appData.PingRetries);
                     }
                 }
                 catch (ArgumentException) { Ipv4Progress.IsIndeterminate = true; } // invalid subnet – MNDP only

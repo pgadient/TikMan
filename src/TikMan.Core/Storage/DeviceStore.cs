@@ -43,6 +43,10 @@ public class AppData
     public bool ShowContactButtons { get; set; } = true;
     /// <summary>Show the ⓘ list-tips icon above the device list (default on).</summary>
     public bool ShowListInfo { get; set; } = true;
+    /// <summary>Per-host ping timeout in milliseconds during a subnet scan (default 600).</summary>
+    public int PingTimeoutMs { get; set; } = 600;
+    /// <summary>Extra ping attempts per host after the first, to ride out a lost packet (default 1).</summary>
+    public int PingRetries { get; set; } = 1;
     /// <summary>Open ssh sessions with an external client (see <see cref="ExternalSshClientPath"/>)
     /// instead of the built-in OpenSSH terminal.</summary>
     public bool UseExternalSshClient { get; set; }

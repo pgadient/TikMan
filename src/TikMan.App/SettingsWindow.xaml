@@ -61,6 +61,15 @@
                     <ComboBoxItem Tag="off" Content="{loc:Loc Set_CoffeeOff}"/>
                 </ComboBox>
 
+                <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_ScanTitle}"/>
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                    <TextBlock VerticalAlignment="Center" Text="{loc:Loc Set_PingTimeout}"/>
+                    <TextBox x:Name="PingTimeoutBox" Width="70" Height="24" Margin="8,0,0,0" VerticalContentAlignment="Center"/>
+                    <TextBlock VerticalAlignment="Center" Margin="20,0,0,0" Text="{loc:Loc Set_PingRetries}"/>
+                    <TextBox x:Name="PingRetriesBox" Width="50" Height="24" Margin="8,0,0,0" VerticalContentAlignment="Center"/>
+                </StackPanel>
+                <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_ScanHint}"/>
+
                 <Separator Margin="0,14,0,0"/>
 
                 <CheckBox x:Name="IgnoreCertCheck" Margin="0,12,0,0" Content="{loc:Loc Set_IgnoreCert}"/>

@@ -34,7 +34,9 @@ public static class SubnetScanner
         string targets,
         IProgress<DiscoveredDevice>? onFound = null,
         IProgress<int>? onHostScanned = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        int pingTimeoutMs = 600,
+        int pingRetries = 1)
     {
         var addresses = EnumerateTargets(targets);
         var results = new List<DiscoveredDevice>();
@@ -46,7 +48,7 @@ public static class SubnetScanner
             await limiter.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                var device = await ProbeHostAsync(ip, ct).ConfigureAwait(false);
+                var device = await ProbeHostAsync(ip, ct, pingTimeoutMs, pingRetries).ConfigureAwait(false);
                 if (device is not null)
                 {
                     lock (resultLock) results.Add(device);
@@ -68,17 +70,21 @@ public static class SubnetScanner
 
     public static int CountHosts(string targets) => EnumerateTargets(targets).Count;
 
-    private static async Task<DiscoveredDevice?> ProbeHostAsync(IPAddress ip, CancellationToken ct)
+    private static async Task<DiscoveredDevice?> ProbeHostAsync(IPAddress ip, CancellationToken ct,
+        int pingTimeoutMs, int pingRetries)
     {
         // A single echo is easily lost on a busy segment, which makes the found-host count wobble
-        // (52 vs 53). Give each host a second chance before writing it off.
+        // (52 vs 53). Retry a few times (configurable) before writing the host off. Total attempts =
+        // 1 + retries; clamped to sane bounds so a bad config can't hang the scan.
+        int attempts = Math.Clamp(pingRetries, 0, 10) + 1;
+        int timeout = Math.Clamp(pingTimeoutMs, 100, 5000);
         using var ping = new Ping();
         bool alive = false;
-        for (int attempt = 0; attempt < 2 && !alive; attempt++)
+        for (int attempt = 0; attempt < attempts && !alive; attempt++)
         {
             ct.ThrowIfCancellationRequested();
-            try { alive = (await ping.SendPingAsync(ip, 600).ConfigureAwait(false)).Status == IPStatus.Success; }
-            catch (PingException) { /* transient – retry once */ }
+            try { alive = (await ping.SendPingAsync(ip, timeout).ConfigureAwait(false)).Status == IPStatus.Success; }
+            catch (PingException) { /* transient – retry */ }
         }
         if (!alive) return null;
 
