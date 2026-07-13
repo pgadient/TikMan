@@ -23,11 +23,14 @@ public static class ZdpScanner
     private const byte AttrList = 0x02, AttrMac = 0x03, AttrModel = 0x04, AttrFirmware = 0x05,
                        AttrIpv4 = 0x07, AttrName = 0x16;
 
-    // Info-request field set. It must start with 0x21 (the switch stays silent without it) and hold
-    // only fields every device supports – ZON asks switches and APs for different extra fields, and a
-    // device that gets one it doesn't know (2a/30/2f on the AP) won't reply. 04/05/07/16 are common.
-    private static readonly byte[] InfoRequestAttrs =
-        { 0x21, AttrModel, AttrFirmware, AttrIpv4, AttrName };
+    // ZON asks switches and APs for different field sets, and a device stays silent if it gets a
+    // field it doesn't advertise. Rather than guess, we send both exact ZON requests to each device
+    // (verified from a capture); the device answers the one it understands, we merge the replies.
+    private static readonly byte[][] InfoRequests =
+    {
+        new byte[] { 0x21, AttrModel, AttrFirmware, AttrIpv4, 0x2a, 0x30, 0x2f, AttrName, 0x18, 0x27, 0x2d },      // switch
+        new byte[] { 0x21, 0x23, AttrModel, AttrFirmware, AttrIpv4, AttrName, 0x18, 0x27, 0x2d, 0x2e },            // AP
+    };
 
     private static bool? _available;
 
@@ -107,9 +110,14 @@ public static class ZdpScanner
             results[mac] = existing;
             if (existing.IpAddress.Length > 0) onFound?.Report(existing);
 
-            // Ask a freshly-seen device for its full details (IPv4/firmware/name) once.
+            // Ask a freshly-seen device for its full details (IPv4/firmware/name) once. Switches and
+            // APs answer different request shapes, so send both; each device replies to the one it knows.
             if (existing.IpAddress.Length == 0 && queried.Add(mac))
-                dev.SendPacket(BuildRequest(srcMac, HexToMac(mac), MsgInfoRequest, InfoRequestAttrs));
+            {
+                var dstMac = HexToMac(mac);
+                foreach (var req in InfoRequests)
+                    dev.SendPacket(BuildRequest(srcMac, dstMac, MsgInfoRequest, req));
+            }
         }
     }
 
