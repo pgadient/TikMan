@@ -23,10 +23,11 @@ public static class ZdpScanner
     private const byte AttrList = 0x02, AttrMac = 0x03, AttrModel = 0x04, AttrFirmware = 0x05,
                        AttrIpv4 = 0x07, AttrName = 0x16;
 
-    // The exact field set the ZON utility asks for in its info request. Some devices (the XGS1930
-    // switch) only reply with all fields – including firmware – when the request matches this set.
+    // Info-request field set. It must start with 0x21 (the switch stays silent without it) and hold
+    // only fields every device supports – ZON asks switches and APs for different extra fields, and a
+    // device that gets one it doesn't know (2a/30/2f on the AP) won't reply. 04/05/07/16 are common.
     private static readonly byte[] InfoRequestAttrs =
-        { 0x21, AttrModel, AttrFirmware, AttrIpv4, 0x2a, 0x30, 0x2f, AttrName, 0x18, 0x27, 0x2d };
+        { 0x21, AttrModel, AttrFirmware, AttrIpv4, AttrName };
 
     private static bool? _available;
 
