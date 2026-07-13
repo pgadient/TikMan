@@ -86,6 +86,8 @@
 
                 <CheckBox x:Name="ExpandRowsCheck" Margin="0,12,0,0" Content="{loc:Loc Set_ExpandRows}"/>
 
+                <CheckBox x:Name="VncNoticeCheck" Margin="0,12,0,0" Content="{loc:Loc Set_VncNotice}"/>
+
                 <CheckBox x:Name="ExternalSshCheck" Margin="0,12,0,0" Content="{loc:Loc Set_UseExternalSsh}"/>
                 <DockPanel Margin="20,4,0,0">
                     <Button DockPanel.Dock="Right" Content="…" Padding="8,2" Margin="4,0,0,0" Click="SshClientBrowse_Click"/>

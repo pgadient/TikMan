@@ -37,6 +37,7 @@ public partial class SettingsWindow : Window
         CoffeeButtonCombo.SelectedValue = data.CoffeeButton;
         if (CoffeeButtonCombo.SelectedValue is null) CoffeeButtonCombo.SelectedIndex = 0;
         ExpandRowsCheck.IsChecked = data.ExpandRowsByDefault;
+        VncNoticeCheck.IsChecked = data.ShowVncNotice;
         PingTimeoutBox.Text = data.PingTimeoutMs.ToString();
         PingRetriesBox.Text = data.PingRetries.ToString();
         ExternalSshCheck.IsChecked = data.UseExternalSshClient;
@@ -122,6 +123,7 @@ public partial class SettingsWindow : Window
         _data.ForceMailFallback = ForceMailtoCheck.IsChecked == true;
         if (CoffeeButtonCombo.SelectedValue is string coffee) _data.CoffeeButton = coffee;
         _data.ExpandRowsByDefault = ExpandRowsCheck.IsChecked == true;
+        _data.ShowVncNotice = VncNoticeCheck.IsChecked == true;
         // Ping tuning – clamp to sane bounds so a typo can't hang or disable the scan.
         if (int.TryParse(PingTimeoutBox.Text.Trim(), out var timeout))
             _data.PingTimeoutMs = Math.Clamp(timeout, 100, 5000);

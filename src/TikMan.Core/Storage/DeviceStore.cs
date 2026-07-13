@@ -48,6 +48,8 @@ public class AppData
     /// <summary>Extra ping attempts per host after the first, to ride out a lost packet (default 0 –
     /// continuous scan re-finds a briefly-missed host on the next pass anyway).</summary>
     public int PingRetries { get; set; }
+    /// <summary>Show the "a standalone client is safer" notice before the built-in VNC viewer (default on).</summary>
+    public bool ShowVncNotice { get; set; } = true;
     /// <summary>Open ssh sessions with an external client (see <see cref="ExternalSshClientPath"/>)
     /// instead of the built-in OpenSSH terminal.</summary>
     public bool UseExternalSshClient { get; set; }

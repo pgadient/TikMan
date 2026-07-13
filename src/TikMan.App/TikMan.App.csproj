@@ -10,13 +10,19 @@
     <RootNamespace>TikMan.App</RootNamespace>
     <ApplicationIcon>tikman.ico</ApplicationIcon>
     <!-- Build number auto-increments: 1.1.<days since 2026-01-01> (recomputed on every build). -->
-    <Version>1.9.3</Version>
+    <Version>1.9.4</Version>
     <Product>TikMan</Product>
     <Company>Pascal Montico-Gadient</Company>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\TikMan.Core\TikMan.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Embedded VNC viewer: RemoteViewing's RFB client (BSD-3, pure managed). The framebuffer is
+         rendered into a WPF WriteableBitmap directly, so no WinForms dependency is needed. -->
+    <PackageReference Include="Quamotion.RemoteViewing" Version="1.1.211" />
   </ItemGroup>
 
   <ItemGroup>

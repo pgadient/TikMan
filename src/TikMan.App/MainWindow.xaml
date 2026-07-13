@@ -73,6 +73,8 @@
                         <Button Style="{StaticResource ToolButton}" Click="ClearAll_Click" Content="{loc:Loc Tb_Clear}"/>
                         <Separator Margin="6,2" Width="1" Background="#CCCCCC"/>
                         <Button Style="{StaticResource ToolButton}" Click="RefreshAll_Click" Content="{loc:Loc Tb_RefreshAll}"/>
+                        <Button Style="{StaticResource ToolButton}" Click="WakeManual_Click" Content="{loc:Loc Tb_Wake}"
+                                ToolTip="{loc:Loc Wol_Prompt}"/>
                     </StackPanel>
 
                 </WrapPanel>
@@ -186,6 +188,7 @@
                     <ContextMenu>
                         <MenuItem Header="{loc:Loc Ctx_SetCredsSel}" Click="SetLogin_Click" FontWeight="SemiBold"/>
                         <MenuItem Header="{loc:Loc Ctx_SshTerminal}" Click="ContextSsh_Click"/>
+                        <MenuItem Header="{loc:Loc Ctx_WakeOnLan}" Click="WakeDevice_Click"/>
                         <Separator/>
                         <MenuItem Header="{loc:Loc Tb_Remove}" Click="RemoveDevice_Click"/>
                     </ContextMenu>

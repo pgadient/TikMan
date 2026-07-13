@@ -1,0 +1,21 @@
+<Window x:Class="TikMan.App.VncViewerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="VNC" Width="1024" Height="720"
+        Icon="pack://application:,,,/TikMan;component/tikman.png"
+        WindowStartupLocation="CenterOwner" Background="#1E1E1E"
+        Focusable="True" FocusManager.IsFocusScope="True">
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Background="#2D2D2D" Padding="8,4">
+            <TextBlock x:Name="StatusText" Foreground="#DDDDDD" FontSize="12" VerticalAlignment="Center"/>
+        </Border>
+        <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                      Background="#1E1E1E" Focusable="False">
+            <!-- Native-size framebuffer; mouse coordinates map back to pixels accounting for any scaling. -->
+            <Image x:Name="Screen" Stretch="None" SnapsToDevicePixels="True"
+                   RenderOptions.BitmapScalingMode="NearestNeighbor" HorizontalAlignment="Left" VerticalAlignment="Top"
+                   MouseMove="Screen_MouseMove" MouseDown="Screen_MouseButton" MouseUp="Screen_MouseButton"
+                   MouseWheel="Screen_MouseWheel" Focusable="True"/>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

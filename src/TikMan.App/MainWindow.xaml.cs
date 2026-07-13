@@ -509,6 +509,36 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>Context menu: send a Wake-on-LAN magic packet to the marked (or selected) devices'
+    /// MAC addresses.</summary>
+    private void WakeDevice_Click(object sender, RoutedEventArgs e)
+    {
+        var targets = MarkedDevices();
+        if (targets.Count == 0 && SelectedDevice is { } sel) targets = new List<DeviceViewModel> { sel };
+        if (targets.Count == 0) { SetStatus(T("Msg_SelectDeviceFirst")); return; }
+
+        int sent = 0;
+        foreach (var vm in targets)
+            if (vm.Model.MacAddress.Length > 0 && WakeOnLan.Send(vm.Model.MacAddress)) sent++;
+        SetStatus(sent > 0 ? T("Wol_SentCount", sent) : T("Wol_NoMac", targets[0].Host));
+    }
+
+    /// <summary>Toolbar: wake a device by a manually entered MAC or IP – works even when the device is
+    /// offline (an IP is resolved to its MAC via the OS ARP table if it's still cached).</summary>
+    private void WakeManual_Click(object sender, RoutedEventArgs e)
+    {
+        var input = InputPrompt.Show(this, T("Wol_Title"), T("Wol_Prompt"));
+        if (string.IsNullOrWhiteSpace(input)) return;
+
+        var mac = input.Trim();
+        if (WakeOnLan.ParseMac(mac) is null && System.Net.IPAddress.TryParse(mac, out var ip))
+        {
+            mac = SubnetScanner.ResolveMacAddress(ip);
+            if (mac.Length == 0) { SetStatus(T("Wol_NoMac", input)); return; }
+        }
+        SetStatus(WakeOnLan.Send(mac) ? T("Wol_Sent", mac) : T("Wol_Failed", input));
+    }
+
     private void RemoveDevice_Click(object sender, RoutedEventArgs e)
     {
         if (SelectedDevice is not { } vm)
@@ -561,7 +591,7 @@ public partial class MainWindow : Window
         }
         else if (proto.IsVnc)
         {
-            LaunchVnc(proto.Url["vnc://".Length..]);
+            OpenVnc(proto.Url["vnc://".Length..]);
             e.Handled = true;
         }
         else if (proto.IsSmb)
@@ -667,34 +697,30 @@ public partial class MainWindow : Window
         catch { SetStatus(T("Rdp_Failed")); }
     }
 
-    /// <summary>Opens host:port in an installed VNC viewer. Windows has no built-in one, so we try the
-    /// common open-source viewers (TightVNC / UltraVNC / TigerVNC / RealVNC) and finally the vnc://
-    /// protocol handler; if nothing is found, the user is told to install a viewer.</summary>
-    private void LaunchVnc(string endpoint)
+    /// <summary>Opens host:port in the built-in VNC viewer, after a one-off-per-open advisory that a
+    /// dedicated standalone client is more secure/capable (the notice can be turned off in settings).</summary>
+    private void OpenVnc(string endpoint)
     {
-        string[] candidates =
+        var (host, port) = SplitEndpoint(endpoint, 5900);
+        if (_appData.ShowVncNotice)
+            MessageBox.Show(this, T("Vnc_NoticeText"), T("Vnc_NoticeTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
+        try { new VncViewerWindow(host, port) { Owner = this }.Show(); }
+        catch (Exception ex) { SetStatus($"{T("Vnc_Failed")} {ex.Message}"); }
+    }
+
+    /// <summary>Splits "host:port" or "[ipv6]:port" into its parts (falls back to defaultPort).</summary>
+    private static (string Host, int Port) SplitEndpoint(string endpoint, int defaultPort)
+    {
+        if (endpoint.StartsWith('['))
         {
-            @"%ProgramFiles%\TightVNC\tvnviewer.exe",
-            @"%ProgramFiles%\uvnc bvba\UltraVNC\vncviewer.exe",
-            @"%ProgramFiles%\UltraVNC\vncviewer.exe",
-            @"%ProgramFiles%\TigerVNC\vncviewer.exe",
-            @"%ProgramFiles%\RealVNC\VNC Viewer\vncviewer.exe",
-            @"%ProgramFiles(x86)%\TightVNC\tvnviewer.exe",
-        };
-        foreach (var c in candidates)
-        {
-            var path = Environment.ExpandEnvironmentVariables(c);
-            if (!File.Exists(path)) continue;
-            try
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path, endpoint) { UseShellExecute = true });
-                return;
-            }
-            catch { /* try the next candidate */ }
+            int close = endpoint.IndexOf(']');
+            var host = close > 0 ? endpoint[1..close] : endpoint.Trim('[', ']');
+            var rest = close > 0 ? endpoint[(close + 1)..] : "";
+            return (host, rest.StartsWith(':') && int.TryParse(rest[1..], out var p) ? p : defaultPort);
         }
-        // No known viewer installed – try a registered vnc:// handler, else tell the user.
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo($"vnc://{endpoint}") { UseShellExecute = true }); }
-        catch { SetStatus(T("Vnc_NoViewer")); }
+        int colon = endpoint.LastIndexOf(':');
+        return colon > 0 && int.TryParse(endpoint[(colon + 1)..], out var pp)
+            ? (endpoint[..colon], pp) : (endpoint, defaultPort);
     }
 
     /// <summary>Finds the device VM of the row a badge/button lives in (works for both views).</summary>
