@@ -69,9 +69,17 @@ public partial class MainWindow
 
     /// <summary>Runs MNDP + IPv4 subnet + IPv6 discovery together and auto-adds every found host.
     /// Clicking the button again while running stops it.</summary>
+    /// <summary>View toggle: keep re-running discovery back-to-back. Starts a pass if none is running;
+    /// each pass chains the next while the box stays checked (see the tail of RunDiscoveryAsync).</summary>
+    private void ContinuousScan_Changed(object sender, RoutedEventArgs e)
+    {
+        if (ContinuousScanCheck.IsChecked == true && !_scanning) _ = RunDiscoveryAsync(auto: true);
+    }
+
     private async Task RunDiscoveryAsync(bool auto)
     {
-        if (_scanning) { _scanCts?.Cancel(); return; }
+        // Clicking the Stop button also ends continuous mode, so a stop really stops.
+        if (_scanning) { _scanCts?.Cancel(); ContinuousScanCheck.IsChecked = false; return; }
         _scanning = true;
         _scanCts = new CancellationTokenSource();
         var ct = _scanCts.Token;
@@ -179,6 +187,13 @@ public partial class MainWindow
             ApplyDeviceFilter(); // re-evaluate tab membership after v4/v6 merges
             UpdateDeviceCount();
             SaveAppData();
+        }
+
+        // Continuous mode: chain another pass unless it was switched off or the scan was stopped.
+        if (ContinuousScanCheck.IsChecked == true && !ct.IsCancellationRequested)
+        {
+            try { await Task.Delay(1500, ct); } catch (OperationCanceledException) { return; }
+            if (ContinuousScanCheck.IsChecked == true && !_scanning) _ = RunDiscoveryAsync(auto: true);
         }
     }
 

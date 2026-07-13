@@ -11,17 +11,18 @@
         <Menu DockPanel.Dock="Top" Background="#F9F9F9" BorderBrush="#DDDDDD" BorderThickness="0,0,0,1" Padding="2,1">
             <MenuItem Header="{loc:Loc Menu_File}">
                 <MenuItem Header="{loc:Loc Tb_Settings}" Click="Settings_Click"/>
+                <Separator/>
+                <MenuItem Header="{loc:Loc Menu_Export}">
+                    <MenuItem Header="{loc:Loc Exp_Ipv4Csv}" Click="ExportIpv4Csv_Click"/>
+                    <MenuItem Header="{loc:Loc Exp_Ipv4Html}" Click="ExportIpv4Html_Click"/>
+                    <Separator/>
+                    <MenuItem Header="{loc:Loc Exp_Ipv6Csv}" Click="ExportIpv6Csv_Click"/>
+                    <MenuItem Header="{loc:Loc Exp_Ipv6Html}" Click="ExportIpv6Html_Click"/>
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="{loc:Loc Menu_Actions}">
                 <MenuItem Header="{loc:Loc Tb_BackupAll}" Click="BackupAll_Click"/>
                 <MenuItem Header="{loc:Loc Tb_InstallUpdates}" Click="InstallUpdates_Click"/>
-            </MenuItem>
-            <MenuItem Header="{loc:Loc Menu_Export}">
-                <MenuItem Header="{loc:Loc Exp_Ipv4Csv}" Click="ExportIpv4Csv_Click"/>
-                <MenuItem Header="{loc:Loc Exp_Ipv4Html}" Click="ExportIpv4Html_Click"/>
-                <Separator/>
-                <MenuItem Header="{loc:Loc Exp_Ipv6Csv}" Click="ExportIpv6Csv_Click"/>
-                <MenuItem Header="{loc:Loc Exp_Ipv6Html}" Click="ExportIpv6Html_Click"/>
             </MenuItem>
             <MenuItem Header="{loc:Loc Menu_View}">
                 <MenuItem x:Name="ContactButtonsMenuItem" Header="{loc:Loc Menu_ContactButtons}"
@@ -99,6 +100,9 @@
                         <ComboBoxItem Tag="120">2 min</ComboBoxItem>
                         <ComboBoxItem Tag="300">5 min</ComboBoxItem>
                     </ComboBox>
+                    <CheckBox x:Name="ContinuousScanCheck" VerticalAlignment="Center" Margin="16,0,0,0"
+                              Checked="ContinuousScan_Changed" Unchecked="ContinuousScan_Changed"
+                              Content="{loc:Loc Tb_ContinuousScan}" ToolTip="{loc:Loc Tb_ContinuousScanTip}"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -308,6 +312,9 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
+                    <DataGridTextColumn x:Name="Ipv6GroupColumn" Header="{loc:Loc Col_Group}" Binding="{Binding Group}"
+                                        SortMemberPath="GroupSortKey" Width="Auto" MaxWidth="80" Visibility="Collapsed"
+                                        ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding DeviceType}" Width="Auto" MaxWidth="1000" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTextColumn Header="{loc:Loc Col_Name}" Binding="{Binding Name}" Width="Auto" MaxWidth="1000" ElementStyle="{StaticResource VCenter}"/>
                     <DataGridTextColumn x:Name="Ipv4Column" Header="IPv4" Binding="{Binding Ipv4Address}" Width="Auto" MaxWidth="1000" SortMemberPath="Ipv4SortKey" ElementStyle="{StaticResource VCenter}"/>

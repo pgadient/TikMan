@@ -45,8 +45,9 @@ public class AppData
     public bool ShowListInfo { get; set; } = true;
     /// <summary>Per-host ping timeout in milliseconds during a subnet scan (default 600).</summary>
     public int PingTimeoutMs { get; set; } = 600;
-    /// <summary>Extra ping attempts per host after the first, to ride out a lost packet (default 1).</summary>
-    public int PingRetries { get; set; } = 1;
+    /// <summary>Extra ping attempts per host after the first, to ride out a lost packet (default 0 –
+    /// continuous scan re-finds a briefly-missed host on the next pass anyway).</summary>
+    public int PingRetries { get; set; }
     /// <summary>Open ssh sessions with an external client (see <see cref="ExternalSshClientPath"/>)
     /// instead of the built-in OpenSSH terminal.</summary>
     public bool UseExternalSshClient { get; set; }

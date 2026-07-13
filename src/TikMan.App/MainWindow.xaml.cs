@@ -1084,11 +1084,16 @@ public partial class MainWindow : Window
             BuildV6Rows();
             DeviceGrid.ItemsSource = _v6Rows;
             Ipv6Column.DisplayIndex = _addressColumnIndex; // IPv6 before IPv4
+            Ipv6GroupColumn.Visibility = Visibility.Visible; // group number only makes sense per address
+            var view = CollectionViewSource.GetDefaultView(_v6Rows);
+            view.SortDescriptions.Clear();
+            view.SortDescriptions.Add(new SortDescription(nameof(Ipv6RowVm.GroupSortKey), ListSortDirection.Ascending));
         }
         else
         {
             DeviceGrid.ItemsSource = _devices;
             Ipv4Column.DisplayIndex = _addressColumnIndex; // IPv4 before IPv6 again
+            Ipv6GroupColumn.Visibility = Visibility.Collapsed;
             var view = CollectionViewSource.GetDefaultView(_devices);
             view.SortDescriptions.Clear();
             view.SortDescriptions.Add(new SortDescription(nameof(DeviceViewModel.Ipv4SortKey), ListSortDirection.Ascending));
@@ -1106,11 +1111,12 @@ public partial class MainWindow : Window
         foreach (var vm in _devices.Where(d => d.HasIpv6)
                                    .OrderBy(d => d.Ipv6List[0], StringComparer.OrdinalIgnoreCase))
         {
-            var bg = group++ % 2 == 0 ? Brushes.Transparent : Ipv6GroupBrush;
+            group++;
+            var bg = group % 2 == 1 ? Brushes.Transparent : Ipv6GroupBrush;
             bool first = true;
             foreach (var addr in vm.Ipv6List)
             {
-                var row = new Ipv6RowVm(vm, addr, first, bg);
+                var row = new Ipv6RowVm(vm, addr, first, bg, group);
                 if (row.HasRowDetails && (expanded.Contains(vm) || _appData.ExpandRowsByDefault))
                     row.IsExpanded = true;
                 _v6Rows.Add(row);

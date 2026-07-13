@@ -19,12 +19,21 @@ public class Ipv6RowVm : INotifyPropertyChanged
     /// <summary>Alternating white/ice-blue per device.</summary>
     public Brush RowBackground { get; }
 
-    public Ipv6RowVm(DeviceViewModel device, string ipv6, bool firstOfDevice, Brush background)
+    /// <summary>1-based device group number, shown in the "Group" column. All rows of the same device
+    /// share it, so sorting by this column restores the grouped view after another sort.</summary>
+    public int Group { get; }
+
+    /// <summary>Sort key for the Group column: group first, then the address – one click on the header
+    /// re-groups the list and keeps each device's addresses together and in order.</summary>
+    public string GroupSortKey => $"{Group:D5} {Ipv6Summary}";
+
+    public Ipv6RowVm(DeviceViewModel device, string ipv6, bool firstOfDevice, Brush background, int group)
     {
         Device = device;
         Ipv6Summary = ipv6;
         IsFirstOfDevice = firstOfDevice;
         RowBackground = background;
+        Group = group;
         // Property names match, so the device's change notifications drive this row's bindings too.
         device.PropertyChanged += (_, e) => PropertyChanged?.Invoke(this, e);
     }

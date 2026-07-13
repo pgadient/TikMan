@@ -36,7 +36,7 @@ public static class SubnetScanner
         IProgress<int>? onHostScanned = null,
         CancellationToken ct = default,
         int pingTimeoutMs = 600,
-        int pingRetries = 1)
+        int pingRetries = 0)
     {
         var addresses = EnumerateTargets(targets);
         var results = new List<DiscoveredDevice>();
