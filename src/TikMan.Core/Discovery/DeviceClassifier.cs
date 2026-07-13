@@ -49,6 +49,7 @@ public static class DeviceClassifier
         ("ubiquiti", DeviceKind.AccessPoint), ("apple", DeviceKind.Pc), ("dell", DeviceKind.Pc),
         ("lenovo", DeviceKind.Pc), ("micro-star", DeviceKind.Pc), ("asustek", DeviceKind.Pc),
         ("gigabyte", DeviceKind.Pc), ("intel", DeviceKind.Pc), ("samsung", DeviceKind.Pc),
+        ("raspberry", DeviceKind.Pc), // a bare Pi is a small computer; a running service above wins
     };
 
     /// <summary>Guesses the device kind. Open ports take priority over the vendor, since a running
@@ -63,6 +64,9 @@ public static class DeviceClassifier
         if (Has(554)) return DeviceKind.Camera;                 // RTSP
         if (Has(5060)) return DeviceKind.Phone;                 // SIP
         if (Has(8291)) return DeviceKind.Router;                // MikroTik Winbox
+        // A mail stack (SMTP/IMAP/POP3/submission) means a server, whoever made the board.
+        if (Has(25) || Has(587) || Has(465) || Has(143) || Has(993) || Has(110) || Has(995))
+            return DeviceKind.Server;
 
         // Trailing space so "…APC" at the end of a vendor name still matches the "apc " fragment.
         var v = (vendor ?? "").ToLowerInvariant() + " ";
