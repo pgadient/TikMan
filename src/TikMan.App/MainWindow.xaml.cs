@@ -80,6 +80,8 @@ public partial class MainWindow : Window
         ApplyContactButtons();
         ListInfoMenuItem.IsChecked = _appData.ShowListInfo;
         ApplyListInfo();
+        // A quiet bottom-bar hint when Npcap is missing, so ZON discovery's absence is explained.
+        NpcapWarnText.Visibility = ZdpScanner.IsAvailable() ? Visibility.Collapsed : Visibility.Visible;
         UpdateDeviceCount();
         SelectIntervalItem(_appData.PollIntervalSeconds);
         AutoRefreshCheck.IsChecked = _appData.AutoRefreshEnabled;
@@ -313,6 +315,13 @@ public partial class MainWindow : Window
     private async void RefreshAll_Click(object sender, RoutedEventArgs e) => await RefreshAllAsync(quiet: false);
 
     /// <summary>View menu: show or hide the ⓘ list-tips icon above the device list.</summary>
+    /// <summary>Bottom-bar Npcap warning: opens the Npcap download page.</summary>
+    private void NpcapWarn_Click(object sender, MouseButtonEventArgs e)
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://npcap.com/#download") { UseShellExecute = true }); }
+        catch { /* no browser */ }
+    }
+
     private void ListInfo_Toggled(object sender, RoutedEventArgs e)
     {
         _appData.ShowListInfo = ListInfoMenuItem.IsChecked;

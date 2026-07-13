@@ -23,6 +23,18 @@ public static class ZdpScanner
     private const byte AttrList = 0x02, AttrMac = 0x03, AttrModel = 0x04, AttrFirmware = 0x05,
                        AttrIpv4 = 0x07, AttrName = 0x16;
 
+    private static bool? _available;
+
+    /// <summary>True when the raw-capture layer (Npcap, with WinPcap API-compatible mode) is usable –
+    /// i.e. ZON discovery can run. Cached after the first check.</summary>
+    public static bool IsAvailable()
+    {
+        if (_available is { } v) return v;
+        try { _ = CaptureDeviceList.Instance.Count; _available = true; }
+        catch { _available = false; }
+        return _available.Value;
+    }
+
     public static async Task<List<DiscoveredDevice>> DiscoverAsync(
         TimeSpan duration, IProgress<DiscoveredDevice>? onFound = null, CancellationToken ct = default)
     {

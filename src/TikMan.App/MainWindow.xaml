@@ -143,6 +143,10 @@
                     <ProgressBar x:Name="MainProgress" DockPanel.Dock="Right" Width="200" Height="12" Margin="8,0,0,0" Visibility="Collapsed"/>
                     <TextBlock x:Name="PublicIpText" DockPanel.Dock="Right" Cursor="Hand" Foreground="#555555" VerticalAlignment="Center"
                                Margin="8,0,0,0" ToolTip="{loc:Loc Pub_Tooltip}" MouseLeftButtonUp="PublicIp_Click"/>
+                    <!-- Shown only when Npcap is missing: some features (Zyxel ZON) then can't run. -->
+                    <TextBlock x:Name="NpcapWarnText" DockPanel.Dock="Right" Cursor="Hand" Foreground="#B36B00" FontSize="11"
+                               VerticalAlignment="Center" Margin="8,0,0,0" Visibility="Collapsed"
+                               ToolTip="{loc:Loc Npcap_WarnTip}" Text="{loc:Loc Npcap_Warn}" MouseLeftButtonUp="NpcapWarn_Click"/>
                     <TextBlock x:Name="StatusText" VerticalAlignment="Center" Text="{loc:Loc Status_Ready}"/>
                 </DockPanel>
             </StatusBarItem>
