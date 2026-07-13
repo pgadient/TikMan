@@ -42,6 +42,7 @@ public partial class SettingsWindow : Window
         PingRetriesBox.Text = data.PingRetries.ToString();
         ExternalSshCheck.IsChecked = data.UseExternalSshClient;
         SshClientPathBox.Text = data.ExternalSshClientPath;
+        WinScpPathBox.Text = data.WinScpPath;
         ConfigPathBox.Text = string.Join("\n", DeviceStore.StorageFile,
             Path.Combine(AppContext.BaseDirectory, "oui.txt") + "  (" + LocalizationManager.T("Set_ConfigOui") + ")");
         _ready = true;
@@ -99,6 +100,12 @@ public partial class SettingsWindow : Window
         if (dialog.ShowDialog(this) == true) SshClientPathBox.Text = dialog.FileName;
     }
 
+    private void WinScpBrowse_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "WinSCP.exe|WinSCP.exe|*.exe|*.exe" };
+        if (dialog.ShowDialog(this) == true) WinScpPathBox.Text = dialog.FileName;
+    }
+
     private void Reset_Click(object sender, RoutedEventArgs e)
     {
         var answer = MessageBox.Show(this,
@@ -131,6 +138,7 @@ public partial class SettingsWindow : Window
             _data.PingRetries = Math.Clamp(retries, 0, 10);
         _data.UseExternalSshClient = ExternalSshCheck.IsChecked == true;
         _data.ExternalSshClientPath = SshClientPathBox.Text.Trim();
+        _data.WinScpPath = WinScpPathBox.Text.Trim();
 
         DialogResult = true;
     }

@@ -188,6 +188,7 @@
                     <ContextMenu>
                         <MenuItem Header="{loc:Loc Ctx_SetCredsSel}" Click="SetLogin_Click" FontWeight="SemiBold"/>
                         <MenuItem Header="{loc:Loc Ctx_SshTerminal}" Click="ContextSsh_Click"/>
+                        <MenuItem Header="{loc:Loc Ctx_OpenWinScp}" Click="OpenWinScp_Click"/>
                         <MenuItem Header="{loc:Loc Ctx_WakeOnLan}" Click="WakeDevice_Click"/>
                         <Separator/>
                         <MenuItem Header="{loc:Loc Tb_Remove}" Click="RemoveDevice_Click"/>

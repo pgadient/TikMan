@@ -449,6 +449,34 @@ public partial class MainWindow : Window
         LaunchSshTerminal(host.Trim('[', ']'), vm);
     }
 
+    /// <summary>Context menu: open the device's SSH/SFTP session in WinSCP (path set in settings).</summary>
+    private void OpenWinScp_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedDevice is not { } vm) { SetStatus(T("Msg_SelectDeviceFirst")); return; }
+
+        var winscp = _appData.WinScpPath.Trim();
+        if (winscp.Length == 0 || !File.Exists(winscp))
+        {
+            MessageBox.Show(this, T("Wsc_NoPath"), "WinSCP", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var host = (_v6Mode ? vm.Ipv6List.FirstOrDefault() ?? vm.Ipv4Address : vm.Ipv4Address);
+        if (host.Length == 0) host = vm.Host;
+        host = host.Trim('[', ']');
+        var user = vm.Model.Username.Trim();
+        var port = vm.Model.SshPort;
+        var password = CredentialProtector.Unprotect(vm.Model.EncryptedPassword);
+
+        // sftp://user[:password]@host[:port]/  – the stored credential opens the session directly.
+        var auth = Uri.EscapeDataString(user);
+        if (password.Length > 0) auth += ":" + Uri.EscapeDataString(password);
+        if (auth.Length > 0) auth += "@";
+        var session = $"sftp://{auth}{host}{(port != 22 ? $":{port}" : "")}/";
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(winscp, $"\"{session}\"") { UseShellExecute = true }); }
+        catch (Exception ex) { SetStatus($"WinSCP: {ex.Message}"); }
+    }
+
     /// <summary>Edits the settings shared by several marked devices at once.</summary>
     private void EditMultiple(List<DeviceViewModel> vms)
     {
