@@ -605,7 +605,7 @@ public class DeviceViewModel : INotifyPropertyChanged
             }
             // The identified vendor (web-scraped) counts too – a Gardena hub is IoT even when its
             // MAC belongs to a generic radio-module maker.
-            return DeviceKindText(DeviceClassifier.Guess($"{MacVendor} {IdentifiedVendor}", Model.OpenPorts));
+            return DeviceKindText(DeviceClassifier.Guess($"{MacVendor} {IdentifiedVendor}", Model.OpenPorts, Model.Model));
         }
     }
 
@@ -621,6 +621,7 @@ public class DeviceViewModel : INotifyPropertyChanged
     public static string DeviceKindText(DeviceKind kind) => kind switch
     {
         DeviceKind.Router => T("Dev_Router"),
+        DeviceKind.Firewall => T("Dev_Firewall"),
         DeviceKind.Switch => T("Dev_Switch"),
         DeviceKind.AccessPoint => T("Dev_AccessPoint"),
         DeviceKind.Printer => T("Dev_Printer"),

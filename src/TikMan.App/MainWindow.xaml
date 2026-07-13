@@ -68,7 +68,6 @@
 
                     <!-- Group B: device actions -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Stretch" Margin="0,2,14,2">
-                        <Button Style="{StaticResource ToolButton}" Click="AddDevice_Click" Content="{loc:Loc Tb_Add}"/>
                         <Button Style="{StaticResource ToolButton}" Click="SetLogin_Click" Content="{loc:Loc Tb_SetCreds}"/>
                         <Button Style="{StaticResource ToolButton}" Click="ClearAll_Click" Content="{loc:Loc Tb_Clear}"/>
                         <Separator Margin="6,2" Width="1" Background="#CCCCCC"/>

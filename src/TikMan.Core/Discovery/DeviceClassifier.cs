@@ -6,6 +6,7 @@ public enum DeviceKind
 {
     Unknown,
     Router,
+    Firewall,
     Switch,
     AccessPoint,
     Printer,
@@ -52,26 +53,72 @@ public static class DeviceClassifier
         ("raspberry", DeviceKind.Pc), // a bare Pi is a small computer; a running service above wins
     };
 
-    /// <summary>Guesses the device kind. Open ports take priority over the vendor, since a running
-    /// service is stronger evidence than who made the network card.</summary>
-    public static DeviceKind Guess(string? vendor, IReadOnlyCollection<int> openPorts)
+    // Firewall / security-appliance model lines. These are more telling than the OUI, since a Zyxel
+    // firewall and a Zyxel switch share the same vendor. Kept specific so switch models (Zyxel's
+    // XGS/GS lines) never match. Zyxel: USG / USG FLEX / ATP / ZyWALL; others by their series name.
+    private static readonly string[] FirewallModelTokens =
+    {
+        "usg", "atp", "zywall",                                  // Zyxel
+        "fortigate", "fortiwifi",                                // Fortinet
+        "sonicwall", "firebox", "firepower",                    // SonicWall, WatchGuard, Cisco
+        "pfsense", "opnsense", "netgate", "srx",                // *sense / netgate / Juniper SRX
+    };
+
+    // Vendors that essentially only make firewalls, so the maker alone is enough.
+    private static readonly string[] FirewallVendorTokens =
+    {
+        "fortinet", "palo alto", "sonicwall", "watchguard", "check point", "checkpoint", "sophos",
+    };
+
+    private static bool IsFirewall(string vendorLower, string modelLower)
+    {
+        foreach (var t in FirewallVendorTokens) if (vendorLower.Contains(t)) return true;
+        foreach (var t in FirewallModelTokens) if (modelLower.Contains(t)) return true;
+        return false;
+    }
+
+    // Trailing space so "…APC" at the end of a vendor name still matches the "apc " fragment.
+    private static DeviceKind VendorKind(string vendorLowerWithTrailingSpace)
+    {
+        foreach (var (fragment, kind) in VendorHints)
+            if (vendorLowerWithTrailingSpace.Contains(fragment)) return kind;
+        return DeviceKind.Unknown;
+    }
+
+    /// <summary>Guesses the device kind from vendor, open ports and (optionally) the model line.
+    /// Definitive services and purpose-built makers (printer/firewall/UPS/camera/NAS) win over the
+    /// generic "runs a web/SSH port ⇒ server" heuristic.</summary>
+    public static DeviceKind Guess(string? vendor, IReadOnlyCollection<int> openPorts, string? model = null)
     {
         var ports = openPorts ?? Array.Empty<int>();
         bool Has(int p) => ports.Contains(p);
 
-        // Service-based signals (strongest).
-        if (Has(9100) || Has(515) || Has(631)) return DeviceKind.Printer;
-        if (Has(554) || Has(8554)) return DeviceKind.Camera;    // RTSP
-        if (Has(5060) || Has(5061)) return DeviceKind.Phone;    // SIP
+        var v = (vendor ?? "").ToLowerInvariant() + " ";
+        var m = (model ?? "").ToLowerInvariant();
+
+        // A firewall, recognised by its model line (or a firewall-only vendor). Checked first so a
+        // security appliance that also serves a web UI isn't mistaken for a plain server.
+        if (IsFirewall(v, m)) return DeviceKind.Firewall;
+
+        // Definitive service signals – a device speaking these *is* that kind, whoever made it.
+        if (Has(9100) || Has(515) || Has(631)) return DeviceKind.Printer;  // JetDirect / LPD / IPP
+        if (Has(554) || Has(8554)) return DeviceKind.Camera;               // RTSP
+        if (Has(5060) || Has(5061)) return DeviceKind.Phone;               // SIP
         if (Has(8291) || Has(8728) || Has(8729)) return DeviceKind.Router; // MikroTik Winbox / API
+
+        // Purpose-built hardware wins over generic service ports: a printer/UPS/camera/NAS is that
+        // kind even when it also exposes a web/SSH/mail port. Printers in particular often run an
+        // embedded web + mail-relay stack that would otherwise read as a server.
+        var vendorKind = VendorKind(v);
+        if (vendorKind is DeviceKind.Printer or DeviceKind.Ups or DeviceKind.Camera or DeviceKind.Nas)
+            return vendorKind;
+
         // A mail stack (SMTP/IMAP/POP3/submission) means a server, whoever made the board.
         if (Has(25) || Has(587) || Has(465) || Has(143) || Has(993) || Has(110) || Has(995))
             return DeviceKind.Server;
 
-        // Trailing space so "…APC" at the end of a vendor name still matches the "apc " fragment.
-        var v = (vendor ?? "").ToLowerInvariant() + " ";
-        foreach (var (fragment, kind) in VendorHints)
-            if (v.Contains(fragment)) return kind;
+        // Remaining vendor hints (router/switch/AP/PC/IoT).
+        if (vendorKind != DeviceKind.Unknown) return vendorKind;
 
         // Broader service fallbacks – only reached when the vendor gave nothing away, but a running
         // service is still a decent hint on its own.
