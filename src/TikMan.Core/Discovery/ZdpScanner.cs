@@ -23,6 +23,11 @@ public static class ZdpScanner
     private const byte AttrList = 0x02, AttrMac = 0x03, AttrModel = 0x04, AttrFirmware = 0x05,
                        AttrIpv4 = 0x07, AttrName = 0x16;
 
+    // The exact field set the ZON utility asks for in its info request. Some devices (the XGS1930
+    // switch) only reply with all fields – including firmware – when the request matches this set.
+    private static readonly byte[] InfoRequestAttrs =
+        { 0x21, AttrModel, AttrFirmware, AttrIpv4, 0x2a, 0x30, 0x2f, AttrName, 0x18, 0x27, 0x2d };
+
     private static bool? _available;
 
     /// <summary>True when the raw-capture layer (Npcap, with WinPcap API-compatible mode) is usable –
@@ -103,8 +108,7 @@ public static class ZdpScanner
 
             // Ask a freshly-seen device for its full details (IPv4/firmware/name) once.
             if (existing.IpAddress.Length == 0 && queried.Add(mac))
-                dev.SendPacket(BuildRequest(srcMac, HexToMac(mac), MsgInfoRequest,
-                    new byte[] { AttrModel, AttrFirmware, AttrIpv4, AttrName }));
+                dev.SendPacket(BuildRequest(srcMac, HexToMac(mac), MsgInfoRequest, InfoRequestAttrs));
         }
     }
 
