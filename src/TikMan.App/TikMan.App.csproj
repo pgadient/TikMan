@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -10,7 +10,7 @@
     <RootNamespace>TikMan.App</RootNamespace>
     <ApplicationIcon>tikman.ico</ApplicationIcon>
     <!-- Build number auto-increments: 1.1.<days since 2026-01-01> (recomputed on every build). -->
-    <Version>1.9.5</Version>
+    <Version>1.9.6</Version>
     <Product>TikMan</Product>
     <Company>Pascal Montico-Gadient</Company>
   </PropertyGroup>
@@ -20,9 +20,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Embedded VNC viewer: RemoteViewing's RFB client (BSD-3, pure managed). The framebuffer is
-         rendered into a WPF WriteableBitmap directly, so no WinForms dependency is needed. -->
-    <PackageReference Include="Quamotion.RemoteViewing" Version="1.1.211" />
+    <!-- Embedded VNC viewer: MarcusW.VncClient RFB client (MIT). Negotiates RFB 3.3/3.7/3.8, so it
+         reaches older VNC servers too. The framebuffer is rendered into a WPF WriteableBitmap. -->
+    <PackageReference Include="Community.MarcusW.VncClient" Version="2.0.4" />
   </ItemGroup>
 
   <ItemGroup>
