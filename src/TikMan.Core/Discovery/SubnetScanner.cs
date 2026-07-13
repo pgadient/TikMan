@@ -70,12 +70,17 @@ public static class SubnetScanner
 
     private static async Task<DiscoveredDevice?> ProbeHostAsync(IPAddress ip, CancellationToken ct)
     {
+        // A single echo is easily lost on a busy segment, which makes the found-host count wobble
+        // (52 vs 53). Give each host a second chance before writing it off.
         using var ping = new Ping();
-        PingReply reply;
-        try { reply = await ping.SendPingAsync(ip, 700).ConfigureAwait(false); }
-        catch (PingException) { return null; }
-        ct.ThrowIfCancellationRequested();
-        if (reply.Status != IPStatus.Success) return null;
+        bool alive = false;
+        for (int attempt = 0; attempt < 2 && !alive; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            try { alive = (await ping.SendPingAsync(ip, 600).ConfigureAwait(false)).Status == IPStatus.Success; }
+            catch (PingException) { /* transient – retry once */ }
+        }
+        if (!alive) return null;
 
         // Probe the service ports in parallel (only reached for hosts that answered the ping).
         var probes = ServicePorts.Select(async sp => (sp.Port, Open: await IsPortOpenAsync(ip, sp.Port, ct).ConfigureAwait(false)));

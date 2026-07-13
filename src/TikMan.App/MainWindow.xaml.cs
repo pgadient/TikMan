@@ -168,9 +168,10 @@ public partial class MainWindow : Window
     private List<DeviceViewModel> MarkedDevices() =>
         DeviceGrid.SelectedItems.Cast<object>().Select(RowDevice).OfType<DeviceViewModel>().Distinct().ToList();
 
-    /// <summary>Refreshes the "X IPv4 · Y IPv6" counter under the list.</summary>
+    /// <summary>Refreshes the "N devices · X IPv4 · Y IPv6" counter under the list. The total is shown
+    /// too because a device may have both or only IPv6, so IPv4+IPv6 don't add up to it.</summary>
     private void UpdateDeviceCount() =>
-        DeviceCountText.Text = T("Cnt_Devices", _devices.Count(d => d.HasIpv4), _devices.Count(d => d.HasIpv6));
+        DeviceCountText.Text = T("Cnt_Devices", _devices.Count, _devices.Count(d => d.HasIpv4), _devices.Count(d => d.HasIpv6));
 
     // ----- Drag selection: press a row and drag to mark a range -----
     private int _dragAnchor = -1;
