@@ -555,6 +555,7 @@ public class DeviceViewModel : INotifyPropertyChanged
         ("yealink", "Yealink"), ("grandstream", "Grandstream"), ("snom", "Snom"),
         ("axis comm", "Axis"), ("hikvision", "Hikvision"), ("dahua", "Dahua"),
         ("toshiba", "Toshiba"), ("ricoh", "Ricoh"), ("xerox", "Xerox"), ("konica", "Konica Minolta"),
+        ("raspberry", "Raspberry Pi"), ("espressif", "Espressif"), ("intel corp", "Intel"),
     };
 
     private static string CleanBrandFromOui(string macLower)
