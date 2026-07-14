@@ -176,8 +176,8 @@
         <Grid Margin="6">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*" MinHeight="150"/>
-                <RowDefinition Height="6"/>
-                <RowDefinition Height="300" MinHeight="120"/>
+                <RowDefinition x:Name="SplitterRow" Height="6"/>
+                <RowDefinition x:Name="DetailRow" Height="300" MinHeight="120"/>
             </Grid.RowDefinitions>
 
             <DockPanel Grid.Row="0">
@@ -189,6 +189,7 @@
                         <TabItem Header="IPv4"/>
                         <TabItem Header="IPv6"/>
                         <TabItem Header="{loc:Loc Tab_Topology}"/>
+                        <TabItem Header="{loc:Loc Tab_TopoPhys}"/>
                     </TabControl>
                 </DockPanel>
                 <TextBlock x:Name="DeviceCountText" DockPanel.Dock="Bottom" Foreground="#666666" FontSize="11"

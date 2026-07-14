@@ -154,9 +154,20 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// <summary>Turns an mDNS hardware identifier into a (vendor, model) pair for the list columns.
     /// Apple's are code names ("AudioAccessory5,1", "AppleTV11,1", "iPhone15,2") – we name the product
     /// line and keep the exact code, e.g. "HomePod (AudioAccessory5,1)". Empty when we can't tell.</summary>
+    // Exact Apple identifiers whose product name we know outright – more telling than the line alone.
+    private static readonly Dictionary<string, string> AppleModels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["AudioAccessory1,1"] = "HomePod", ["AudioAccessory1,2"] = "HomePod",
+        ["AudioAccessory5,1"] = "HomePod mini", ["AudioAccessory6,1"] = "HomePod (2. Gen)",
+        ["AppleTV5,3"] = "Apple TV HD", ["AppleTV6,2"] = "Apple TV 4K",
+        ["AppleTV11,1"] = "Apple TV 4K (2. Gen)", ["AppleTV14,1"] = "Apple TV 4K (3. Gen)",
+    };
+
     private static (string Vendor, string Model) FriendlyFromMdns(string model)
     {
         if (model.Length == 0) return ("", "");
+        if (AppleModels.TryGetValue(model, out var exact)) return ("Apple", $"{exact} ({model})");
+
         var m = model.ToLowerInvariant();
         (string Prefix, string Line)[] apple =
         {
@@ -190,10 +201,10 @@ public class DeviceViewModel : INotifyPropertyChanged
         if (upnp.Manufacturer.Length > 0 && !Model.ExtraInfo.ContainsKey("Hersteller (Web)"))
         { Model.ExtraInfo["Hersteller (Web)"] = upnp.Manufacturer; changed = true; }
 
-        // The friendly name is what the owner sees on their TV remote ("Swisscom TV Box"); the model
-        // name is the dry one ("IP2000"). Together they are what the classifier needs.
-        var model = string.Join(" ", new[] { upnp.FriendlyName, upnp.ModelName, type }
-            .Where(s => s.Length > 0).Distinct());
+        // The model column gets the dry model name ("IP2000"); the friendly name ("Wohnzimmer unten")
+        // becomes the device name below. Only when there is no model at all does the friendly name
+        // stand in – better than an empty column.
+        var model = upnp.ModelName.Length > 0 ? upnp.ModelName : upnp.FriendlyName;
         if (model.Length > 0 && Board.Length == 0 && ModelDisplay.Length == 0)
         { Model.ExtraInfo["Modell"] = model; changed = true; }
 
@@ -564,6 +575,7 @@ public class DeviceViewModel : INotifyPropertyChanged
                     "ftp" => $"ftp://{hostPart}/",
                     "rdp" => $"rdp://{hostPart}:{port}",
                     "vnc" => $"vnc://{hostPart}:{port}",
+                    "rtsp" => $"rtsp://{hostPart}:{port}/",
                     _ => WebUrl(port, hostPart),
                 };
                 list.Add(new ProtocolVm(svc, url, ProtocolVm.BrushFor(svc)));
@@ -1219,7 +1231,9 @@ public class ProtocolVm
     public bool IsRdp => Url.StartsWith("rdp://", StringComparison.OrdinalIgnoreCase);
     /// <summary>vnc badges open an external VNC viewer on click.</summary>
     public bool IsVnc => Url.StartsWith("vnc://", StringComparison.OrdinalIgnoreCase);
-    public bool IsClickable => IsWeb || IsSsh || IsFtp || IsTelnet || IsSmb || IsRdp || IsVnc;
+    /// <summary>rtsp badges hand the camera stream to the registered player (VLC & Co.) on click.</summary>
+    public bool IsRtsp => Url.StartsWith("rtsp://", StringComparison.OrdinalIgnoreCase);
+    public bool IsClickable => IsWeb || IsSsh || IsFtp || IsTelnet || IsSmb || IsRdp || IsVnc || IsRtsp;
 
     private static readonly Dictionary<string, Brush> Cache = new();
 

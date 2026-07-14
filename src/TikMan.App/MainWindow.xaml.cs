@@ -644,6 +644,14 @@ public partial class MainWindow : Window
             }
             e.Handled = true;
         }
+        else if (proto.IsRtsp)
+        {
+            // Hand the stream to whatever owns rtsp:// (VLC registers itself). No player, no preview –
+            // but then the status bar says what is missing instead of failing silently.
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(proto.Url) { UseShellExecute = true }); }
+            catch { SetStatus(T("Rtsp_NoPlayer")); }
+            e.Handled = true;
+        }
         else if (proto.IsWeb)
         {
             try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(proto.Url) { UseShellExecute = true }); }
@@ -1202,16 +1210,13 @@ public partial class MainWindow : Window
     {
         if (!ReferenceEquals(e.OriginalSource, AddressTabs) || Ipv6Column is null || !IsLoaded) return;
 
-        // The third tab swaps the grid for the topology map – same devices, drawn as a graph.
-        bool topology = AddressTabs.SelectedIndex == 2;
-        TopologyHost.Visibility = topology ? Visibility.Visible : Visibility.Collapsed;
-        DeviceGrid.Visibility = topology ? Visibility.Collapsed : Visibility.Visible;
-        if (topology)
+        // Tabs 3 and 4 swap the grid for a topology map (logical / physical) – same devices, drawn.
+        if (AddressTabs.SelectedIndex >= 2)
         {
-            BuildTopology();
-            Topology_Fit_Click(this, new RoutedEventArgs());
+            ShowTopology(physical: AddressTabs.SelectedIndex == 3);
             return;
         }
+        HideTopology();
 
         _v6Mode = AddressTabs.SelectedIndex == 1;
         if (_v6Mode)
