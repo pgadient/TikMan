@@ -16,3 +16,7 @@ memory/
 
 # App-Konfig, falls jemand sie hierher kopiert (Passwörter, DPAPI-verschlüsselt)
 devices.json
+
+# Interner Arbeits-/Kontextvermerk für Claude Code – rein lokal, NIE veröffentlichen
+CLAUDE.md
+claude.md

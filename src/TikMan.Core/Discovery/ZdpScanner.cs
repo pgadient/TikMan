@@ -32,6 +32,14 @@ public static class ZdpScanner
         new byte[] { 0x21, 0x23, AttrModel, AttrFirmware, AttrIpv4, AttrName, 0x18, 0x27, 0x2d, 0x2e },            // AP
     };
 
+    // Zyxel devices deduplicate by transaction id: a request that reuses the id of one they already
+    // answered counts as a retransmission and is silently dropped. So every single request needs a
+    // fresh id – the discover as well as each info request (we send two of those per device). A fixed
+    // id made the devices answer the discover and then ignore the info requests entirely, which left
+    // them without an IP and dropped them from the results.
+    private static int _txId = 0x10092710;
+    private static uint NextTxId() => unchecked((uint)Interlocked.Increment(ref _txId));
+
     private static bool? _available;
 
     /// <summary>True when the raw-capture layer (Npcap, with WinPcap API-compatible mode) is usable –
@@ -122,9 +130,11 @@ public static class ZdpScanner
     }
 
     /// <summary>Builds a ZDP frame: Ethernet header + 34-byte ZDP header + one "length 0" TLV per
-    /// requested attribute + a terminator.</summary>
-    private static byte[] BuildRequest(byte[] srcMac, byte[] dstMac, ushort msgType, byte[] requestedAttrs)
+    /// requested attribute + a terminator. Each frame carries its own transaction id (public for
+    /// testing/reuse).</summary>
+    public static byte[] BuildRequest(byte[] srcMac, byte[] dstMac, ushort msgType, byte[] requestedAttrs)
     {
+        var txId = NextTxId();
         var body = new List<byte>();
         body.AddRange(dstMac);
         body.AddRange(srcMac);
@@ -133,7 +143,8 @@ public static class ZdpScanner
         body.AddRange(new byte[] { 0x00, 0x01 });                        // version
         body.Add((byte)(msgType >> 8)); body.Add((byte)(msgType & 0xFF)); // message type
         body.AddRange(srcMac);                                            // sender MAC
-        body.AddRange(new byte[] { 0x10, 0x09, 0x27, 0x11 });            // transaction id
+        body.Add((byte)(txId >> 24)); body.Add((byte)(txId >> 16));      // transaction id – fresh per
+        body.Add((byte)(txId >> 8)); body.Add((byte)txId);               // frame, else the device dedupes
         body.AddRange(new byte[20]);                                     // reserved
         foreach (var attr in requestedAttrs) { body.Add(attr); body.Add(0x00); } // request TLVs (len 0)
         body.AddRange(new byte[] { 0x00, 0x00 });                        // terminator
