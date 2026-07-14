@@ -134,11 +134,43 @@ public class DeviceViewModel : INotifyPropertyChanged
             if (!Model.ExtraInfo.TryGetValue("mDNS-Dienste", out var old) || old != svc)
             { Model.ExtraInfo["mDNS-Dienste"] = svc; changed = true; }
         }
+
+        // Fill the Model and Vendor columns from the mDNS model, so an Apple device – which has no OUI
+        // vendor and offers no UPnP – stops showing up blank. Apple publishes a hardware identifier
+        // ("AudioAccessory5,1"); we render the product line and keep the exact code beside it.
+        var (mVendor, mModel) = FriendlyFromMdns(mdns.Model);
+        if (mVendor.Length > 0 && !Model.ExtraInfo.ContainsKey("Hersteller (Web)"))
+        { Model.ExtraInfo["Hersteller (Web)"] = mVendor; changed = true; }
+        if (mModel.Length > 0 && Board.Length == 0 && !Model.ExtraInfo.ContainsKey("Produkt")
+            && !Model.ExtraInfo.ContainsKey("Modell"))
+        { Model.ExtraInfo["Modell"] = mModel; changed = true; }
         // A HomePod answers to "Bett-Pascal", but a TV or a set-top box answers to a bare UUID – which
         // is worse than no name at all, so it doesn't get to be one.
         if (mdns.HostName.Length > 0 && Name.Length == 0 && !LooksLikeUuid(mdns.HostName))
         { Name = mdns.HostName; changed = true; }
         if (changed) { Notify(nameof(DeviceType)); RaiseDetailsChanged(); }
+    }
+
+    /// <summary>Turns an mDNS hardware identifier into a (vendor, model) pair for the list columns.
+    /// Apple's are code names ("AudioAccessory5,1", "AppleTV11,1", "iPhone15,2") – we name the product
+    /// line and keep the exact code, e.g. "HomePod (AudioAccessory5,1)". Empty when we can't tell.</summary>
+    private static (string Vendor, string Model) FriendlyFromMdns(string model)
+    {
+        if (model.Length == 0) return ("", "");
+        var m = model.ToLowerInvariant();
+        (string Prefix, string Line)[] apple =
+        {
+            ("audioaccessory", "HomePod"), ("appletv", "Apple TV"), ("iphone", "iPhone"),
+            ("ipad", "iPad"), ("ipod", "iPod"), ("watch", "Apple Watch"), ("macbookair", "MacBook Air"),
+            ("macbookpro", "MacBook Pro"), ("macbook", "MacBook"), ("imac", "iMac"),
+            ("macmini", "Mac mini"), ("macpro", "Mac Pro"), ("mac", "Mac"),
+        };
+        foreach (var (prefix, line) in apple)
+            if (m.StartsWith(prefix, StringComparison.Ordinal))
+                return ("Apple", $"{line} ({model})");
+
+        // A non-Apple maker sometimes publishes a plain "model=" too; pass it through as the model.
+        return model.Contains(',') ? ("", "") : ("", model);
     }
 
     private static bool LooksLikeUuid(string s) =>
@@ -670,7 +702,15 @@ public class DeviceViewModel : INotifyPropertyChanged
             mdl.StartsWith("CSS", StringComparison.OrdinalIgnoreCase)) return DeviceKind.Switch;
         // MikroTik: RouterOS is identical on every box and any of them can be configured as anything,
         // so only the board code tells them apart – CRS/CSS are switches, a board with a radio is an
-        // access point, the rest are routers.
+        // access point, the rest are routers. The board comes from the REST API as Board, but MNDP
+        // already carries it without any credentials, where it lands in ExtraInfo["Modell"]. Use
+        // whichever we have, or every MikroTik falls through to "has a Winbox port ⇒ router".
+        if (IdentifiedVendor == "MikroTik")
+        {
+            var board = Board.Length > 0 ? Board
+                : Model.ExtraInfo.TryGetValue("Modell", out var mb) ? mb : "";
+            if (board.Length > 0) return DeviceClassifier.MikroTikKind(board);
+        }
         if (Board.Length > 0) return DeviceClassifier.MikroTikKind(Board);
         if (Model.ExtraInfo.TryGetValue("Bauform", out var ff))
         {
