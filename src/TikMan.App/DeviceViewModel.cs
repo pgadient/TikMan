@@ -1107,6 +1107,9 @@ public class ProtocolVm
             "wmi" => "#7A3EA0",
             "dns" or "snmp" or "syslog" => "#7F8C8D",
             "smtp" or "imap" => "#2980B9",
+            "jetdirect" or "lpd" or "ipp" => "#A0522D", // printing
+            "sip" => "#C2185B",                          // telephony
+            "rtsp" => "#00838F",                         // camera stream
             _ => "#95A5A6",
         };
         if (!Cache.TryGetValue(hex, out var brush))

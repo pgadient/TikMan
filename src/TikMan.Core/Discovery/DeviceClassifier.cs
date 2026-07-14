@@ -39,6 +39,9 @@ public static class DeviceClassifier
         ("kyocera", DeviceKind.Printer), ("xerox", DeviceKind.Printer), ("ricoh", DeviceKind.Printer),
         ("hikvision", DeviceKind.Camera), ("dahua", DeviceKind.Camera), ("axis comm", DeviceKind.Camera),
         ("reolink", DeviceKind.Camera), ("mobotix", DeviceKind.Camera),
+        // VoIP phone makers – these ship desk phones, not servers, even when only 443 is open.
+        ("yealink", DeviceKind.Phone), ("snom", DeviceKind.Phone), ("grandstream", DeviceKind.Phone),
+        ("polycom", DeviceKind.Phone), ("audiocodes", DeviceKind.Phone), ("gigaset", DeviceKind.Phone),
         ("espressif", DeviceKind.IoT), ("tuya", DeviceKind.IoT), ("sonoff", DeviceKind.IoT),
         ("shelly", DeviceKind.IoT), ("sonos", DeviceKind.IoT), ("nest", DeviceKind.IoT),
         ("gardena", DeviceKind.IoT), ("mystrom", DeviceKind.IoT), ("netatmo", DeviceKind.IoT),
@@ -53,27 +56,53 @@ public static class DeviceClassifier
         ("raspberry", DeviceKind.Pc), // a bare Pi is a small computer; a running service above wins
     };
 
-    // Firewall / security-appliance model lines. These are more telling than the OUI, since a Zyxel
-    // firewall and a Zyxel switch share the same vendor. Kept specific so switch models (Zyxel's
-    // XGS/GS lines) never match. Zyxel: USG / USG FLEX / ATP / ZyWALL; others by their series name.
-    private static readonly string[] FirewallModelTokens =
+    // ---- Model lines ------------------------------------------------------------------------
+    // The model is the strongest signal there is: one vendor ships firewalls, switches and APs under
+    // the same OUI, and a copier serves web + mail + SNMP exactly like a server would. So whenever a
+    // device told us its model, that decides – before any port or vendor heuristic.
+
+    // Zyxel USG/USG FLEX/ATP/ZyWALL and the usual suspects. Kept specific so Zyxel's XGS/GS switch
+    // lines never match (Sophos' XGS firewalls are caught by the vendor list instead).
+    private static readonly string[] FirewallModels =
     {
-        "usg", "atp", "zywall",                                  // Zyxel
-        "fortigate", "fortiwifi",                                // Fortinet
-        "sonicwall", "firebox", "firepower",                    // SonicWall, WatchGuard, Cisco
-        "pfsense", "opnsense", "netgate", "srx",                // *sense / netgate / Juniper SRX
+        "usg", "atp", "zywall",                    // Zyxel
+        "fortigate", "fortiwifi",                  // Fortinet
+        "sonicwall", "firebox", "firepower",       // SonicWall, WatchGuard, Cisco
+        "pfsense", "opnsense", "netgate", "srx",   // *sense / Netgate / Juniper SRX
     };
 
     // Vendors that essentially only make firewalls, so the maker alone is enough.
-    private static readonly string[] FirewallVendorTokens =
+    private static readonly string[] FirewallVendors =
     {
         "fortinet", "palo alto", "sonicwall", "watchguard", "check point", "checkpoint", "sophos",
     };
 
-    private static bool IsFirewall(string vendorLower, string modelLower)
+    // Printers / copiers / MFPs. A multifunction device is a printer, not a server, however many
+    // services it exposes (Toshiba e-STUDIO, Brother MFC/DCP/HL, HP LaserJet, Canon imageRUNNER, …).
+    private static readonly string[] PrinterModels =
     {
-        foreach (var t in FirewallVendorTokens) if (vendorLower.Contains(t)) return true;
-        foreach (var t in FirewallModelTokens) if (modelLower.Contains(t)) return true;
+        "e-studio", "mfc-", "dcp-", "hl-", "laserjet", "officejet", "designjet", "imagerunner",
+        "imageclass", "workcentre", "versalink", "altalink", "ecosys", "taskalfa", "aficio",
+    };
+
+    // Access points. Needed because their vendor (Zyxel, Cisco, …) otherwise reads as "switch".
+    private static readonly string[] ApModels =
+    {
+        "nwa", "wac6", "wax",        // Zyxel
+        "uap", "unifi ap",           // Ubiquiti
+        "iap-", "aironet",           // Aruba, Cisco
+        "eap",                       // TP-Link Omada
+    };
+
+    // IP phones and analog-telephone adapters (Yealink T-series, Cisco SPA, Grandstream GXP, …).
+    private static readonly string[] PhoneModels =
+    {
+        "phone", "spa1", "spa5", "yealink", "snom", "grandstream", "gxp", "polycom", "vvx",
+    };
+
+    private static bool MatchesAny(string text, string[] tokens)
+    {
+        foreach (var t in tokens) if (text.Contains(t, StringComparison.Ordinal)) return true;
         return false;
     }
 
@@ -85,9 +114,10 @@ public static class DeviceClassifier
         return DeviceKind.Unknown;
     }
 
-    /// <summary>Guesses the device kind from vendor, open ports and (optionally) the model line.
-    /// Definitive services and purpose-built makers (printer/firewall/UPS/camera/NAS) win over the
-    /// generic "runs a web/SSH port ⇒ server" heuristic.</summary>
+    /// <summary>Guesses the device kind from the model line, the open ports and the vendor – in that
+    /// order of trust. Most devices on a LAN are utility gear (printers, phones, switches, APs,
+    /// appliances) that happen to serve a web UI, so "Server" is only returned on real evidence, not
+    /// merely because something answers on 80/443/22.</summary>
     public static DeviceKind Guess(string? vendor, IReadOnlyCollection<int> openPorts, string? model = null)
     {
         var ports = openPorts ?? Array.Empty<int>();
@@ -96,39 +126,45 @@ public static class DeviceClassifier
         var v = (vendor ?? "").ToLowerInvariant() + " ";
         var m = (model ?? "").ToLowerInvariant();
 
-        // A firewall, recognised by its model line (or a firewall-only vendor). Checked first so a
-        // security appliance that also serves a web UI isn't mistaken for a plain server.
-        if (IsFirewall(v, m)) return DeviceKind.Firewall;
+        // 1) The model line, when the device gave us one.
+        if (MatchesAny(m, FirewallModels) || MatchesAny(v, FirewallVendors)) return DeviceKind.Firewall;
+        if (MatchesAny(m, PrinterModels)) return DeviceKind.Printer;
+        if (MatchesAny(m, ApModels)) return DeviceKind.AccessPoint;
+        if (MatchesAny(m, PhoneModels)) return DeviceKind.Phone;
 
-        // Definitive service signals – a device speaking these *is* that kind, whoever made it.
+        // 2) Services only one kind of device speaks.
         if (Has(9100) || Has(515) || Has(631)) return DeviceKind.Printer;  // JetDirect / LPD / IPP
-        if (Has(554) || Has(8554)) return DeviceKind.Camera;               // RTSP
         if (Has(5060) || Has(5061)) return DeviceKind.Phone;               // SIP
+        if (Has(554) || Has(8554)) return DeviceKind.Camera;               // RTSP
         if (Has(8291) || Has(8728) || Has(8729)) return DeviceKind.Router; // MikroTik Winbox / API
 
-        // Purpose-built hardware wins over generic service ports: a printer/UPS/camera/NAS is that
-        // kind even when it also exposes a web/SSH/mail port. Printers in particular often run an
-        // embedded web + mail-relay stack that would otherwise read as a server.
+        // 3) A Windows box announces itself with RDP, or with the RPC/WMI + SMB pair. That beats the
+        //    OUI: a workstation on a Zyxel-branded NIC is a PC, not a switch.
+        if (Has(3389) || (Has(135) && Has(445))) return DeviceKind.Pc;
+
+        // 4) Purpose-built makers beat the port heuristics – a printer/phone/UPS/camera/NAS stays what
+        //    it is even though it also serves a web UI, SNMP and scan-to-mail.
         var vendorKind = VendorKind(v);
-        if (vendorKind is DeviceKind.Printer or DeviceKind.Ups or DeviceKind.Camera or DeviceKind.Nas)
+        if (vendorKind is DeviceKind.Printer or DeviceKind.Phone or DeviceKind.Ups
+            or DeviceKind.Camera or DeviceKind.Nas)
             return vendorKind;
 
-        // A mail stack (SMTP/IMAP/POP3/submission) means a server, whoever made the board.
-        if (Has(25) || Has(587) || Has(465) || Has(143) || Has(993) || Has(110) || Has(995))
+        // 5) A real mailbox server (IMAP/POP/submission). Bare SMTP does *not* count: that is what
+        //    every copier's scan-to-mail listens on, and it used to file them all as servers.
+        if (Has(143) || Has(993) || Has(110) || Has(995) || Has(587) || Has(465))
             return DeviceKind.Server;
 
-        // Remaining vendor hints (router/switch/AP/PC/IoT).
+        // 6) Remaining vendor hints (router / switch / AP / PC / IoT).
         if (vendorKind != DeviceKind.Unknown) return vendorKind;
 
-        // Broader service fallbacks – only reached when the vendor gave nothing away, but a running
-        // service is still a decent hint on its own.
-        if (Has(548) || Has(2049) || Has(5000) || Has(5001)) return DeviceKind.Nas;   // AFP / NFS / Synology DSM
+        // 7) Narrow fallbacks. Deliberately *not* "has a web or SSH port ⇒ server": most such devices
+        //    are utility gear with a web UI, and calling them a server is worse than saying nothing.
+        if (Has(548) || Has(2049) || Has(5000) || Has(5001)) return DeviceKind.Nas;   // AFP / NFS / DSM
         if (Has(1883) || Has(8883)) return DeviceKind.IoT;                            // MQTT broker
         if (Has(3306) || Has(5432) || Has(1433) || Has(27017) || Has(6379) ||
             Has(32400) || Has(8096) || Has(8006)) return DeviceKind.Server;          // database / media / Proxmox
-        if (Has(3389)) return DeviceKind.Pc;                     // RDP → a Windows box
+        if (Has(22) && Has(445)) return DeviceKind.Server;      // a Unix host actually sharing files
         if (Has(445) || Has(139)) return DeviceKind.Pc;         // Windows / SMB host
-        if (Has(22) || Has(80) || Has(443)) return DeviceKind.Server; // an SSH / web-facing box
 
         return DeviceKind.Unknown;
     }

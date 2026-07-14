@@ -17,9 +17,13 @@ public static class SubnetScanner
     {
         (21, "ftp"), (22, "ssh"), (23, "telnet"), (25, "smtp"), (53, "dns"),
         (80, "http"), (135, "wmi"), (139, "netbios"), (143, "imap"), (443, "https"), (445, "smb"), (465, "smtps"),
-        (587, "submission"), (873, "rsync"), (990, "ftps"), (993, "imaps"),
-        (3389, "rdp"), (5900, "vnc"), (5901, "vnc"),
-        (8080, "http-alt"), (8291, "winbox"), (8728, "api"), (8729, "api-ssl"),
+        // Printing (LPD/IPP/JetDirect), RTSP and SIP: these say outright what a device *is* – a copier,
+        // a camera, a phone – where a bare web port says nothing. Without them everything with a web UI
+        // ended up looking like a server.
+        (515, "lpd"), (554, "rtsp"), (587, "submission"), (631, "ipp"), (873, "rsync"), (990, "ftps"),
+        (993, "imaps"),
+        (3389, "rdp"), (5060, "sip"), (5900, "vnc"), (5901, "vnc"),
+        (8080, "http-alt"), (8291, "winbox"), (8728, "api"), (8729, "api-ssl"), (9100, "jetdirect"),
     };
 
     // SNMP (UDP 161) can't be found by the TCP connect scan, so it's detected out-of-band with a
