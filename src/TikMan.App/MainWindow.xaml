@@ -366,7 +366,7 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Border CornerRadius="3" Background="{Binding Color}" Margin="0,1,4,1" Padding="5,1"
-                                                    ToolTip="{Binding Url}" MouseLeftButtonUp="ProtocolBadge_Click">
+                                                    ToolTip="{Binding Tooltip}" MouseLeftButtonUp="ProtocolBadge_Click">
                                                 <Border.Style>
                                                     <Style TargetType="Border">
                                                         <Style.Triggers>

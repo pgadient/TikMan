@@ -148,7 +148,14 @@ public class DeviceViewModel : INotifyPropertyChanged
         // is worse than no name at all, so it doesn't get to be one.
         if (mdns.HostName.Length > 0 && Name.Length == 0 && !LooksLikeUuid(mdns.HostName))
         { Name = mdns.HostName; changed = true; }
-        if (changed) { Notify(nameof(DeviceType)); RaiseDetailsChanged(); }
+
+        // AirPrint / AirScan capabilities become badges next to the port-based ones.
+        if (mdns.AirPrint && !Model.ExtraInfo.ContainsKey("AirPrint"))
+        { Model.ExtraInfo["AirPrint"] = "✓"; changed = true; }
+        if (mdns.AirScan && !Model.ExtraInfo.ContainsKey("AirScan"))
+        { Model.ExtraInfo["AirScan"] = "✓"; changed = true; }
+
+        if (changed) { Notify(nameof(DeviceType)); Notify(nameof(SupportedProtocols)); RaiseDetailsChanged(); }
     }
 
     /// <summary>Turns an mDNS hardware identifier into a (vendor, model) pair for the list columns.
@@ -580,6 +587,12 @@ public class DeviceViewModel : INotifyPropertyChanged
                 };
                 list.Add(new ProtocolVm(svc, url, ProtocolVm.BrushFor(svc)));
             }
+
+            // Capabilities announced over mDNS rather than a port: printing/scanning the Apple way.
+            if (Model.ExtraInfo.ContainsKey("AirPrint"))
+                list.Add(new ProtocolVm("airprint", "", ProtocolVm.BrushFor("airprint"), T("Badge_AirPrint")));
+            if (Model.ExtraInfo.ContainsKey("AirScan"))
+                list.Add(new ProtocolVm("airscan", "", ProtocolVm.BrushFor("airscan"), T("Badge_AirScan")));
         }
         else
         {
@@ -1214,10 +1227,13 @@ public class SmbShareVm
 /// carry a URL (opened on double-click).</summary>
 public class ProtocolVm
 {
-    public ProtocolVm(string name, string url, Brush color) { Name = name; Url = url; Color = color; }
+    public ProtocolVm(string name, string url, Brush color, string? tooltip = null)
+    { Name = name; Url = url; Color = color; Tooltip = tooltip ?? url; }
     public string Name { get; }
     public string Url { get; }
     public Brush Color { get; }
+    /// <summary>Hover text – the URL for clickable badges, a capability description otherwise.</summary>
+    public string Tooltip { get; }
     public bool IsWeb => Url.StartsWith("http", StringComparison.OrdinalIgnoreCase);
     /// <summary>ssh badges open an interactive terminal session on click.</summary>
     public bool IsSsh => Url.StartsWith("ssh://", StringComparison.OrdinalIgnoreCase);
@@ -1258,6 +1274,7 @@ public class ProtocolVm
             "sip" => "#C2185B",                          // telephony
             "rtsp" => "#00838F",                         // camera stream
             "ipmi" or "amt" => "#5D4037",                // out-of-band management (BMC)
+            "airprint" or "airscan" => "#546E7A",        // mDNS-announced capability, not a port
             _ => "#95A5A6",
         };
         if (!Cache.TryGetValue(hex, out var brush))

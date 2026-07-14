@@ -28,13 +28,17 @@ public static class MdnsScanner
         "_googlecast._tcp.local",       // Chromecast, Android TV
         "_spotify-connect._tcp.local", "_sonos._tcp.local",
         "_hap._tcp.local",              // HomeKit accessory
-        "_ipp._tcp.local", "_printer._tcp.local", "_pdl-datastream._tcp.local",
+        "_ipp._tcp.local", "_ipps._tcp.local", "_printer._tcp.local", "_pdl-datastream._tcp.local",
+        "_uscan._tcp.local", "_uscans._tcp.local",   // AirScan / eSCL scanning
         "_smb._tcp.local", "_afpovertcp._tcp.local", "_adisk._tcp.local",
         "_workstation._tcp.local", "_ssh._tcp.local", "_http._tcp.local",
     };
 
-    /// <summary>What a device told us about itself over mDNS.</summary>
-    public sealed record MdnsInfo(string Ip, string HostName, string Model, IReadOnlyList<string> Services);
+    /// <summary>What a device told us about itself over mDNS. AirPrint is recognised by the URF key
+    /// in a printer's TXT record (mandatory for AirPrint, absent from plain IPP printers); AirScan by
+    /// the _uscan/_uscans (eSCL) service.</summary>
+    public sealed record MdnsInfo(string Ip, string HostName, string Model, IReadOnlyList<string> Services,
+        bool AirPrint = false, bool AirScan = false);
 
     /// <summary>Queries every IPv4 interface and collects the answers, keyed by the responder's IP.
     /// Records are credited to the host that sent them, which is exactly right: over mDNS a device
@@ -54,7 +58,9 @@ public static class MdnsScanner
         return hosts.ToDictionary(
             kv => kv.Key,
             kv => new MdnsInfo(kv.Key, kv.Value.Name, kv.Value.Model,
-                               kv.Value.Services.OrderBy(s => s, StringComparer.Ordinal).ToList()),
+                               kv.Value.Services.OrderBy(s => s, StringComparer.Ordinal).ToList(),
+                               kv.Value.AirPrint,
+                               kv.Value.Services.Contains("_uscan._tcp") || kv.Value.Services.Contains("_uscans._tcp")),
             StringComparer.OrdinalIgnoreCase);
     }
 
@@ -62,7 +68,10 @@ public static class MdnsScanner
     {
         public string Name = "";
         public string Model = "";
+        public bool AirPrint;
         public readonly HashSet<string> Services = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Print/scan service instances whose TXT we still have to ask for.</summary>
+        public readonly List<string> PendingTxt = new();
     }
 
     private static IEnumerable<IPAddress> LocalIPv4() =>
@@ -94,14 +103,28 @@ public static class MdnsScanner
 
         try
         {
-            foreach (var q in Queries)
+            async Task SendAllAsync()
             {
-                var packet = BuildQuery(q);
-                await udp.SendAsync(packet, packet.Length, new IPEndPoint(Multicast, Port)).ConfigureAwait(false);
+                foreach (var q in Queries)
+                {
+                    var packet = BuildQuery(q);
+                    await udp.SendAsync(packet, packet.Length, new IPEndPoint(Multicast, Port)).ConfigureAwait(false);
+                }
             }
+            await SendAllAsync().ConfigureAwait(false);
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(duration);
+
+            // Ask a second time midway: a device that has *just* answered someone suppresses the same
+            // answer for about a second (RFC 6762 known-answer suppression), so a single shot misses
+            // whatever spoke recently. The repeat lands after the suppression window.
+            _ = Task.Delay(1500, cts.Token).ContinueWith(async _ =>
+            {
+                try { await SendAllAsync().ConfigureAwait(false); }
+                catch (Exception) { /* socket already closed – the scan is over anyway */ }
+            }, TaskContinuationOptions.OnlyOnRanToCompletion);
+            var txtAsked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             while (!cts.IsCancellationRequested)
             {
                 UdpReceiveResult reply;
@@ -112,11 +135,29 @@ public static class MdnsScanner
                 if (reply.RemoteEndPoint.Address.Equals(local)) continue; // our own query coming back
                 var ip = reply.RemoteEndPoint.Address.ToString();
 
+                Host host;
                 lock (hosts)
                 {
-                    if (!hosts.TryGetValue(ip, out var host)) hosts[ip] = host = new Host();
+                    if (!hosts.TryGetValue(ip, out host!)) hosts[ip] = host = new Host();
                     Absorb(reply.Buffer, host);
                 }
+
+                // A PTR answer names the service *instance*, but its TXT – where AirPrint's URF key
+                // lives – often isn't volunteered alongside. Ask for it explicitly, once per instance.
+                List<string>? wanted = null;
+                lock (hosts)
+                {
+                    foreach (var inst in host.PendingTxt)
+                        if (txtAsked.Add(inst)) (wanted ??= new List<string>()).Add(inst);
+                    host.PendingTxt.Clear();
+                }
+                if (wanted is not null)
+                    foreach (var inst in wanted)
+                    {
+                        var q = BuildQuery(inst, qtype: 16);
+                        try { await udp.SendAsync(q, q.Length, new IPEndPoint(Multicast, Port)).ConfigureAwait(false); }
+                        catch (SocketException) { /* interface hiccup – the sweep goes on */ }
+                    }
             }
         }
         catch (SocketException) { /* interface went away mid-scan */ }
@@ -126,8 +167,9 @@ public static class MdnsScanner
         }
     }
 
-    /// <summary>A standard mDNS question: one PTR query for the given service type.</summary>
-    private static byte[] BuildQuery(string name)
+    /// <summary>A standard mDNS question – a PTR query for a service type, or (qtype 16) a TXT query
+    /// for one service instance.</summary>
+    private static byte[] BuildQuery(string name, ushort qtype = 12)
     {
         var body = new List<byte>
         {
@@ -142,7 +184,7 @@ public static class MdnsScanner
             body.AddRange(Encoding.UTF8.GetBytes(label));
         }
         body.Add(0x00);
-        body.AddRange(new byte[] { 0x00, 0x0C }); // QTYPE = PTR
+        body.Add((byte)(qtype >> 8)); body.Add((byte)qtype);
         body.AddRange(new byte[] { 0x00, 0x01 }); // QCLASS = IN
         return body.ToArray();
     }
@@ -185,7 +227,13 @@ public static class MdnsScanner
                     case 12:                         // PTR – "…_airplay._tcp.local" → an offered service
                         AddService(host, name);
                         var target = pos;
-                        AddService(host, ReadName(buf, ref target));
+                        var instance = ReadName(buf, ref target);
+                        AddService(host, instance);
+                        // Printing/scanning instances get a follow-up TXT query: that record carries
+                        // the URF key that says "AirPrint", and it is rarely volunteered unasked.
+                        if (instance.Contains("._ipp", StringComparison.OrdinalIgnoreCase) ||
+                            instance.Contains("._uscan", StringComparison.OrdinalIgnoreCase))
+                            host.PendingTxt.Add(instance);
                         break;
 
                     case 33:                         // SRV – its owner name carries the service type
@@ -231,6 +279,10 @@ public static class MdnsScanner
             foreach (var key in new[] { "model=", "am=", "md=" })
                 if (entry.StartsWith(key, StringComparison.OrdinalIgnoreCase))
                     OfferModel(host, entry[key.Length..].Trim());
+
+            // The URF key (Apple's raster format) is mandatory for AirPrint and absent from plain IPP
+            // printers – its presence alone is the AirPrint capability.
+            if (entry.StartsWith("URF=", StringComparison.OrdinalIgnoreCase)) host.AirPrint = true;
         }
     }
 

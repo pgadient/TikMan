@@ -15,11 +15,13 @@
             </StackPanel>
         </DockPanel>
 
-        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
+        <!-- The settings grouped into tabs; every control keeps its x:Name, so the code-behind reads
+             and writes exactly as before. Layout rule unchanged: label on its own line, control
+             below – long translated labels never overlap a control. -->
+        <TabControl>
+        <TabItem Header="{loc:Loc SetTab_General}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,8,12,0">
             <StackPanel>
-                <!-- Every setting stacks vertically: a label on its own line, the control below –
-                     so long translated labels never overlap a control. -->
-
                 <TextBlock FontWeight="SemiBold" Text="{loc:Loc Set_Language}"/>
                 <ComboBox x:Name="LanguageCombo" Width="240" HorizontalAlignment="Left" Margin="0,3,0,0"
                           VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag"
@@ -35,24 +37,6 @@
                 </ComboBox>
                 <TextBlock Foreground="#777777" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap" Text="{loc:Loc Set_LangHint}"/>
 
-                <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_BackupMethod}"/>
-                <ComboBox x:Name="BackupMethodCombo" Width="240" HorizontalAlignment="Left" Margin="0,3,0,0"
-                          VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag">
-                    <ComboBoxItem Tag="Auto" Content="{loc:Loc Set_BackupAuto}"/>
-                    <ComboBoxItem Tag="Web" Content="{loc:Loc Set_BackupWeb}"/>
-                    <ComboBoxItem Tag="Ssh" Content="{loc:Loc Set_BackupSsh}"/>
-                </ComboBox>
-                <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_BackupInfo}"/>
-
-                <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_DefaultChannel}"/>
-                <ComboBox x:Name="DefaultChannelCombo" Width="200" HorizontalAlignment="Left" Margin="0,3,0,0"
-                          VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag">
-                    <ComboBoxItem Tag="stable">stable</ComboBoxItem>
-                    <ComboBoxItem Tag="long-term">long-term</ComboBoxItem>
-                    <ComboBoxItem Tag="testing">testing</ComboBoxItem>
-                    <ComboBoxItem Tag="development">development</ComboBoxItem>
-                </ComboBox>
-
                 <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_CoffeeButton}"/>
                 <ComboBox x:Name="CoffeeButtonCombo" Width="200" HorizontalAlignment="Left" Margin="0,3,0,0"
                           VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag">
@@ -61,25 +45,7 @@
                     <ComboBoxItem Tag="off" Content="{loc:Loc Set_CoffeeOff}"/>
                 </ComboBox>
 
-                <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_ScanTitle}"/>
-                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                    <TextBlock VerticalAlignment="Center" Text="{loc:Loc Set_PingTimeout}"/>
-                    <TextBox x:Name="PingTimeoutBox" Width="70" Height="24" Margin="8,0,0,0" VerticalContentAlignment="Center"/>
-                    <TextBlock VerticalAlignment="Center" Margin="20,0,0,0" Text="{loc:Loc Set_PingRetries}"/>
-                    <TextBox x:Name="PingRetriesBox" Width="50" Height="24" Margin="8,0,0,0" VerticalContentAlignment="Center"/>
-                </StackPanel>
-                <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_ScanHint}"/>
-
                 <Separator Margin="0,14,0,0"/>
-
-                <CheckBox x:Name="IgnoreCertCheck" Margin="0,12,0,0" Content="{loc:Loc Set_IgnoreCert}"/>
-                <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_IgnoreCertHint}"/>
-
-                <CheckBox x:Name="AllowHttpCheck" Margin="0,12,0,0" Content="{loc:Loc Set_AllowHttp}"/>
-                <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#B36B00" FontSize="11" Text="{loc:Loc Set_AllowHttpHint}"/>
-
-                <CheckBox x:Name="ForceMailtoCheck" Margin="0,12,0,0" Content="{loc:Loc Set_ForceMailto}"/>
-                <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_ForceMailtoHint}"/>
 
                 <CheckBox x:Name="PersistListCheck" Margin="0,12,0,0" Content="{loc:Loc Set_PersistList}"/>
                 <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_PersistHint}"/>
@@ -90,20 +56,21 @@
                 <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_SingleProgressHint}"/>
 
                 <CheckBox x:Name="VncNoticeCheck" Margin="0,12,0,0" Content="{loc:Loc Set_VncNotice}"/>
+            </StackPanel>
+        </ScrollViewer>
+        </TabItem>
 
-                <CheckBox x:Name="ExternalSshCheck" Margin="0,12,0,0" Content="{loc:Loc Set_UseExternalSsh}"/>
-                <DockPanel Margin="20,4,0,0">
-                    <Button DockPanel.Dock="Right" Content="…" Padding="8,2" Margin="4,0,0,0" Click="SshClientBrowse_Click"/>
-                    <TextBox x:Name="SshClientPathBox" Height="24" VerticalContentAlignment="Center"/>
-                </DockPanel>
-
-                <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_WinScpPath}"/>
-                <DockPanel Margin="0,4,0,0">
-                    <Button DockPanel.Dock="Right" Content="…" Padding="8,2" Margin="4,0,0,0" Click="WinScpBrowse_Click"/>
-                    <TextBox x:Name="WinScpPathBox" Height="24" VerticalContentAlignment="Center"/>
-                </DockPanel>
-
-                <TextBlock Margin="0,14,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_CredsMovedHint}"/>
+        <TabItem Header="{loc:Loc SetTab_Scan}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,8,12,0">
+            <StackPanel>
+                <TextBlock FontWeight="SemiBold" Text="{loc:Loc Set_ScanTitle}"/>
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                    <TextBlock VerticalAlignment="Center" Text="{loc:Loc Set_PingTimeout}"/>
+                    <TextBox x:Name="PingTimeoutBox" Width="70" Height="24" Margin="8,0,0,0" VerticalContentAlignment="Center"/>
+                    <TextBlock VerticalAlignment="Center" Margin="20,0,0,0" Text="{loc:Loc Set_PingRetries}"/>
+                    <TextBox x:Name="PingRetriesBox" Width="50" Height="24" Margin="8,0,0,0" VerticalContentAlignment="Center"/>
+                </StackPanel>
+                <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_ScanHint}"/>
 
                 <Separator Margin="0,14,0,0"/>
 
@@ -125,16 +92,73 @@
                 <!-- Npcap / Zyxel ZON capability -->
                 <TextBlock Margin="0,10,0,0" FontWeight="SemiBold" Text="{loc:Loc Set_NpcapTitle}"/>
                 <TextBlock x:Name="NpcapStatusText" Margin="0,2,0,0" TextWrapping="Wrap" FontSize="11"/>
+            </StackPanel>
+        </ScrollViewer>
+        </TabItem>
+
+        <TabItem Header="{loc:Loc SetTab_Conn}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,8,12,0">
+            <StackPanel>
+                <TextBlock FontWeight="SemiBold" Text="{loc:Loc Set_BackupMethod}"/>
+                <ComboBox x:Name="BackupMethodCombo" Width="240" HorizontalAlignment="Left" Margin="0,3,0,0"
+                          VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag">
+                    <ComboBoxItem Tag="Auto" Content="{loc:Loc Set_BackupAuto}"/>
+                    <ComboBoxItem Tag="Web" Content="{loc:Loc Set_BackupWeb}"/>
+                    <ComboBoxItem Tag="Ssh" Content="{loc:Loc Set_BackupSsh}"/>
+                </ComboBox>
+                <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_BackupInfo}"/>
+
+                <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_DefaultChannel}"/>
+                <ComboBox x:Name="DefaultChannelCombo" Width="200" HorizontalAlignment="Left" Margin="0,3,0,0"
+                          VerticalContentAlignment="Center" Height="26" SelectedValuePath="Tag">
+                    <ComboBoxItem Tag="stable">stable</ComboBoxItem>
+                    <ComboBoxItem Tag="long-term">long-term</ComboBoxItem>
+                    <ComboBoxItem Tag="testing">testing</ComboBoxItem>
+                    <ComboBoxItem Tag="development">development</ComboBoxItem>
+                </ComboBox>
 
                 <Separator Margin="0,14,0,0"/>
 
+                <CheckBox x:Name="IgnoreCertCheck" Margin="0,12,0,0" Content="{loc:Loc Set_IgnoreCert}"/>
+                <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_IgnoreCertHint}"/>
+
+                <CheckBox x:Name="AllowHttpCheck" Margin="0,12,0,0" Content="{loc:Loc Set_AllowHttp}"/>
+                <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#B36B00" FontSize="11" Text="{loc:Loc Set_AllowHttpHint}"/>
+
+                <CheckBox x:Name="ForceMailtoCheck" Margin="0,12,0,0" Content="{loc:Loc Set_ForceMailto}"/>
+                <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_ForceMailtoHint}"/>
+
+                <Separator Margin="0,14,0,0"/>
+
+                <CheckBox x:Name="ExternalSshCheck" Margin="0,12,0,0" Content="{loc:Loc Set_UseExternalSsh}"/>
+                <DockPanel Margin="20,4,0,0">
+                    <Button DockPanel.Dock="Right" Content="…" Padding="8,2" Margin="4,0,0,0" Click="SshClientBrowse_Click"/>
+                    <TextBox x:Name="SshClientPathBox" Height="24" VerticalContentAlignment="Center"/>
+                </DockPanel>
+
+                <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_WinScpPath}"/>
+                <DockPanel Margin="0,4,0,0">
+                    <Button DockPanel.Dock="Right" Content="…" Padding="8,2" Margin="4,0,0,0" Click="WinScpBrowse_Click"/>
+                    <TextBox x:Name="WinScpPathBox" Height="24" VerticalContentAlignment="Center"/>
+                </DockPanel>
+
+                <TextBlock Margin="0,14,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_CredsMovedHint}"/>
+            </StackPanel>
+        </ScrollViewer>
+        </TabItem>
+
+        <TabItem Header="{loc:Loc SetTab_Files}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,8,12,0">
+            <StackPanel>
                 <!-- Config file locations -->
-                <TextBlock Margin="0,10,0,0" FontWeight="SemiBold" Text="{loc:Loc Set_ConfigTitle}"/>
+                <TextBlock FontWeight="SemiBold" Text="{loc:Loc Set_ConfigTitle}"/>
                 <TextBlock Margin="0,2,0,0" TextWrapping="Wrap" Foreground="#B36B00" FontSize="11" Text="{loc:Loc Set_ConfigHint}"/>
                 <TextBox x:Name="ConfigPathBox" Margin="0,6,0,0" IsReadOnly="True" TextWrapping="Wrap"
                          Background="#F7F7F7" BorderThickness="1" BorderBrush="#DDDDDD" Padding="6" FontSize="11" FontFamily="Consolas"/>
                 <Button HorizontalAlignment="Left" Margin="0,6,0,0" Padding="10,4" Click="OpenConfigFolder_Click" Content="{loc:Loc Set_OpenFolder}"/>
             </StackPanel>
         </ScrollViewer>
+        </TabItem>
+        </TabControl>
     </DockPanel>
 </Window>
