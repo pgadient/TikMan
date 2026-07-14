@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace TikMan.Core.Discovery;
 
 /// <summary>Rough kind of a discovered device, guessed from its vendor (OUI) and open ports.
@@ -61,21 +63,86 @@ public static class DeviceClassifier
     // the same OUI, and a copier serves web + mail + SNMP exactly like a server would. So whenever a
     // device told us its model, that decides – before any port or vendor heuristic.
 
-    // Zyxel USG/USG FLEX/ATP/ZyWALL and the usual suspects. Kept specific so Zyxel's XGS/GS switch
-    // lines never match (Sophos' XGS firewalls are caught by the vendor list instead).
-    private static readonly string[] FirewallModels =
-    {
-        "usg", "atp", "zywall",                    // Zyxel
-        "fortigate", "fortiwifi",                  // Fortinet
-        "sonicwall", "firebox", "firepower",       // SonicWall, WatchGuard, Cisco
-        "pfsense", "opnsense", "netgate", "srx",   // *sense / Netgate / Juniper SRX
-    };
-
-    // Vendors that essentially only make firewalls, so the maker alone is enough.
+    // Vendors that essentially only ship security appliances – the maker alone settles it.
     private static readonly string[] FirewallVendors =
     {
         "fortinet", "palo alto", "sonicwall", "watchguard", "check point", "checkpoint", "sophos",
+        "stormshield", "clavister", "hillstone", "forcepoint", "netgate", "endian", "untangle",
     };
+
+    // Series names that mean "firewall" whoever built them. Matched as whole model *tokens* (see
+    // Tokenize), so "USG40" → [usg, 40] hits while a stray "usg"/"atp" inside an unrelated word
+    // ("STRATPOINT") does not – which a plain substring match would happily have swallowed.
+    private static readonly string[] FirewallSeries =
+    {
+        "usg", "zywall", "atp", "nsg",                      // Zyxel (USG / USG FLEX / ATP / ZyWALL)
+        "fortigate", "fortiwifi",                           // Fortinet
+        "sonicwall", "firebox", "xtm",                      // SonicWall, WatchGuard
+        "firepower",                                        // Cisco
+        "srx",                                              // Juniper
+        "pfsense", "opnsense", "ipfire", "ipcop",           // open source
+        "udm", "uxg",                                       // Ubiquiti Dream Machine / gateway
+        "cloudgen",                                         // Barracuda
+    };
+
+    // Short series names that only mean "firewall" for one particular maker. "XGS" is a Sophos
+    // firewall but a Zyxel *switch*; "SG" a Sophos firewall but a TP-Link switch; "MX" a Meraki
+    // firewall but a Juniper router. Matching them globally would misfile half the switches.
+    private static readonly (string Vendor, string[] Series)[] VendorFirewallSeries =
+    {
+        ("sophos", new[] { "xg", "xgs", "sg", "utm" }),
+        ("cisco", new[] { "asa", "ftd" }),
+        ("meraki", new[] { "mx" }),
+        ("palo alto", new[] { "pa" }),
+        ("sonicwall", new[] { "tz", "nsa", "nssp", "soho" }),
+        ("fortinet", new[] { "fg", "fgt" }),
+        ("zyxel", new[] { "vpn" }),                         // Zyxel VPN50/100/300 firewalls
+    };
+
+    private static bool IsFirewall(string vendorLower, IReadOnlyList<string> modelTokens)
+    {
+        foreach (var t in FirewallVendors)
+            if (vendorLower.Contains(t, StringComparison.Ordinal)) return true;
+
+        foreach (var token in modelTokens)
+            if (Array.IndexOf(FirewallSeries, token) >= 0) return true;
+
+        foreach (var (vendorToken, series) in VendorFirewallSeries)
+            if (vendorLower.Contains(vendorToken, StringComparison.Ordinal))
+                foreach (var token in modelTokens)
+                    if (Array.IndexOf(series, token) >= 0) return true;
+
+        return false;
+    }
+
+    /// <summary>Splits a model line into lower-case tokens, breaking on non-alphanumerics *and* on
+    /// letter/digit boundaries: "USG FLEX 500H" → usg, flex, 500, h and "XGS1930-52HP" → xgs, 1930,
+    /// 52, hp. Whole-token matching is what keeps a short series name ("tz", "pa", "atp") from
+    /// hitting inside an unrelated word.</summary>
+    private static List<string> Tokenize(string text)
+    {
+        var tokens = new List<string>();
+        var current = new StringBuilder();
+        bool? wasDigit = null;
+
+        void Flush()
+        {
+            if (current.Length > 0) tokens.Add(current.ToString());
+            current.Clear();
+            wasDigit = null;
+        }
+
+        foreach (var ch in text)
+        {
+            if (!char.IsLetterOrDigit(ch)) { Flush(); continue; }
+            bool isDigit = char.IsDigit(ch);
+            if (wasDigit is { } w && w != isDigit) Flush();
+            wasDigit = isDigit;
+            current.Append(char.ToLowerInvariant(ch));
+        }
+        Flush();
+        return tokens;
+    }
 
     // Printers / copiers / MFPs. A multifunction device is a printer, not a server, however many
     // services it exposes (Toshiba e-STUDIO, Brother MFC/DCP/HL, HP LaserJet, Canon imageRUNNER, …).
@@ -127,7 +194,7 @@ public static class DeviceClassifier
         var m = (model ?? "").ToLowerInvariant();
 
         // 1) The model line, when the device gave us one.
-        if (MatchesAny(m, FirewallModels) || MatchesAny(v, FirewallVendors)) return DeviceKind.Firewall;
+        if (IsFirewall(v, Tokenize(m))) return DeviceKind.Firewall;
         if (MatchesAny(m, PrinterModels)) return DeviceKind.Printer;
         if (MatchesAny(m, ApModels)) return DeviceKind.AccessPoint;
         if (MatchesAny(m, PhoneModels)) return DeviceKind.Phone;

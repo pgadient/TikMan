@@ -605,7 +605,12 @@ public class DeviceViewModel : INotifyPropertyChanged
             }
             // The identified vendor (web-scraped) counts too – a Gardena hub is IoT even when its
             // MAC belongs to a generic radio-module maker.
-            return DeviceKindText(DeviceClassifier.Guess($"{MacVendor} {IdentifiedVendor}", Model.OpenPorts, Model.Model));
+            // Feed the classifier the model text the user actually sees. SNMP/WMI/web each land in a
+            // different slot (ExtraInfo["Modell"] / "Produkt" / "Web-Titel"), all folded into
+            // ModelDisplay – Model.Model alone is empty for a device we only know over SNMP, which
+            // left the model-based rules (firewall/AP/printer series) with nothing to match.
+            return DeviceKindText(DeviceClassifier.Guess(
+                $"{MacVendor} {IdentifiedVendor}", Model.OpenPorts, $"{ModelDisplay} {Model.Model}"));
         }
     }
 
