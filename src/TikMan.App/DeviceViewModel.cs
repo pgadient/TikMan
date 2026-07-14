@@ -120,6 +120,32 @@ public class DeviceViewModel : INotifyPropertyChanged
         Notify(nameof(DeviceType)); // the classifier weighs the open-port set
     }
 
+    /// <summary>Applies what a device announced over mDNS/Bonjour: its hostname, the services it
+    /// offers and – for Apple gear – its exact hardware model. Kept in ExtraInfo so it also shows on
+    /// the Details tab, and read back by <see cref="KindOf"/>, which trusts it above all else.</summary>
+    public void ApplyMdnsInfo(MdnsScanner.MdnsInfo mdns)
+    {
+        bool changed = false;
+        if (mdns.Model.Length > 0 && !Model.ExtraInfo.ContainsKey("mDNS-Modell"))
+        { Model.ExtraInfo["mDNS-Modell"] = mdns.Model; changed = true; }
+        if (mdns.Services.Count > 0)
+        {
+            var svc = string.Join(", ", mdns.Services);
+            if (!Model.ExtraInfo.TryGetValue("mDNS-Dienste", out var old) || old != svc)
+            { Model.ExtraInfo["mDNS-Dienste"] = svc; changed = true; }
+        }
+        // A HomePod answers to "Bett-Pascal", but a TV or a set-top box answers to a bare UUID – which
+        // is worse than no name at all, so it doesn't get to be one.
+        if (mdns.HostName.Length > 0 && Name.Length == 0 && !LooksLikeUuid(mdns.HostName))
+        { Name = mdns.HostName; changed = true; }
+        if (changed) { Notify(nameof(DeviceType)); RaiseDetailsChanged(); }
+    }
+
+    private static bool LooksLikeUuid(string s) =>
+        System.Text.RegularExpressions.Regex.IsMatch(
+            s, @"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
     /// <summary>Applies what a device said about itself over UPnP/SSDP. Only fills gaps – a model read
     /// from the device's own web UI or over SNMP is more precise than a UPnP friendly name. The device
     /// type ("…:MediaRenderer:1") is kept too: it is what marks a set-top box as a set-top box.</summary>
@@ -625,6 +651,15 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// the kind itself (to colour and tier a node), not its translated label.</summary>
     public DeviceKind KindOf()
     {
+        // mDNS first: it is the only source where the device answers for itself rather than us
+        // inferring from a MAC or a port. Apple's whole line shares one OUI and listens on nothing,
+        // so without this an iPhone, an iPad, a HomePod and an Apple TV are the same device.
+        Model.ExtraInfo.TryGetValue("mDNS-Modell", out var mdnsModel);
+        Model.ExtraInfo.TryGetValue("mDNS-Dienste", out var mdnsServices);
+        var mdns = DeviceClassifier.MdnsKind(mdnsModel,
+            mdnsServices?.Split(", ", StringSplitOptions.RemoveEmptyEntries));
+        if (mdns != DeviceKind.Unknown) return mdns;
+
         if (Model.Vendor == DeviceVendor.TpLink) return DeviceKind.Switch;
         // SwOS devices (CSS/CRS in switch mode) are switches, not routers.
         if (Model.ExtraInfo.TryGetValue("System", out var os) && os == "SwOS") return DeviceKind.Switch;

@@ -220,9 +220,13 @@ public partial class MainWindow
         bar.Value = 0;
         int done = 0;
 
-        // One multicast M-SEARCH for the whole subnet, in parallel with the per-device probes. UPnP is
-        // the only thing that names a TV or a set-top box: they sit on generic ODM OUIs behind a bare
-        // web port, but they announce their make and model over SSDP when asked.
+        // Two multicast sweeps for the whole subnet at once, alongside the per-device probes. Both ask
+        // devices to describe themselves instead of us guessing: mDNS gets the hostname, the offered
+        // services and Apple's exact hardware model (an iPhone, an iPad, a HomePod and an Apple TV are
+        // one OUI and no open ports – only here do they differ), UPnP names the TVs and set-top boxes
+        // that sit on generic ODM OUIs behind a bare web port.
+        var mdns = v6 ? Task.FromResult(new Dictionary<string, MdnsScanner.MdnsInfo>())
+                      : MdnsScanner.DiscoverAsync(TimeSpan.FromSeconds(4), ct);
         var ssdp = v6 ? Task.FromResult(new Dictionary<string, SsdpScanner.SsdpInfo>())
                       : SsdpScanner.DiscoverAsync(TimeSpan.FromSeconds(4), ct);
 
@@ -233,9 +237,15 @@ public partial class MainWindow
             bar.Value = ++done; // continuations resume on the UI thread
         }));
 
+        // UPnP first: its friendly name is the one the owner chose ("Wohnzimmer unten"), whereas over
+        // mDNS the same box answers to a bare UUID. mDNS then fills the gaps – and the devices UPnP
+        // never sees at all, which is most of them.
         foreach (var (ip, info) in await ssdp)
             if (_devices.FirstOrDefault(d => d.Ipv4Address == ip) is { } vm)
                 vm.ApplyUpnpInfo(info);
+        foreach (var (ip, info) in await mdns)
+            if (_devices.FirstOrDefault(d => d.Ipv4Address == ip) is { } vm)
+                vm.ApplyMdnsInfo(info);
 
         row.Visibility = Visibility.Collapsed;
     }

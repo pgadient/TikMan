@@ -290,6 +290,45 @@ public static class DeviceClassifier
         return DeviceKind.Router;
     }
 
+    /// <summary>What a device said about itself over mDNS. This outranks everything else, because it
+    /// is the device's own answer rather than our inference: an iPhone, an iPad, a HomePod and an
+    /// Apple TV share one OUI and one (empty) port list, and only here do they differ –
+    /// "iPhone15,2" / "iPad13,8" / "AudioAccessory5,1" / "AppleTV6,2". Unknown when mDNS said nothing
+    /// that places the device.</summary>
+    public static DeviceKind MdnsKind(string? model, IEnumerable<string>? services)
+    {
+        var m = (model ?? "").ToLowerInvariant();
+
+        // Apple states its hardware model outright.
+        if (m.StartsWith("iphone", StringComparison.Ordinal)) return DeviceKind.Smartphone;
+        if (m.StartsWith("ipad", StringComparison.Ordinal)) return DeviceKind.Tablet;
+        if (m.StartsWith("audioaccessory", StringComparison.Ordinal)) return DeviceKind.Audio;   // HomePod
+        if (m.StartsWith("appletv", StringComparison.Ordinal)) return DeviceKind.Tv;
+        if (m.StartsWith("macbook", StringComparison.Ordinal) || m.StartsWith("imac", StringComparison.Ordinal) ||
+            m.StartsWith("macmini", StringComparison.Ordinal) || m.StartsWith("macpro", StringComparison.Ordinal) ||
+            m.StartsWith("mac", StringComparison.Ordinal)) return DeviceKind.Pc;
+
+        var svc = new HashSet<string>(services ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+        bool Any(params string[] names) => names.Any(svc.Contains);
+
+        // Then the services. A printer that speaks IPP is a printer, whatever its badge says.
+        if (Any("_ipp._tcp", "_printer._tcp", "_pdl-datastream._tcp", "_scanner._tcp")) return DeviceKind.Printer;
+        if (Any("_googlecast._tcp")) return DeviceKind.Tv;                    // Chromecast / Android TV
+        if (Any("_sonos._tcp", "_spotify-connect._tcp")) return DeviceKind.Audio;
+        // AirPlay *audio* (RAOP) without AirPlay video is a speaker; with video it's a TV box.
+        if (Any("_raop._tcp") && !Any("_airplay._tcp")) return DeviceKind.Audio;
+        // A HomePod and an Apple TV both do AirPlay, and when Apple publishes only a board id
+        // ("B520AP", "J305AP") the model can't separate them either. This does: a HomePod is itself a
+        // HomeKit *accessory* and advertises _hap, while an Apple TV is the HomeKit *hub* and doesn't.
+        if (Any("_airplay._tcp") && Any("_hap._tcp")) return DeviceKind.Audio;
+        if (Any("_airplay._tcp")) return DeviceKind.Tv;
+        if (Any("_adisk._tcp", "_afpovertcp._tcp")) return DeviceKind.Nas;    // Time Machine / AFP share
+        if (Any("_hap._tcp")) return DeviceKind.IoT;                          // HomeKit accessory
+        if (Any("_workstation._tcp")) return DeviceKind.Pc;
+
+        return DeviceKind.Unknown;
+    }
+
     private static bool MatchesAny(string text, string[] tokens)
     {
         foreach (var t in tokens) if (text.Contains(t, StringComparison.Ordinal)) return true;
