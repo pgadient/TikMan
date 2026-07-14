@@ -71,7 +71,6 @@
                         <Button Style="{StaticResource ToolButton}" Click="SetLogin_Click" Content="{loc:Loc Tb_SetCreds}"/>
                         <Button Style="{StaticResource ToolButton}" Click="ClearAll_Click" Content="{loc:Loc Tb_Clear}"/>
                         <Separator Margin="6,2" Width="1" Background="#CCCCCC"/>
-                        <Button Style="{StaticResource ToolButton}" Click="RefreshAll_Click" Content="{loc:Loc Tb_RefreshAll}"/>
                         <Button Style="{StaticResource ToolButton}" Click="WakeManual_Click" Content="{loc:Loc Tb_Wake}"
                                 ToolTip="{loc:Loc Wol_Prompt}"/>
                     </StackPanel>

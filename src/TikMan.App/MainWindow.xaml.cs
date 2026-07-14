@@ -312,8 +312,6 @@ public partial class MainWindow : Window
         await Task.WhenAll(candidates.Select(d => d.RefreshAsync()));
     }
 
-    private async void RefreshAll_Click(object sender, RoutedEventArgs e) => await RefreshAllAsync(quiet: false);
-
     /// <summary>View menu: show or hide the ⓘ list-tips icon above the device list.</summary>
     /// <summary>Bottom-bar Npcap warning: reminds that Npcap must be installed with WinPcap
     /// API-compatible mode (mandatory for ZON), then opens the Npcap download page.</summary>
