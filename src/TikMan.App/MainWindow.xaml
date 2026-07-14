@@ -170,10 +170,39 @@
                                 Background="Transparent" SelectionChanged="AddressTabs_SelectionChanged">
                         <TabItem Header="IPv4"/>
                         <TabItem Header="IPv6"/>
+                        <TabItem Header="{loc:Loc Tab_Topology}"/>
                     </TabControl>
                 </DockPanel>
                 <TextBlock x:Name="DeviceCountText" DockPanel.Dock="Bottom" Foreground="#666666" FontSize="11"
                            Margin="4,3,0,0"/>
+
+                <!-- Topology map: same devices, drawn as a graph. Drag a node to rearrange, drag the
+                     background to pan, wheel to zoom. Shown instead of the grid on the third tab. -->
+                <Border x:Name="TopologyHost" Visibility="Collapsed" Background="#FAFAFA"
+                        BorderBrush="#DDDDDD" BorderThickness="1" ClipToBounds="True">
+                    <Grid>
+                        <Canvas x:Name="TopologyCanvas" Background="Transparent"
+                                MouseLeftButtonDown="Topology_BackgroundDown"
+                                MouseMove="Topology_MouseMove"
+                                MouseLeftButtonUp="Topology_MouseUp"
+                                MouseWheel="Topology_MouseWheel">
+                            <Canvas.RenderTransform>
+                                <TransformGroup>
+                                    <ScaleTransform x:Name="TopologyScale" ScaleX="1" ScaleY="1"/>
+                                    <TranslateTransform x:Name="TopologyPan" X="0" Y="0"/>
+                                </TransformGroup>
+                            </Canvas.RenderTransform>
+                        </Canvas>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom" HorizontalAlignment="Left"
+                                    Margin="8">
+                            <Button Content="{loc:Loc Topo_Relayout}" Click="Topology_Relayout_Click" Padding="8,3"
+                                    Margin="0,0,6,0"/>
+                            <Button Content="{loc:Loc Topo_Fit}" Click="Topology_Fit_Click" Padding="8,3"/>
+                            <TextBlock x:Name="TopologyHint" VerticalAlignment="Center" Margin="10,0,0,0"
+                                       Foreground="#888888" FontSize="11" Text="{loc:Loc Topo_Hint}"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
             <DataGrid x:Name="DeviceGrid"
                       HorizontalScrollBarVisibility="Auto"
                       RowDetailsVisibilityMode="Collapsed"

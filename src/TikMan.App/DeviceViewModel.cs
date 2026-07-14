@@ -120,6 +120,31 @@ public class DeviceViewModel : INotifyPropertyChanged
         Notify(nameof(DeviceType)); // the classifier weighs the open-port set
     }
 
+    /// <summary>Applies what a device said about itself over UPnP/SSDP. Only fills gaps – a model read
+    /// from the device's own web UI or over SNMP is more precise than a UPnP friendly name. The device
+    /// type ("…:MediaRenderer:1") is kept too: it is what marks a set-top box as a set-top box.</summary>
+    public void ApplyUpnpInfo(SsdpScanner.SsdpInfo upnp)
+    {
+        bool changed = false;
+        // "urn:schemas-upnp-org:device:MediaRenderer:1" → "MediaRenderer"
+        var type = upnp.DeviceType.Split(':').Reverse().FirstOrDefault(p => p.Any(char.IsLetter)) ?? "";
+
+        if (upnp.Manufacturer.Length > 0 && !Model.ExtraInfo.ContainsKey("Hersteller (Web)"))
+        { Model.ExtraInfo["Hersteller (Web)"] = upnp.Manufacturer; changed = true; }
+
+        // The friendly name is what the owner sees on their TV remote ("Swisscom TV Box"); the model
+        // name is the dry one ("IP2000"). Together they are what the classifier needs.
+        var model = string.Join(" ", new[] { upnp.FriendlyName, upnp.ModelName, type }
+            .Where(s => s.Length > 0).Distinct());
+        if (model.Length > 0 && Board.Length == 0 && ModelDisplay.Length == 0)
+        { Model.ExtraInfo["Modell"] = model; changed = true; }
+
+        if (upnp.FriendlyName.Length > 0 && Name.Length == 0) { Name = upnp.FriendlyName; changed = true; }
+        if (type.Length > 0 && !Model.ExtraInfo.ContainsKey("UPnP")) { Model.ExtraInfo["UPnP"] = type; changed = true; }
+
+        if (changed) { Notify(nameof(DeviceType)); RaiseDetailsChanged(); }
+    }
+
     public void ApplySnmpInfo(SnmpProbe.SnmpInfo snmp)
     {
         bool changed = false;
@@ -584,7 +609,7 @@ public class DeviceViewModel : INotifyPropertyChanged
     {
         get
         {
-            var kind = BaseDeviceType();
+            var kind = DeviceKindText(KindOf());
             // A hypervisor hands its guests a NIC out of its own OUI range, so the MAC alone tells a
             // VM from bare metal. Worth saying: a "server" that is really a guest actually lives on
             // some other machine. A guest we can't otherwise place is at least known to be a VM.
@@ -596,37 +621,39 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// <summary>The hypervisor behind this MAC ("Hyper-V", "VMware", "KVM/QEMU", …); "" on bare metal.</summary>
     public string Hypervisor => Virtualization.Hypervisor(Model.MacAddress);
 
-    private string BaseDeviceType()
+    /// <summary>The classified kind – the enum behind <see cref="DeviceType"/>. The topology map needs
+    /// the kind itself (to colour and tier a node), not its translated label.</summary>
+    public DeviceKind KindOf()
     {
-        if (Model.Vendor == DeviceVendor.TpLink) return T("Dev_Switch");
+        if (Model.Vendor == DeviceVendor.TpLink) return DeviceKind.Switch;
         // SwOS devices (CSS/CRS in switch mode) are switches, not routers.
-        if (Model.ExtraInfo.TryGetValue("System", out var os) && os == "SwOS") return T("Dev_Switch");
+        if (Model.ExtraInfo.TryGetValue("System", out var os) && os == "SwOS") return DeviceKind.Switch;
         if (Model.ExtraInfo.TryGetValue("Modell", out var mdl) &&
-            mdl.StartsWith("CSS", StringComparison.OrdinalIgnoreCase)) return T("Dev_Switch");
+            mdl.StartsWith("CSS", StringComparison.OrdinalIgnoreCase)) return DeviceKind.Switch;
         // MikroTik: RouterOS is identical on every box and any of them can be configured as anything,
         // so only the board code tells them apart – CRS/CSS are switches, a board with a radio is an
         // access point, the rest are routers.
-        if (Board.Length > 0) return DeviceKindText(DeviceClassifier.MikroTikKind(Board));
+        if (Board.Length > 0) return DeviceClassifier.MikroTikKind(Board);
         if (Model.ExtraInfo.TryGetValue("Bauform", out var ff))
         {
-            var t = ff switch
+            var k = ff switch
             {
-                "Laptop" => T("Dev_Laptop"),
-                "Notebook" => T("Dev_Notebook"),
-                "Tablet" => T("Dev_Tablet"),
-                "Desktop" or "Workstation" => T("Dev_Pc"),
-                "Server" or "Server (SOHO)" or "Performance-Server" => T("Dev_Server"),
-                _ => "",
+                "Laptop" => DeviceKind.Laptop,
+                "Notebook" => DeviceKind.Notebook,
+                "Tablet" => DeviceKind.Tablet,
+                "Desktop" or "Workstation" => DeviceKind.Pc,
+                "Server" or "Server (SOHO)" or "Performance-Server" => DeviceKind.Server,
+                _ => DeviceKind.Unknown,
             };
-            if (t.Length > 0) return t;
+            if (k != DeviceKind.Unknown) return k;
         }
         // The identified vendor (web-scraped) counts too – a Gardena hub is IoT even when its MAC
         // belongs to a generic radio-module maker. And feed the classifier the model text the user
-        // actually sees: SNMP/WMI/web each land in a different slot (ExtraInfo["Modell"] / "Produkt" /
-        // "Web-Titel"), all folded into ModelDisplay – Model.Model alone is empty for a device we only
-        // know over SNMP, which left the model-based rules with nothing to match.
-        return DeviceKindText(DeviceClassifier.Guess(
-            $"{MacVendor} {IdentifiedVendor}", Model.OpenPorts, $"{ModelDisplay} {Model.Model}", Name));
+        // actually sees: SNMP/WMI/web/UPnP each land in a different slot (ExtraInfo["Modell"] /
+        // "Produkt" / "Web-Titel"), all folded into ModelDisplay – Model.Model alone is empty for a
+        // device we only know over SNMP, which left the model-based rules with nothing to match.
+        return DeviceClassifier.Guess(
+            $"{MacVendor} {IdentifiedVendor}", Model.OpenPorts, $"{ModelDisplay} {Model.Model}", Name);
     }
 
     /// <summary>True for TP-Link switches (SSH connector, firmware page instead of channels).</summary>

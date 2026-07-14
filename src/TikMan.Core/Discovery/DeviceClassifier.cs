@@ -235,6 +235,16 @@ public static class DeviceClassifier
         "internet box", "ib5", "ib4", "ib3", "fritz!box", "fritzbox", "speedport", "easybox",
     };
 
+    // TVs and set-top / streaming boxes. Mostly reached via UPnP, which is the only thing that names
+    // them: a Swisscom TV Box, a smart TV and a Chromecast all sit on generic ODM OUIs (Arcadyan,
+    // Vestel …) behind a bare web port, so neither MAC nor ports can place them – but they announce
+    // themselves over SSDP as a MediaRenderer with a friendly name.
+    private static readonly string[] TvModels =
+    {
+        "tv box", "tvbox", "mediarenderer", "smart tv", "set-top", "settop", "iptv",
+        "bravia", "viera", "aquos", "chromecast", "shield tv", "fire tv", "apple tv", "android tv",
+    };
+
     // What a device calls itself in DHCP/DNS. Often the only thing that can tell an iPhone from an
     // iPad from a HomePod – they all share one Apple OUI – and the *only* signal at all for the many
     // phones and laptops that randomise their MAC and therefore have no vendor to look up.
@@ -316,6 +326,7 @@ public static class DeviceClassifier
         if (MatchesAny(m, ApModels)) return DeviceKind.AccessPoint;
         if (MatchesAny(m, PhoneModels)) return DeviceKind.Phone;
         if (MatchesAny(m, RouterModels)) return DeviceKind.Router;
+        if (MatchesAny(m, TvModels)) return DeviceKind.Tv;
 
         // 2) Services only one kind of device speaks.
         if (Has(9100) || Has(515) || Has(631)) return DeviceKind.Printer;  // JetDirect / LPD / IPP

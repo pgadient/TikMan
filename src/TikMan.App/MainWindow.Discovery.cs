@@ -219,12 +219,24 @@ public partial class MainWindow
         bar.Maximum = targets.Count;
         bar.Value = 0;
         int done = 0;
+
+        // One multicast M-SEARCH for the whole subnet, in parallel with the per-device probes. UPnP is
+        // the only thing that names a TV or a set-top box: they sit on generic ODM OUIs behind a bare
+        // web port, but they announce their make and model over SSDP when asked.
+        var ssdp = v6 ? Task.FromResult(new Dictionary<string, SsdpScanner.SsdpInfo>())
+                      : SsdpScanner.DiscoverAsync(TimeSpan.FromSeconds(4), ct);
+
         await Task.WhenAll(targets.Select(async vm =>
         {
             if (!ct.IsCancellationRequested)
                 await EnrichDetailsAsync(vm, ct);
             bar.Value = ++done; // continuations resume on the UI thread
         }));
+
+        foreach (var (ip, info) in await ssdp)
+            if (_devices.FirstOrDefault(d => d.Ipv4Address == ip) is { } vm)
+                vm.ApplyUpnpInfo(info);
+
         row.Visibility = Visibility.Collapsed;
     }
 

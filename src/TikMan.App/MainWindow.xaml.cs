@@ -1203,6 +1203,18 @@ public partial class MainWindow : Window
     private void AddressTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!ReferenceEquals(e.OriginalSource, AddressTabs) || Ipv6Column is null || !IsLoaded) return;
+
+        // The third tab swaps the grid for the topology map – same devices, drawn as a graph.
+        bool topology = AddressTabs.SelectedIndex == 2;
+        TopologyHost.Visibility = topology ? Visibility.Visible : Visibility.Collapsed;
+        DeviceGrid.Visibility = topology ? Visibility.Collapsed : Visibility.Visible;
+        if (topology)
+        {
+            BuildTopology();
+            Topology_Fit_Click(this, new RoutedEventArgs());
+            return;
+        }
+
         _v6Mode = AddressTabs.SelectedIndex == 1;
         if (_v6Mode)
         {
