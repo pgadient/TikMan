@@ -26,9 +26,18 @@ public enum DeviceKind
     PaymentTerminal,
     /// <summary>Franking machine / postage meter (Francotyp-Postalia, Pitney Bowes, Neopost, …).</summary>
     Franking,
-    /// <summary>Out-of-band management controller (BMC): Fujitsu iRMC, HPE iLO, Dell iDRAC, IPMI,
-    /// Intel AMT/vPro. A separate little computer on the board, not the server itself.</summary>
+    /// <summary>Out-of-band management controller (BMC) or an IP-KVM: Fujitsu iRMC, HPE iLO, Dell
+    /// iDRAC, IPMI, Intel AMT/vPro, JetKVM. A separate little computer, not the host it manages.</summary>
     Management,
+    /// <summary>Smartphone (iPhone, Android handset) – distinct from <see cref="Phone"/>, which is a
+    /// VoIP desk phone.</summary>
+    Smartphone,
+    /// <summary>Speaker / audio streamer (Sonos, Teufel, Bose, HomePod, internet radio).</summary>
+    Audio,
+    /// <summary>Games console (PlayStation, Xbox, Nintendo).</summary>
+    GameConsole,
+    /// <summary>TV or set-top / streaming box (Philips/Sony TV, Apple TV, Swisscom TV Box, Roku).</summary>
+    Tv,
 }
 
 /// <summary>Best-effort classification of a device into a <see cref="DeviceKind"/>.</summary>
@@ -62,11 +71,32 @@ public static class DeviceClassifier
         // BMC chips: an ASPEED/Nuvoton NIC *is* the management controller, never the host.
         ("aspeed", DeviceKind.Management),
         ("espressif", DeviceKind.IoT), ("tuya", DeviceKind.IoT), ("sonoff", DeviceKind.IoT),
-        ("shelly", DeviceKind.IoT), ("sonos", DeviceKind.IoT), ("nest", DeviceKind.IoT),
-        ("gardena", DeviceKind.IoT), ("mystrom", DeviceKind.IoT), ("netatmo", DeviceKind.IoT),
-        ("tasmota", DeviceKind.IoT), ("teufel", DeviceKind.IoT), ("frontier silicon", DeviceKind.IoT),
+        ("shelly", DeviceKind.IoT), ("nest", DeviceKind.IoT),
+        ("gardena", DeviceKind.IoT), ("husqvarna", DeviceKind.IoT), ("mystrom", DeviceKind.IoT),
+        ("netatmo", DeviceKind.IoT), ("tasmota", DeviceKind.IoT),
         ("amazon tech", DeviceKind.IoT), ("google", DeviceKind.IoT), ("signify", DeviceKind.IoT),
-        ("philips lighting", DeviceKind.IoT), ("tp-link", DeviceKind.Switch),
+        ("philips lighting", DeviceKind.IoT),
+        // Smart-home hubs & gateways: heating, pets, blinds, radio hubs.
+        ("viessmann", DeviceKind.IoT), ("xavi", DeviceKind.IoT),          // VitoConnect uses XAVi's OUI
+        ("sure petcare", DeviceKind.IoT), ("eq-3", DeviceKind.IoT),       // Homematic
+        ("dexatek", DeviceKind.IoT), ("elgato", DeviceKind.IoT),
+        ("somfy", DeviceKind.IoT), ("shenzhen bilian", DeviceKind.IoT),
+        // Speakers / audio streamers – these makers do sound and nothing else.
+        ("teufel", DeviceKind.Audio), ("sonos", DeviceKind.Audio), ("bose", DeviceKind.Audio),
+        ("frontier silicon", DeviceKind.Audio),                            // internet-radio modules
+        ("denon", DeviceKind.Audio), ("marantz", DeviceKind.Audio), ("yamaha", DeviceKind.Audio),
+        ("harman", DeviceKind.Audio), ("libratone", DeviceKind.Audio), ("devialet", DeviceKind.Audio),
+        ("bang & olufsen", DeviceKind.Audio), ("bluesound", DeviceKind.Audio), ("sonance", DeviceKind.Audio),
+        // Games consoles.
+        ("nintendo", DeviceKind.GameConsole), ("sony interactive", DeviceKind.GameConsole),
+        ("valve corp", DeviceKind.GameConsole),
+        // TVs and set-top / streaming boxes.
+        ("tp vision", DeviceKind.Tv),                                      // Philips TVs
+        ("vestel", DeviceKind.Tv), ("roku", DeviceKind.Tv), ("technicolor", DeviceKind.Tv),
+        ("skyworth", DeviceKind.Tv), ("hisense", DeviceKind.Tv), ("tcl ", DeviceKind.Tv),
+        // IP-KVM / remote console – out-of-band management, same family as a BMC.
+        ("buildjet", DeviceKind.Management), ("raritan", DeviceKind.Management),
+        ("avocent", DeviceKind.Management), ("tp-link", DeviceKind.Switch),
         ("cisco", DeviceKind.Switch), ("juniper", DeviceKind.Switch), ("netgear", DeviceKind.Switch),
         ("zyxel", DeviceKind.Switch), ("d-link", DeviceKind.Switch), ("aruba", DeviceKind.AccessPoint),
         ("ubiquiti", DeviceKind.AccessPoint), ("apple", DeviceKind.Pc), ("dell", DeviceKind.Pc),
@@ -194,8 +224,61 @@ public static class DeviceClassifier
         "imm", "xcc",            // Lenovo / IBM
         "cimc",                  // Cisco UCS
         "megarac",               // AMI (the BMC firmware behind most white-box boards)
+        "jetkvm",                // BuildJet IP-KVM
         "ipmi", "bmc", "amt", "vpro",
     };
+
+    // Consumer routers / ISP gateways that aren't MikroTik. Substring-matched: "IB5-P-00" is the
+    // Swisscom Internet Box 5, and tokenising would split the "ib" from the "5".
+    private static readonly string[] RouterModels =
+    {
+        "internet box", "ib5", "ib4", "ib3", "fritz!box", "fritzbox", "speedport", "easybox",
+    };
+
+    // What a device calls itself in DHCP/DNS. Often the only thing that can tell an iPhone from an
+    // iPad from a HomePod – they all share one Apple OUI – and the *only* signal at all for the many
+    // phones and laptops that randomise their MAC and therefore have no vendor to look up.
+    private static readonly (string Fragment, DeviceKind Kind)[] HostHints =
+    {
+        ("iphone", DeviceKind.Smartphone), ("android", DeviceKind.Smartphone),
+        ("galaxy", DeviceKind.Smartphone), ("pixel", DeviceKind.Smartphone),
+        ("oneplus", DeviceKind.Smartphone), ("xiaomi", DeviceKind.Smartphone),
+        ("redmi", DeviceKind.Smartphone),
+        ("ipad", DeviceKind.Tablet), ("tablet", DeviceKind.Tablet), ("-tab-", DeviceKind.Tablet),
+        ("macbook", DeviceKind.Pc), ("imac", DeviceKind.Pc), ("macmini", DeviceKind.Pc),
+        ("mac-mini", DeviceKind.Pc), ("macpro", DeviceKind.Pc),
+        ("xbox", DeviceKind.GameConsole), ("playstation", DeviceKind.GameConsole),
+        ("ps5", DeviceKind.GameConsole), ("ps4", DeviceKind.GameConsole),
+        ("appletv", DeviceKind.Tv), ("apple-tv", DeviceKind.Tv),
+        ("homepod", DeviceKind.Audio),
+        ("jetkvm", DeviceKind.Management),
+    };
+
+    private static DeviceKind HostKind(string hostLower)
+    {
+        if (hostLower.Length == 0) return DeviceKind.Unknown;
+        foreach (var (fragment, kind) in HostHints)
+            if (hostLower.Contains(fragment, StringComparison.Ordinal)) return kind;
+        return DeviceKind.Unknown;
+    }
+
+    // A MikroTik board code spells out its radios: band (2 or 5), optional H/HP power, then the
+    // standard (n / ac / ax) – "5HPaxD2HPaxD", "5HacD", "2axD", "2HnD". No radio code, no wireless.
+    private static readonly System.Text.RegularExpressions.Regex WirelessBoard =
+        new(@"[25]h?p?(n|ac|ax)d?", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>Splits MikroTik's line into switch / access point / router. RouterOS is the same on
+    /// every box and any of them can be configured as anything, so the ports and the OS say nothing –
+    /// only the board code does. CRS/CSS are Cloud Router *Switches*; a board carrying a wireless
+    /// radio is an access point; everything else (CCR, RB, L009, hEX) is a router.</summary>
+    public static DeviceKind MikroTikKind(string? board)
+    {
+        var m = (board ?? "").ToLowerInvariant();
+        if (m.StartsWith("crs", StringComparison.Ordinal) || m.StartsWith("css", StringComparison.Ordinal))
+            return DeviceKind.Switch;
+        if (WirelessBoard.IsMatch(m)) return DeviceKind.AccessPoint;
+        return DeviceKind.Router;
+    }
 
     private static bool MatchesAny(string text, string[] tokens)
     {
@@ -215,7 +298,8 @@ public static class DeviceClassifier
     /// order of trust. Most devices on a LAN are utility gear (printers, phones, switches, APs,
     /// appliances) that happen to serve a web UI, so "Server" is only returned on real evidence, not
     /// merely because something answers on 80/443/22.</summary>
-    public static DeviceKind Guess(string? vendor, IReadOnlyCollection<int> openPorts, string? model = null)
+    public static DeviceKind Guess(string? vendor, IReadOnlyCollection<int> openPorts, string? model = null,
+        string? hostname = null)
     {
         var ports = openPorts ?? Array.Empty<int>();
         bool Has(int p) => ports.Contains(p);
@@ -231,6 +315,7 @@ public static class DeviceClassifier
         if (MatchesAny(m, PrinterModels)) return DeviceKind.Printer;
         if (MatchesAny(m, ApModels)) return DeviceKind.AccessPoint;
         if (MatchesAny(m, PhoneModels)) return DeviceKind.Phone;
+        if (MatchesAny(m, RouterModels)) return DeviceKind.Router;
 
         // 2) Services only one kind of device speaks.
         if (Has(9100) || Has(515) || Has(631)) return DeviceKind.Printer;  // JetDirect / LPD / IPP
@@ -248,12 +333,19 @@ public static class DeviceClassifier
         //    OUI: a workstation on a Zyxel-branded NIC is a PC, not a switch.
         if (Has(3389) || (Has(135) && Has(445))) return DeviceKind.Pc;
 
+        // 4) What the device calls itself. This outranks the vendor, because the vendor cannot help
+        //    here: an iPhone, an iPad, a HomePod and an Apple TV are one and the same OUI, and a
+        //    phone with a randomised MAC has no OUI at all.
+        var hostKind = HostKind((hostname ?? "").ToLowerInvariant());
+        if (hostKind != DeviceKind.Unknown) return hostKind;
+
         // 4) Purpose-built makers beat the port heuristics – a printer/phone/UPS/camera/NAS stays what
         //    it is even though it also serves a web UI, SNMP and scan-to-mail.
         var vendorKind = VendorKind(v);
         if (vendorKind is DeviceKind.Printer or DeviceKind.Phone or DeviceKind.Ups
             or DeviceKind.Camera or DeviceKind.Nas or DeviceKind.PaymentTerminal
-            or DeviceKind.Franking or DeviceKind.Management)
+            or DeviceKind.Franking or DeviceKind.Management or DeviceKind.Audio
+            or DeviceKind.GameConsole or DeviceKind.Tv)
             return vendorKind;
 
         // 5) A real mailbox server (IMAP/POP/submission). Bare SMTP does *not* count: that is what

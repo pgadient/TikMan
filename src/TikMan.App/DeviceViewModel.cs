@@ -603,7 +603,10 @@ public class DeviceViewModel : INotifyPropertyChanged
         if (Model.ExtraInfo.TryGetValue("System", out var os) && os == "SwOS") return T("Dev_Switch");
         if (Model.ExtraInfo.TryGetValue("Modell", out var mdl) &&
             mdl.StartsWith("CSS", StringComparison.OrdinalIgnoreCase)) return T("Dev_Switch");
-        if (Board.Length > 0) return T("Dev_Router");
+        // MikroTik: RouterOS is identical on every box and any of them can be configured as anything,
+        // so only the board code tells them apart – CRS/CSS are switches, a board with a radio is an
+        // access point, the rest are routers.
+        if (Board.Length > 0) return DeviceKindText(DeviceClassifier.MikroTikKind(Board));
         if (Model.ExtraInfo.TryGetValue("Bauform", out var ff))
         {
             var t = ff switch
@@ -623,7 +626,7 @@ public class DeviceViewModel : INotifyPropertyChanged
         // "Web-Titel"), all folded into ModelDisplay – Model.Model alone is empty for a device we only
         // know over SNMP, which left the model-based rules with nothing to match.
         return DeviceKindText(DeviceClassifier.Guess(
-            $"{MacVendor} {IdentifiedVendor}", Model.OpenPorts, $"{ModelDisplay} {Model.Model}"));
+            $"{MacVendor} {IdentifiedVendor}", Model.OpenPorts, $"{ModelDisplay} {Model.Model}", Name));
     }
 
     /// <summary>True for TP-Link switches (SSH connector, firmware page instead of channels).</summary>
@@ -655,6 +658,10 @@ public class DeviceViewModel : INotifyPropertyChanged
         DeviceKind.PaymentTerminal => T("Dev_PaymentTerminal"),
         DeviceKind.Franking => T("Dev_Franking"),
         DeviceKind.Management => T("Dev_Management"),
+        DeviceKind.Smartphone => T("Dev_Smartphone"),
+        DeviceKind.Audio => T("Dev_Audio"),
+        DeviceKind.GameConsole => T("Dev_GameConsole"),
+        DeviceKind.Tv => T("Dev_Tv"),
         _ => "",
     };
 
