@@ -656,8 +656,11 @@ public class DeviceViewModel : INotifyPropertyChanged
         // so without this an iPhone, an iPad, a HomePod and an Apple TV are the same device.
         Model.ExtraInfo.TryGetValue("mDNS-Modell", out var mdnsModel);
         Model.ExtraInfo.TryGetValue("mDNS-Dienste", out var mdnsServices);
+        // The vendor goes in too: a TV set and the box plugged into it speak the same protocols, and
+        // only who built it separates them.
         var mdns = DeviceClassifier.MdnsKind(mdnsModel,
-            mdnsServices?.Split(", ", StringSplitOptions.RemoveEmptyEntries));
+            mdnsServices?.Split(", ", StringSplitOptions.RemoveEmptyEntries),
+            $"{MacVendor} {IdentifiedVendor}");
         if (mdns != DeviceKind.Unknown) return mdns;
 
         if (Model.Vendor == DeviceVendor.TpLink) return DeviceKind.Switch;
@@ -724,6 +727,7 @@ public class DeviceViewModel : INotifyPropertyChanged
         DeviceKind.Audio => T("Dev_Audio"),
         DeviceKind.GameConsole => T("Dev_GameConsole"),
         DeviceKind.Tv => T("Dev_Tv"),
+        DeviceKind.StreamingBox => T("Dev_StreamingBox"),
         _ => "",
     };
 

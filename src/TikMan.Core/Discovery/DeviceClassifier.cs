@@ -36,8 +36,11 @@ public enum DeviceKind
     Audio,
     /// <summary>Games console (PlayStation, Xbox, Nintendo).</summary>
     GameConsole,
-    /// <summary>TV or set-top / streaming box (Philips/Sony TV, Apple TV, Swisscom TV Box, Roku).</summary>
+    /// <summary>An actual television set (Philips, LG, Panasonic, Hisense …).</summary>
     Tv,
+    /// <summary>A streaming / set-top box – Apple TV, Chromecast, Fire TV, Roku, an ISP's TV box.
+    /// Separate from <see cref="Tv"/>: it hangs off a TV, it isn't one.</summary>
+    StreamingBox,
 }
 
 /// <summary>Best-effort classification of a device into a <see cref="DeviceKind"/>.</summary>
@@ -90,10 +93,15 @@ public static class DeviceClassifier
         // Games consoles.
         ("nintendo", DeviceKind.GameConsole), ("sony interactive", DeviceKind.GameConsole),
         ("valve corp", DeviceKind.GameConsole),
-        // TVs and set-top / streaming boxes.
+        // Television sets – the makers that build screens.
         ("tp vision", DeviceKind.Tv),                                      // Philips TVs
-        ("vestel", DeviceKind.Tv), ("roku", DeviceKind.Tv), ("technicolor", DeviceKind.Tv),
-        ("skyworth", DeviceKind.Tv), ("hisense", DeviceKind.Tv), ("tcl ", DeviceKind.Tv),
+        ("vestel", DeviceKind.Tv), ("skyworth", DeviceKind.Tv), ("hisense", DeviceKind.Tv),
+        ("tcl ", DeviceKind.Tv), ("lg electronics", DeviceKind.Tv), ("panasonic", DeviceKind.Tv),
+        ("loewe", DeviceKind.Tv), ("grundig", DeviceKind.Tv),
+        // Streaming / set-top boxes – ISPs and platform vendors. The box hangs off the TV, it isn't one.
+        ("swisscom", DeviceKind.StreamingBox), ("sunrise", DeviceKind.StreamingBox),
+        ("sagemcom", DeviceKind.StreamingBox), ("technicolor", DeviceKind.StreamingBox),
+        ("humax", DeviceKind.StreamingBox), ("roku", DeviceKind.StreamingBox),
         // IP-KVM / remote console – out-of-band management, same family as a BMC.
         ("buildjet", DeviceKind.Management), ("raritan", DeviceKind.Management),
         ("avocent", DeviceKind.Management), ("tp-link", DeviceKind.Switch),
@@ -235,15 +243,39 @@ public static class DeviceClassifier
         "internet box", "ib5", "ib4", "ib3", "fritz!box", "fritzbox", "speedport", "easybox",
     };
 
-    // TVs and set-top / streaming boxes. Mostly reached via UPnP, which is the only thing that names
-    // them: a Swisscom TV Box, a smart TV and a Chromecast all sit on generic ODM OUIs (Arcadyan,
-    // Vestel …) behind a bare web port, so neither MAC nor ports can place them – but they announce
-    // themselves over SSDP as a MediaRenderer with a friendly name.
+    // Television sets. Mostly reached via UPnP, which is the only thing that names them: a smart TV
+    // sits on a generic ODM OUI behind a bare web port, but announces itself over SSDP with a friendly
+    // name and a model.
     private static readonly string[] TvModels =
     {
-        "tv box", "tvbox", "mediarenderer", "smart tv", "set-top", "settop", "iptv",
-        "bravia", "viera", "aquos", "chromecast", "shield tv", "fire tv", "apple tv", "android tv",
+        "smart tv", "bravia", "viera", "aquos", "oled", "qled",
     };
+
+    // Streaming / set-top boxes. A box hangs off a TV, it isn't one – and it is usually the more
+    // interesting of the two on a network, so they are worth telling apart.
+    private static readonly string[] StreamingModels =
+    {
+        "appletv", "apple tv", "chromecast", "fire tv", "firetv", "shield tv", "roku",
+        "tv box", "tvbox", "set-top", "settop", "iptv", "mibox", "zattoo", "humax",
+    };
+
+    // Who builds televisions. This is what separates a TV from the box plugged into it when both speak
+    // exactly the same protocols: a set comes from a TV maker, a box from a streaming service, an ISP
+    // or a platform vendor (Apple, Google, Roku, Amazon).
+    //
+    // Only ever consulted for a device that already casts or receives AirPlay – i.e. a *receiver*. That
+    // makes the broad names safe here that would be far too broad anywhere else: a phone is a cast
+    // sender and never advertises itself as a receiver, so a casting "Samsung" or "Sony" is a TV set,
+    // and a casting "Philips" is a TV, not a Hue bridge.
+    private static readonly string[] TvMakers =
+    {
+        "tp vision", "philips",        // Philips televisions (the OUI says TP Vision, UPnP says Philips)
+        "sony", "samsung", "lg electronics", "panasonic", "toshiba", "sharp", "thomson",
+        "vestel", "hisense", "skyworth", "tcl ", "loewe", "grundig", "metz",
+    };
+
+    private static bool IsTvMaker(string vendorLower) =>
+        TvMakers.Any(t => vendorLower.Contains(t, StringComparison.Ordinal));
 
     // What a device calls itself in DHCP/DNS. Often the only thing that can tell an iPhone from an
     // iPad from a HomePod – they all share one Apple OUI – and the *only* signal at all for the many
@@ -295,15 +327,16 @@ public static class DeviceClassifier
     /// Apple TV share one OUI and one (empty) port list, and only here do they differ –
     /// "iPhone15,2" / "iPad13,8" / "AudioAccessory5,1" / "AppleTV6,2". Unknown when mDNS said nothing
     /// that places the device.</summary>
-    public static DeviceKind MdnsKind(string? model, IEnumerable<string>? services)
+    public static DeviceKind MdnsKind(string? model, IEnumerable<string>? services, string? vendor = null)
     {
         var m = (model ?? "").ToLowerInvariant();
+        var v = (vendor ?? "").ToLowerInvariant();
 
         // Apple states its hardware model outright.
         if (m.StartsWith("iphone", StringComparison.Ordinal)) return DeviceKind.Smartphone;
         if (m.StartsWith("ipad", StringComparison.Ordinal)) return DeviceKind.Tablet;
         if (m.StartsWith("audioaccessory", StringComparison.Ordinal)) return DeviceKind.Audio;   // HomePod
-        if (m.StartsWith("appletv", StringComparison.Ordinal)) return DeviceKind.Tv;
+        if (m.StartsWith("appletv", StringComparison.Ordinal)) return DeviceKind.StreamingBox;   // a box, not a TV
         if (m.StartsWith("macbook", StringComparison.Ordinal) || m.StartsWith("imac", StringComparison.Ordinal) ||
             m.StartsWith("macmini", StringComparison.Ordinal) || m.StartsWith("macpro", StringComparison.Ordinal) ||
             m.StartsWith("mac", StringComparison.Ordinal)) return DeviceKind.Pc;
@@ -311,17 +344,22 @@ public static class DeviceClassifier
         var svc = new HashSet<string>(services ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
         bool Any(params string[] names) => names.Any(svc.Contains);
 
+        // A TV set and the box plugged into it speak exactly the same protocols – both cast, both do
+        // AirPlay. Who *built* it is what separates them: a set comes from a TV maker, a box from an
+        // ISP or a platform vendor (Apple, Google, Roku, Amazon).
+        DeviceKind Screen() => IsTvMaker(v) ? DeviceKind.Tv : DeviceKind.StreamingBox;
+
         // Then the services. A printer that speaks IPP is a printer, whatever its badge says.
         if (Any("_ipp._tcp", "_printer._tcp", "_pdl-datastream._tcp", "_scanner._tcp")) return DeviceKind.Printer;
-        if (Any("_googlecast._tcp")) return DeviceKind.Tv;                    // Chromecast / Android TV
+        if (Any("_googlecast._tcp")) return Screen();                         // Chromecast / Android TV / TV box
         if (Any("_sonos._tcp", "_spotify-connect._tcp")) return DeviceKind.Audio;
-        // AirPlay *audio* (RAOP) without AirPlay video is a speaker; with video it's a TV box.
+        // AirPlay *audio* (RAOP) without AirPlay video is a speaker; with video it's a screen.
         if (Any("_raop._tcp") && !Any("_airplay._tcp")) return DeviceKind.Audio;
         // A HomePod and an Apple TV both do AirPlay, and when Apple publishes only a board id
         // ("B520AP", "J305AP") the model can't separate them either. This does: a HomePod is itself a
         // HomeKit *accessory* and advertises _hap, while an Apple TV is the HomeKit *hub* and doesn't.
         if (Any("_airplay._tcp") && Any("_hap._tcp")) return DeviceKind.Audio;
-        if (Any("_airplay._tcp")) return DeviceKind.Tv;
+        if (Any("_airplay._tcp")) return Screen();
         if (Any("_adisk._tcp", "_afpovertcp._tcp")) return DeviceKind.Nas;    // Time Machine / AFP share
         if (Any("_hap._tcp")) return DeviceKind.IoT;                          // HomeKit accessory
         if (Any("_workstation._tcp")) return DeviceKind.Pc;
@@ -365,6 +403,7 @@ public static class DeviceClassifier
         if (MatchesAny(m, ApModels)) return DeviceKind.AccessPoint;
         if (MatchesAny(m, PhoneModels)) return DeviceKind.Phone;
         if (MatchesAny(m, RouterModels)) return DeviceKind.Router;
+        if (MatchesAny(m, StreamingModels)) return DeviceKind.StreamingBox;
         if (MatchesAny(m, TvModels)) return DeviceKind.Tv;
 
         // 2) Services only one kind of device speaks.
@@ -395,7 +434,7 @@ public static class DeviceClassifier
         if (vendorKind is DeviceKind.Printer or DeviceKind.Phone or DeviceKind.Ups
             or DeviceKind.Camera or DeviceKind.Nas or DeviceKind.PaymentTerminal
             or DeviceKind.Franking or DeviceKind.Management or DeviceKind.Audio
-            or DeviceKind.GameConsole or DeviceKind.Tv)
+            or DeviceKind.GameConsole or DeviceKind.Tv or DeviceKind.StreamingBox)
             return vendorKind;
 
         // 5) A real mailbox server (IMAP/POP/submission). Bare SMTP does *not* count: that is what
