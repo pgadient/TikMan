@@ -50,6 +50,10 @@ public class AppData
     public int PingRetries { get; set; }
     /// <summary>Show the "a standalone client is safer" notice before the built-in VNC viewer (default on).</summary>
     public bool ShowVncNotice { get; set; } = true;
+    /// <summary>Show the discovery phases as one combined bar instead of one bar per phase. The phases
+    /// run in parallel and each on its own clock, so a single "how far along is the scan" bar reads far
+    /// more easily than seven – hence on by default.</summary>
+    public bool SingleProgressBar { get; set; } = true;
     /// <summary>Open ssh sessions with an external client (see <see cref="ExternalSshClientPath"/>)
     /// instead of the built-in OpenSSH terminal.</summary>
     public bool UseExternalSshClient { get; set; }

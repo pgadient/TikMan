@@ -65,7 +65,7 @@ public partial class MainWindow
             .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var internet = AddNode("::internet", null, T("Topo_Internet"), "", "", "#37474F");
+        var internet = AddNode("::internet", null, T("Topo_Internet"), "", "", Role.Internet);
 
         double x = 0;
         double topRow = 120, gearRow = 240, clientRow = 360;
@@ -81,15 +81,15 @@ public partial class MainWindow
             var clients = members.Where(d => d != gateway && !IsInfrastructure(d)).ToList();
 
             var gwNode = gateway is not null
-                ? AddDeviceNode(gateway)
-                : AddNode("::net:" + subnet.Key, null, subnet.Key + ".0/24", "", "", "#78909C");
+                ? AddDeviceNode(gateway, Role.Gateway)
+                : AddNode("::net:" + subnet.Key, null, subnet.Key + ".0/24", "", "", Role.Infrastructure);
             Place(gwNode, x + ColumnWidth(clients.Count) / 2 - NodeWidth / 2, topRow);
             Connect(internet, gwNode);
 
             double gx = x;
             foreach (var d in gear)
             {
-                var n = AddDeviceNode(d);
+                var n = AddDeviceNode(d, Role.Infrastructure);
                 Place(n, gx, gearRow);
                 Connect(gwNode, n);
                 gx += NodeWidth + ColGap;
@@ -99,7 +99,7 @@ public partial class MainWindow
             int cols = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(clients.Count)));
             for (int i = 0; i < clients.Count; i++)
             {
-                var n = AddDeviceNode(clients[i]);
+                var n = AddDeviceNode(clients[i], Role.Client);
                 Place(n, x + i % cols * (NodeWidth + ColGap),
                          clientRow + i / cols * (NodeHeight + RowGap));
                 Connect(gwNode, n);
@@ -133,32 +133,41 @@ public partial class MainWindow
 
     // ---- nodes --------------------------------------------------------------------------------
 
-    private TopoNode AddDeviceNode(DeviceViewModel d)
+    private TopoNode AddDeviceNode(DeviceViewModel d, Role role)
     {
         var key = d.Model.MacAddress.Length > 0 ? d.Model.MacAddress : d.Ipv4Address;
         var title = d.Name.Length > 0 ? d.Name : d.Ipv4Address;
-        return AddNode(key, d, title, d.Ipv4Address, d.Model.MacAddress, ColourFor(d.KindOf()), d.DeviceType);
+        return AddNode(key, d, title, d.Ipv4Address, d.Model.MacAddress, role, d.DeviceType);
     }
 
     private TopoNode AddNode(string key, DeviceViewModel? device, string title, string ip, string mac,
-        string colour, string kind = "")
+        Role role, string kind = "")
     {
-        var accent = (SolidColorBrush)new BrushConverter().ConvertFromString(colour)!;
-        accent.Freeze();
+        var (fill, line, text) = Palette(role);
+        SolidColorBrush Brush(string hex)
+        {
+            var b = (SolidColorBrush)new BrushConverter().ConvertFromString(hex)!;
+            b.Freeze();
+            return b;
+        }
 
         var stack = new StackPanel { Margin = new Thickness(8, 5, 8, 5) };
         stack.Children.Add(new TextBlock
         {
-            Text = title, FontWeight = FontWeights.SemiBold, FontSize = 12,
+            Text = title, FontWeight = FontWeights.SemiBold, FontSize = 12, Foreground = Brush(text),
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
         var detail = string.Join("  ·  ", new[] { ip, kind }.Where(s => s.Length > 0));
         if (detail.Length > 0)
-            stack.Children.Add(new TextBlock { Text = detail, FontSize = 10, Foreground = accent });
+            stack.Children.Add(new TextBlock
+            {
+                Text = detail, FontSize = 10, Foreground = Brush(text), Opacity = 0.85,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
         if (mac.Length > 0)
             stack.Children.Add(new TextBlock
             {
-                Text = mac, FontSize = 9, Foreground = Brushes.Gray,
+                Text = mac, FontSize = 9, Foreground = Brush(text), Opacity = 0.55,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             });
 
@@ -166,10 +175,10 @@ public partial class MainWindow
         {
             Width = NodeWidth,
             MinHeight = NodeHeight,
-            Background = Brushes.White,
-            BorderBrush = accent,
-            BorderThickness = new Thickness(1, 1, 1, 3),
-            CornerRadius = new CornerRadius(6),
+            Background = Brush(fill),
+            BorderBrush = Brush(line),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(7),
             Cursor = Cursors.Hand,
             Child = stack,
             ToolTip = device is null ? title : $"{title}\n{ip}\n{mac}\n{device.DeviceType}",
@@ -222,27 +231,28 @@ public partial class MainWindow
     private static Point Centre(TopoNode n) =>
         new(n.Position.X + NodeWidth / 2, n.Position.Y + n.Visual.ActualHeight / 2);
 
-    private static string ColourFor(DeviceKind kind) => kind switch
+    /// <summary>A node's role in the map, which is what its colour says. Pastels throughout: the map is
+    /// mostly clients, so it has to stay calm enough to read, with the gateway the one warm thing on it.</summary>
+    private enum Role { Internet, Gateway, Infrastructure, Client }
+
+    private static (string Fill, string Line, string Text) Palette(Role role) => role switch
     {
-        DeviceKind.Router => "#2B6CB0",
-        DeviceKind.Firewall => "#C0392B",
-        DeviceKind.Switch => "#2B3A42",
-        DeviceKind.AccessPoint => "#1E8449",
-        DeviceKind.Server => "#6C3483",
-        DeviceKind.Management => "#5D4037",
-        DeviceKind.Nas => "#16A085",
-        DeviceKind.Printer => "#A0522D",
-        DeviceKind.Camera => "#00838F",
-        DeviceKind.Phone or DeviceKind.Smartphone => "#C2185B",
-        DeviceKind.Tv or DeviceKind.Audio => "#8E44AD",
-        DeviceKind.GameConsole => "#E67E22",
-        DeviceKind.IoT => "#7F8C8D",
-        DeviceKind.Ups => "#B7950B",
-        DeviceKind.PaymentTerminal or DeviceKind.Franking => "#795548",
-        _ => "#95A5A6",
+        // The gateway: a soft, much-lightened orange – warm enough to find at a glance without shouting.
+        Role.Gateway => ("#FFF1DF", "#F3C48A", "#B26B12"),
+        // Switches, access points and any other routers: ice blue.
+        Role.Infrastructure => ("#EAF4FB", "#A9CFE7", "#2C6C93"),
+        // Everything the network exists for: a pale green.
+        Role.Client => ("#EDF8ED", "#AFD8AF", "#3F7A46"),
+        // The internet itself: neutral, it isn't part of the site.
+        _ => ("#EEF1F3", "#B8C4CB", "#546E7A"),
     };
 
     // ---- interaction --------------------------------------------------------------------------
+
+    // The mouse is captured on TopologyHost (the Border), never on the Canvas: the Canvas carries the
+    // pan/zoom transform, so its own hit area travels with it and it stops seeing the very events that
+    // move it. The Border stays put, which is why panning and the wheel work anywhere on the map and
+    // not just where a node happens to be.
 
     private void Topology_NodeDown(object sender, MouseButtonEventArgs e)
     {
@@ -250,7 +260,7 @@ public partial class MainWindow
         _dragNode = node;
         var p = e.GetPosition(TopologyCanvas);
         _dragOffset = new Point(p.X - node.Position.X, p.Y - node.Position.Y);
-        TopologyCanvas.CaptureMouse();
+        TopologyHost.CaptureMouse();
 
         if (node.Device is { } vm) DeviceGrid.SelectedItem = vm; // clicking a node selects it in the list
         e.Handled = true;
@@ -258,9 +268,11 @@ public partial class MainWindow
 
     private void Topology_BackgroundDown(object sender, MouseButtonEventArgs e)
     {
+        if (_dragNode is not null) return;         // a node handled this already
         _panning = true;
         _panStart = e.GetPosition(TopologyHost);
-        TopologyCanvas.CaptureMouse();
+        TopologyHost.CaptureMouse();
+        TopologyHost.Cursor = Cursors.ScrollAll;
     }
 
     private void Topology_MouseMove(object sender, MouseEventArgs e)
@@ -288,14 +300,22 @@ public partial class MainWindow
     {
         _dragNode = null;
         _panning = false;
-        TopologyCanvas.ReleaseMouseCapture();
+        TopologyHost.ReleaseMouseCapture();
+        TopologyHost.Cursor = Cursors.Arrow;
     }
 
+    /// <summary>Zooms towards the pointer, so the thing under the cursor stays under the cursor.</summary>
     private void Topology_MouseWheel(object sender, MouseWheelEventArgs e)
     {
-        var factor = e.Delta > 0 ? 1.1 : 1 / 1.1;
-        var next = Math.Clamp(TopologyScale.ScaleX * factor, 0.25, 3.0);
+        var before = e.GetPosition(TopologyCanvas);          // in canvas coordinates
+        var factor = e.Delta > 0 ? 1.12 : 1 / 1.12;
+        var next = Math.Clamp(TopologyScale.ScaleX * factor, 0.2, 3.0);
+        if (Math.Abs(next - TopologyScale.ScaleX) < 0.0001) { e.Handled = true; return; }
+
         TopologyScale.ScaleX = TopologyScale.ScaleY = next;
+        var after = e.GetPosition(TopologyCanvas);
+        TopologyPan.X += (after.X - before.X) * next;
+        TopologyPan.Y += (after.Y - before.Y) * next;
         e.Handled = true;
     }
 

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Threading;
 using TikMan.Core.Discovery;
 using TikMan.Core.Models;
@@ -29,6 +30,48 @@ public partial class MainWindow
     private const double MndpDurationSeconds = 5; // MNDP listen window (matches the bar's max)
     private readonly DispatcherTimer _mndpProgressTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private double _mndpElapsed;
+
+    private const double MetaSweepSeconds = 4; // mDNS + UPnP listen window (matches those bars' max)
+    private readonly DispatcherTimer _sweepProgressTimer = new() { Interval = TimeSpan.FromMilliseconds(200) };
+    private double _sweepElapsed;
+
+    /// <summary>Every phase bar, with the row that shows it. Used both to drive the combined bar and to
+    /// know which phases are actually running (a collapsed row is a phase that isn't).</summary>
+    private (DockPanel Row, ProgressBar Bar)[] PhaseBars => new[]
+    {
+        (Ipv4ProgressRow, Ipv4Progress), (MndpProgressRow, MndpProgress), (ZonProgressRow, ZonProgress),
+        (Ipv4MetaProgressRow, Ipv4MetaProgress), (MdnsProgressRow, MdnsProgress),
+        (SsdpProgressRow, SsdpProgress), (Ipv6ProgressRow, Ipv6Progress), (Ipv6MetaProgressRow, Ipv6MetaProgress),
+    };
+
+    /// <summary>Applies the "one bar or many" setting and keeps the combined bar fed. The individual
+    /// rows keep their own visibility either way – that is how the combined bar knows which phases are
+    /// still running and which have already finished and hidden themselves.</summary>
+    private void ApplyProgressBarMode()
+    {
+        bool single = _appData.SingleProgressBar;
+        PhaseRows.Visibility = single ? Visibility.Collapsed : Visibility.Visible;
+        CombinedProgressRow.Visibility = single ? Visibility.Visible : Visibility.Collapsed;
+        if (single) UpdateCombinedProgress();
+    }
+
+    /// <summary>The combined bar is the mean of how far each running phase has come. A phase that has
+    /// finished has hidden its row, and counts as done rather than dropping out of the average – so the
+    /// bar only ever moves forwards.</summary>
+    private void UpdateCombinedProgress()
+    {
+        var phases = PhaseBars.Where(p => p.Bar.Maximum > 0).ToList();
+        if (phases.Count == 0) return;
+
+        bool anyIndeterminate = phases.Any(p => p.Row.Visibility == Visibility.Visible && p.Bar.IsIndeterminate);
+        CombinedProgress.IsIndeterminate = anyIndeterminate;
+        if (anyIndeterminate) return;
+
+        double sum = phases.Sum(p => p.Row.Visibility == Visibility.Visible
+            ? Math.Clamp(p.Bar.Value / p.Bar.Maximum, 0, 1)
+            : 1.0); // hidden ⇒ that phase is through
+        CombinedProgress.Value = sum / phases.Count * 100;
+    }
 
     /// <summary>Fills the subnet box + source label from the local adapters (first one selected).</summary>
     private void InitSubnets()
@@ -92,10 +135,15 @@ public partial class MainWindow
         Ipv4MetaProgressRow.Visibility = Visibility.Visible;
         Ipv6ProgressRow.Visibility = Visibility.Visible;
         Ipv6MetaProgressRow.Visibility = Visibility.Visible;
+        MdnsProgressRow.Visibility = Visibility.Collapsed; // shown when the meta phase starts them
+        SsdpProgressRow.Visibility = Visibility.Collapsed;
         Ipv4Progress.IsIndeterminate = false;
         Ipv4Progress.Value = 0;
         Ipv4MetaProgress.Value = 0;
         Ipv6MetaProgress.Value = 0;
+        ZonProgress.Value = 0;
+        CombinedProgress.Value = 0;
+        ApplyProgressBarMode();
         StartMndpProgressTimer();
         StartIpv6ProgressTimer();
         SetStatus(T("Msg_Discovering"));
@@ -136,6 +184,7 @@ public partial class MainWindow
                         {
                             Ipv4Progress.Value = Math.Min(++scanned, hosts);
                             if (scanned >= hosts) Ipv4ProgressRow.Visibility = Visibility.Collapsed; // hide at 100 %
+                            UpdateCombinedProgress();
                         });
                         subnet = SubnetScanner.ScanAsync(target, found, onScanned, ct,
                             _appData.PingTimeoutMs, _appData.PingRetries);
@@ -220,6 +269,13 @@ public partial class MainWindow
         bar.Value = 0;
         int done = 0;
 
+        if (!v6)
+        {
+            MdnsProgressRow.Visibility = Visibility.Visible;
+            SsdpProgressRow.Visibility = Visibility.Visible;
+            StartSweepProgressTimer();
+        }
+
         // Two multicast sweeps for the whole subnet at once, alongside the per-device probes. Both ask
         // devices to describe themselves instead of us guessing: mDNS gets the hostname, the offered
         // services and Apple's exact hardware model (an iPhone, an iPad, a HomePod and an Apple TV are
@@ -235,6 +291,7 @@ public partial class MainWindow
             if (!ct.IsCancellationRequested)
                 await EnrichDetailsAsync(vm, ct);
             bar.Value = ++done; // continuations resume on the UI thread
+            UpdateCombinedProgress();
         }));
 
         // UPnP first: its friendly name is the one the owner chose ("Wohnzimmer unten"), whereas over
@@ -243,11 +300,15 @@ public partial class MainWindow
         foreach (var (ip, info) in await ssdp)
             if (_devices.FirstOrDefault(d => d.Ipv4Address == ip) is { } vm)
                 vm.ApplyUpnpInfo(info);
+        SsdpProgressRow.Visibility = Visibility.Collapsed;
+
         foreach (var (ip, info) in await mdns)
             if (_devices.FirstOrDefault(d => d.Ipv4Address == ip) is { } vm)
                 vm.ApplyMdnsInfo(info);
+        MdnsProgressRow.Visibility = Visibility.Collapsed;
 
         row.Visibility = Visibility.Collapsed;
+        UpdateCombinedProgress();
     }
 
     /// <summary>Advances the IPv6 bar from 0 to the discovery window (15 s) while it runs.</summary>
@@ -265,6 +326,7 @@ public partial class MainWindow
         _ipv6Elapsed += 0.25;
         Ipv6Progress.Value = Math.Min(_ipv6Elapsed, Ipv6DurationSeconds);
         if (_ipv6Elapsed >= Ipv6DurationSeconds) _ipv6ProgressTimer.Stop();
+        UpdateCombinedProgress();
     }
 
     /// <summary>Advances the MNDP bar from 0 to the listen window (5 s) while it runs.</summary>
@@ -281,7 +343,32 @@ public partial class MainWindow
     {
         _mndpElapsed += 0.25;
         MndpProgress.Value = Math.Min(_mndpElapsed, MndpDurationSeconds);
+        // ZON listens for the same five seconds, so the one clock drives both bars.
+        ZonProgress.Value = MndpProgress.Value;
         if (_mndpElapsed >= MndpDurationSeconds) _mndpProgressTimer.Stop();
+        UpdateCombinedProgress();
+    }
+
+    /// <summary>Drives the mDNS and UPnP bars: both are fixed four-second listen windows on the same
+    /// clock, so one timer covers them.</summary>
+    private void StartSweepProgressTimer()
+    {
+        _sweepElapsed = 0;
+        MdnsProgress.Value = 0;
+        SsdpProgress.Value = 0;
+        _sweepProgressTimer.Tick -= SweepProgressTick;
+        _sweepProgressTimer.Tick += SweepProgressTick;
+        _sweepProgressTimer.Start();
+    }
+
+    private void SweepProgressTick(object? sender, EventArgs e)
+    {
+        _sweepElapsed += 0.2;
+        var v = Math.Min(_sweepElapsed, MetaSweepSeconds);
+        MdnsProgress.Value = v;
+        SsdpProgress.Value = v;
+        if (_sweepElapsed >= MetaSweepSeconds) _sweepProgressTimer.Stop();
+        UpdateCombinedProgress();
     }
 
     /// <summary>Adds a discovered host to the list (dedup by IP, or merges the other-family address
