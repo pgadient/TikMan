@@ -22,6 +22,13 @@ public enum DeviceKind
     Laptop,
     Notebook,
     Tablet,
+    /// <summary>Card payment terminal (Banksys/Worldline, Ingenico, Verifone, …).</summary>
+    PaymentTerminal,
+    /// <summary>Franking machine / postage meter (Francotyp-Postalia, Pitney Bowes, Neopost, …).</summary>
+    Franking,
+    /// <summary>Out-of-band management controller (BMC): Fujitsu iRMC, HPE iLO, Dell iDRAC, IPMI,
+    /// Intel AMT/vPro. A separate little computer on the board, not the server itself.</summary>
+    Management,
 }
 
 /// <summary>Best-effort classification of a device into a <see cref="DeviceKind"/>.</summary>
@@ -44,6 +51,16 @@ public static class DeviceClassifier
         // VoIP phone makers – these ship desk phones, not servers, even when only 443 is open.
         ("yealink", DeviceKind.Phone), ("snom", DeviceKind.Phone), ("grandstream", DeviceKind.Phone),
         ("polycom", DeviceKind.Phone), ("audiocodes", DeviceKind.Phone), ("gigaset", DeviceKind.Phone),
+        // Card payment terminals – single-purpose boxes that happen to serve a web/SSH port.
+        ("banksys", DeviceKind.PaymentTerminal), ("worldline", DeviceKind.PaymentTerminal),
+        ("ingenico", DeviceKind.PaymentTerminal), ("verifone", DeviceKind.PaymentTerminal),
+        ("castles technology", DeviceKind.PaymentTerminal), ("pax computer", DeviceKind.PaymentTerminal),
+        ("sumup", DeviceKind.PaymentTerminal), ("hypercom", DeviceKind.PaymentTerminal),
+        // Franking machines / postage meters.
+        ("francotyp", DeviceKind.Franking), ("pitney bowes", DeviceKind.Franking),
+        ("neopost", DeviceKind.Franking), ("quadient", DeviceKind.Franking), ("frama", DeviceKind.Franking),
+        // BMC chips: an ASPEED/Nuvoton NIC *is* the management controller, never the host.
+        ("aspeed", DeviceKind.Management),
         ("espressif", DeviceKind.IoT), ("tuya", DeviceKind.IoT), ("sonoff", DeviceKind.IoT),
         ("shelly", DeviceKind.IoT), ("sonos", DeviceKind.IoT), ("nest", DeviceKind.IoT),
         ("gardena", DeviceKind.IoT), ("mystrom", DeviceKind.IoT), ("netatmo", DeviceKind.IoT),
@@ -167,6 +184,19 @@ public static class DeviceClassifier
         "phone", "spa1", "spa5", "yealink", "snom", "grandstream", "gxp", "polycom", "vvx",
     };
 
+    // Out-of-band management controllers. Matched as whole tokens – "ilo" and "imm" are far too short
+    // to go hunting for as substrings ("silo", "immersion", …).
+    private static readonly string[] ManagementSeries =
+    {
+        "irmc",                  // Fujitsu
+        "ilo",                   // HPE
+        "idrac",                 // Dell
+        "imm", "xcc",            // Lenovo / IBM
+        "cimc",                  // Cisco UCS
+        "megarac",               // AMI (the BMC firmware behind most white-box boards)
+        "ipmi", "bmc", "amt", "vpro",
+    };
+
     private static bool MatchesAny(string text, string[] tokens)
     {
         foreach (var t in tokens) if (text.Contains(t, StringComparison.Ordinal)) return true;
@@ -194,16 +224,25 @@ public static class DeviceClassifier
         var m = (model ?? "").ToLowerInvariant();
 
         // 1) The model line, when the device gave us one.
-        if (IsFirewall(v, Tokenize(m))) return DeviceKind.Firewall;
+        var tokens = Tokenize(m);
+        if (IsFirewall(v, tokens)) return DeviceKind.Firewall;
+        foreach (var t in tokens)
+            if (Array.IndexOf(ManagementSeries, t) >= 0) return DeviceKind.Management;
         if (MatchesAny(m, PrinterModels)) return DeviceKind.Printer;
         if (MatchesAny(m, ApModels)) return DeviceKind.AccessPoint;
         if (MatchesAny(m, PhoneModels)) return DeviceKind.Phone;
 
         // 2) Services only one kind of device speaks.
         if (Has(9100) || Has(515) || Has(631)) return DeviceKind.Printer;  // JetDirect / LPD / IPP
-        if (Has(5060) || Has(5061)) return DeviceKind.Phone;               // SIP
+        if (Has(623) || Has(16992) || Has(16993)) return DeviceKind.Management; // IPMI / Intel AMT
         if (Has(554) || Has(8554)) return DeviceKind.Camera;               // RTSP
         if (Has(8291) || Has(8728) || Has(8729)) return DeviceKind.Router; // MikroTik Winbox / API
+
+        // SIP: a desk phone speaks SIP and little else. A PBX (3CX, Asterisk, FreePBX) speaks SIP *and*
+        // is a general-purpose host – it has SSH or RDP. Phones don't. So SIP + a shell ⇒ telephony
+        // server, not a handset. (A real phone whose maker or model we know was already caught above.)
+        if (Has(5060) || Has(5061))
+            return Has(22) || Has(3389) ? DeviceKind.Server : DeviceKind.Phone;
 
         // 3) A Windows box announces itself with RDP, or with the RPC/WMI + SMB pair. That beats the
         //    OUI: a workstation on a Zyxel-branded NIC is a PC, not a switch.
@@ -213,7 +252,8 @@ public static class DeviceClassifier
         //    it is even though it also serves a web UI, SNMP and scan-to-mail.
         var vendorKind = VendorKind(v);
         if (vendorKind is DeviceKind.Printer or DeviceKind.Phone or DeviceKind.Ups
-            or DeviceKind.Camera or DeviceKind.Nas)
+            or DeviceKind.Camera or DeviceKind.Nas or DeviceKind.PaymentTerminal
+            or DeviceKind.Franking or DeviceKind.Management)
             return vendorKind;
 
         // 5) A real mailbox server (IMAP/POP/submission). Bare SMTP does *not* count: that is what

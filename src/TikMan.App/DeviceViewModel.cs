@@ -584,34 +584,46 @@ public class DeviceViewModel : INotifyPropertyChanged
     {
         get
         {
-            if (Model.Vendor == DeviceVendor.TpLink) return T("Dev_Switch");
-            // SwOS devices (CSS/CRS in switch mode) are switches, not routers.
-            if (Model.ExtraInfo.TryGetValue("System", out var os) && os == "SwOS") return T("Dev_Switch");
-            if (Model.ExtraInfo.TryGetValue("Modell", out var mdl) &&
-                mdl.StartsWith("CSS", StringComparison.OrdinalIgnoreCase)) return T("Dev_Switch");
-            if (Board.Length > 0) return T("Dev_Router");
-            if (Model.ExtraInfo.TryGetValue("Bauform", out var ff))
-            {
-                var t = ff switch
-                {
-                    "Laptop" => T("Dev_Laptop"),
-                    "Notebook" => T("Dev_Notebook"),
-                    "Tablet" => T("Dev_Tablet"),
-                    "Desktop" or "Workstation" => T("Dev_Pc"),
-                    "Server" or "Server (SOHO)" or "Performance-Server" => T("Dev_Server"),
-                    _ => "",
-                };
-                if (t.Length > 0) return t;
-            }
-            // The identified vendor (web-scraped) counts too – a Gardena hub is IoT even when its
-            // MAC belongs to a generic radio-module maker.
-            // Feed the classifier the model text the user actually sees. SNMP/WMI/web each land in a
-            // different slot (ExtraInfo["Modell"] / "Produkt" / "Web-Titel"), all folded into
-            // ModelDisplay – Model.Model alone is empty for a device we only know over SNMP, which
-            // left the model-based rules (firewall/AP/printer series) with nothing to match.
-            return DeviceKindText(DeviceClassifier.Guess(
-                $"{MacVendor} {IdentifiedVendor}", Model.OpenPorts, $"{ModelDisplay} {Model.Model}"));
+            var kind = BaseDeviceType();
+            // A hypervisor hands its guests a NIC out of its own OUI range, so the MAC alone tells a
+            // VM from bare metal. Worth saying: a "server" that is really a guest actually lives on
+            // some other machine. A guest we can't otherwise place is at least known to be a VM.
+            if (Hypervisor.Length == 0) return kind;
+            return kind.Length > 0 ? $"{kind} (VM)" : "VM";
         }
+    }
+
+    /// <summary>The hypervisor behind this MAC ("Hyper-V", "VMware", "KVM/QEMU", …); "" on bare metal.</summary>
+    public string Hypervisor => Virtualization.Hypervisor(Model.MacAddress);
+
+    private string BaseDeviceType()
+    {
+        if (Model.Vendor == DeviceVendor.TpLink) return T("Dev_Switch");
+        // SwOS devices (CSS/CRS in switch mode) are switches, not routers.
+        if (Model.ExtraInfo.TryGetValue("System", out var os) && os == "SwOS") return T("Dev_Switch");
+        if (Model.ExtraInfo.TryGetValue("Modell", out var mdl) &&
+            mdl.StartsWith("CSS", StringComparison.OrdinalIgnoreCase)) return T("Dev_Switch");
+        if (Board.Length > 0) return T("Dev_Router");
+        if (Model.ExtraInfo.TryGetValue("Bauform", out var ff))
+        {
+            var t = ff switch
+            {
+                "Laptop" => T("Dev_Laptop"),
+                "Notebook" => T("Dev_Notebook"),
+                "Tablet" => T("Dev_Tablet"),
+                "Desktop" or "Workstation" => T("Dev_Pc"),
+                "Server" or "Server (SOHO)" or "Performance-Server" => T("Dev_Server"),
+                _ => "",
+            };
+            if (t.Length > 0) return t;
+        }
+        // The identified vendor (web-scraped) counts too – a Gardena hub is IoT even when its MAC
+        // belongs to a generic radio-module maker. And feed the classifier the model text the user
+        // actually sees: SNMP/WMI/web each land in a different slot (ExtraInfo["Modell"] / "Produkt" /
+        // "Web-Titel"), all folded into ModelDisplay – Model.Model alone is empty for a device we only
+        // know over SNMP, which left the model-based rules with nothing to match.
+        return DeviceKindText(DeviceClassifier.Guess(
+            $"{MacVendor} {IdentifiedVendor}", Model.OpenPorts, $"{ModelDisplay} {Model.Model}"));
     }
 
     /// <summary>True for TP-Link switches (SSH connector, firmware page instead of channels).</summary>
@@ -640,6 +652,9 @@ public class DeviceViewModel : INotifyPropertyChanged
         DeviceKind.Laptop => T("Dev_Laptop"),
         DeviceKind.Notebook => T("Dev_Notebook"),
         DeviceKind.Tablet => T("Dev_Tablet"),
+        DeviceKind.PaymentTerminal => T("Dev_PaymentTerminal"),
+        DeviceKind.Franking => T("Dev_Franking"),
+        DeviceKind.Management => T("Dev_Management"),
         _ => "",
     };
 
@@ -1115,6 +1130,7 @@ public class ProtocolVm
             "jetdirect" or "lpd" or "ipp" => "#A0522D", // printing
             "sip" => "#C2185B",                          // telephony
             "rtsp" => "#00838F",                         // camera stream
+            "ipmi" or "amt" => "#5D4037",                // out-of-band management (BMC)
             _ => "#95A5A6",
         };
         if (!Cache.TryGetValue(hex, out var brush))

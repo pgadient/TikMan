@@ -101,7 +101,11 @@ public static class OuiLookup
                 continue;
             }
             if (!inBlock) continue;
-            if (line.Trim().Length == 0) break; // blank line ends the record
+            // Only a truly empty line ends a record. A whitespace-only line is something else: an
+            // address field the registrant left blank (Banksys registered no city, just tabs), and
+            // treating it as the end threw away every line after it – the country among them.
+            if (line.Length == 0) break;
+            if (line.Trim().Length == 0) continue;
             if (line.Contains("(base 16)", StringComparison.OrdinalIgnoreCase)) continue; // redundant with (hex)
             block.Add(line.Trim());
         }

@@ -22,8 +22,10 @@ public static class SubnetScanner
         // ended up looking like a server.
         (515, "lpd"), (554, "rtsp"), (587, "submission"), (631, "ipp"), (873, "rsync"), (990, "ftps"),
         (993, "imaps"),
+        (623, "ipmi"),               // out-of-band management controller (iRMC / iLO / iDRAC / BMC)
         (3389, "rdp"), (5060, "sip"), (5900, "vnc"), (5901, "vnc"),
         (8080, "http-alt"), (8291, "winbox"), (8728, "api"), (8729, "api-ssl"), (9100, "jetdirect"),
+        (16992, "amt"), (16993, "amt"), // Intel AMT / vPro management
     };
 
     // SNMP (UDP 161) can't be found by the TCP connect scan, so it's detected out-of-band with a
