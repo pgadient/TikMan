@@ -40,6 +40,42 @@ public static class SnmpProbe
         }
     }
 
+    /// <summary>Walks an OID subtree with GetNext requests and returns every varbind in it – OID, BER
+    /// tag and raw value bytes. This is what table reads (the bridge FDB, ifName) are made of. Null
+    /// when the device never answered at all; a partial list when it stopped mid-walk.</summary>
+    public static async Task<List<(string Oid, byte Tag, byte[] Value)>?> WalkAsync(
+        string host, string community, int[] rootOid, int maxRows = 4096, CancellationToken ct = default)
+    {
+        if (!IPAddress.TryParse(host.Trim('[', ']'), out var ip)) return null;
+        var rows = new List<(string, byte, byte[])>();
+        var rootPrefix = string.Join('.', rootOid) + ".";
+        var current = rootOid;
+        try
+        {
+            using var udp = new UdpClient(ip.AddressFamily);
+            for (int i = 0; i < maxRows && !ct.IsCancellationRequested; i++)
+            {
+                var request = BuildRequest(0xA1, community, i + 1, current); // GetNext
+                await udp.SendAsync(request, request.Length, new IPEndPoint(ip, 161)).ConfigureAwait(false);
+                var receiveTask = udp.ReceiveAsync();
+                if (await Task.WhenAny(receiveTask, Task.Delay(1200, ct)).ConfigureAwait(false) != receiveTask)
+                    return rows.Count > 0 ? rows : null;   // silence mid-walk: keep what we have
+
+                var vb = ParseFirstVarbind((await receiveTask.ConfigureAwait(false)).Buffer);
+                if (vb is null) break;                                        // error status – end of table
+                var (oid, tag, value) = vb.Value;
+                if (!oid.StartsWith(rootPrefix, StringComparison.Ordinal)) break; // walked past the subtree
+                rows.Add((oid, tag, value));
+                current = oid.Split('.').Select(int.Parse).ToArray();
+            }
+            return rows;
+        }
+        catch (Exception ex) when (ex is SocketException or OperationCanceledException or ObjectDisposedException)
+        {
+            return rows.Count > 0 ? rows : null;
+        }
+    }
+
     // ---- BER encoding ----
 
     private static byte[] BuildGetRequest(string community, int requestId)
@@ -56,6 +92,50 @@ public static class SnmpProbe
             Integer(0),                      // version = SNMPv1
             OctetString(community),
             pdu));
+    }
+
+    /// <summary>One-varbind request with the given PDU type (0xA0 Get, 0xA1 GetNext).</summary>
+    private static byte[] BuildRequest(byte pduType, string community, int requestId, int[] oid)
+    {
+        var pdu = Seq(pduType, Concat(
+            Integer(requestId),
+            Integer(0),
+            Integer(0),
+            Seq(0x30, Varbind(oid))));
+        return Seq(0x30, Concat(Integer(0), OctetString(community), pdu));
+    }
+
+    /// <summary>The first varbind of a response as (OID, tag, raw value bytes); null when the agent
+    /// reported an error status – which is how a v1 walk says "end of table".</summary>
+    private static (string Oid, byte Tag, byte[] Value)? ParseFirstVarbind(byte[] data)
+    {
+        try
+        {
+            int pos = 0;
+            if (!ReadTlv(data, ref pos, out _, out _)) return null;   // outer SEQUENCE
+            SkipTlv(data, ref pos);                                    // version
+            SkipTlv(data, ref pos);                                    // community
+            if (!ReadTlv(data, ref pos, out _, out _)) return null;    // PDU
+            SkipTlv(data, ref pos);                                    // request-id
+            var (_, esStart, esLen) = ReadHeader(data, pos);           // error-status
+            int errorStatus = 0;
+            for (int i = 0; i < esLen; i++) errorStatus = (errorStatus << 8) | data[esStart + i];
+            if (errorStatus != 0) return null;
+            pos = esStart + esLen;
+            SkipTlv(data, ref pos);                                    // error-index
+            if (!ReadTlv(data, ref pos, out _, out _)) return null;    // varbind list
+            if (!ReadTlv(data, ref pos, out _, out _)) return null;    // first varbind
+            if (data[pos] != 0x06) return null;
+            int oidStart = pos;
+            SkipTlv(data, ref pos);
+            var oid = DecodeOid(data, oidStart);
+            var (tag, vStart, vLen) = ReadHeader(data, pos);
+            if (tag is 0x80 or 0x81 or 0x82) return null;              // noSuchObject/Instance, endOfMib
+            var value = new byte[vLen];
+            Array.Copy(data, vStart, value, 0, vLen);
+            return (oid, tag, value);
+        }
+        catch (IndexOutOfRangeException) { return null; }              // truncated packet
     }
 
     private static byte[] Varbind(int[] oid) => Seq(0x30, Concat(Oid(oid), new byte[] { 0x05, 0x00 })); // value = NULL

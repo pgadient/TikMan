@@ -574,7 +574,7 @@ public partial class MainWindow
             try
             {
                 var host = vm.Ipv4Address.Length > 0 ? vm.Ipv4Address : vm.Host;
-                if (await SnmpProbe.QueryAsync(host, ct) is { } snmp)
+                if (await SnmpProbe.QueryAsync(host, ct, _appData.SnmpCommunity) is { } snmp)
                 {
                     vm.MarkSnmpOpen(); // badge (also raises SupportedProtocols)
                     if (vm.Board.Length == 0 &&

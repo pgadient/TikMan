@@ -944,6 +944,37 @@ public class DeviceViewModel : INotifyPropertyChanged
         catch (Exception) { return null; } // not RouterOS / no rest policy / unreachable – no table then
     }
 
+    /// <summary>The device's neighbour sightings (MAC → interface) over REST; null without credentials
+    /// or when it isn't RouterOS. Supplements the bridge table in the physical topology.</summary>
+    public async Task<List<(string Mac, string Port)>?> GetNeighborsAsync(CancellationToken ct = default)
+    {
+        if (Model.EncryptedPassword.Length == 0) return null;
+        try
+        {
+            return (await Client.GetNeighborsAsync(ct))
+                .Select(n => (NormalizeMac(n.Mac), n.Interface))
+                .Where(t => t.Item1.Length == 12 && t.Item2.Length > 0)
+                .ToList();
+        }
+        catch (Exception) { return null; }
+    }
+
+    /// <summary>Wireless interface name → SSID, so the topology can label "wifi1" with the network it
+    /// actually radiates; null without credentials / not RouterOS / no radios.</summary>
+    public async Task<Dictionary<string, string>?> GetWifiSsidsAsync(CancellationToken ct = default)
+    {
+        if (Model.EncryptedPassword.Length == 0) return null;
+        try
+        {
+            var map = await Client.GetWifiSsidsAsync(ct);
+            return map.Count > 0 ? map : null;
+        }
+        catch (Exception) { return null; }
+    }
+
+    /// <summary>True when device credentials are stored – i.e. the API paths are worth trying.</summary>
+    public bool HasCredentials => Model.EncryptedPassword.Length > 0;
+
     /// <summary>A MAC as twelve bare hex digits, whatever the separators; "" when it isn't one.</summary>
     public static string NormalizeMac(string mac)
     {

@@ -72,6 +72,11 @@
                 </StackPanel>
                 <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_ScanHint}"/>
 
+                <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_SnmpCommunity}"/>
+                <TextBox x:Name="SnmpCommunityBox" Width="200" HorizontalAlignment="Left" Height="24"
+                         Margin="0,3,0,0" VerticalContentAlignment="Center"/>
+                <TextBlock Margin="0,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_SnmpHint}"/>
+
                 <Separator Margin="0,14,0,0"/>
 
                 <!-- OUI database -->

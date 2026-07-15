@@ -39,6 +39,7 @@ public partial class SettingsWindow : Window
         if (CoffeeButtonCombo.SelectedValue is null) CoffeeButtonCombo.SelectedIndex = 0;
         ExpandRowsCheck.IsChecked = data.ExpandRowsByDefault;
         SingleProgressCheck.IsChecked = data.SingleProgressBar;
+        SnmpCommunityBox.Text = data.SnmpCommunity;
         VncNoticeCheck.IsChecked = data.ShowVncNotice;
         PingTimeoutBox.Text = data.PingTimeoutMs.ToString();
         PingRetriesBox.Text = data.PingRetries.ToString();
@@ -139,6 +140,7 @@ public partial class SettingsWindow : Window
         if (CoffeeButtonCombo.SelectedValue is string coffee) _data.CoffeeButton = coffee;
         _data.ExpandRowsByDefault = ExpandRowsCheck.IsChecked == true;
         _data.SingleProgressBar = SingleProgressCheck.IsChecked == true;
+        _data.SnmpCommunity = SnmpCommunityBox.Text.Trim() is { Length: > 0 } comm ? comm : "public";
         _data.ShowVncNotice = VncNoticeCheck.IsChecked == true;
         // Ping tuning – clamp to sane bounds so a typo can't hang or disable the scan.
         if (int.TryParse(PingTimeoutBox.Text.Trim(), out var timeout))

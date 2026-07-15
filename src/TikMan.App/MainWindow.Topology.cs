@@ -29,6 +29,7 @@ public partial class MainWindow
     private bool _topoPhysical;                       // which of the two views the canvas is showing
     private Dictionary<string, List<string>>? _traceResults;   // device ip → router hops (physical view)
     private Dictionary<DeviceViewModel, Dictionary<string, string>>? _fdb; // bridge → (MAC → port)
+    private Dictionary<DeviceViewModel, Dictionary<string, string>>? _ssids; // bridge → (wlan port → SSID)
     private bool _tracing;
 
     private TopoNode? _dragNode;
@@ -115,19 +116,51 @@ public partial class MainWindow
                 if (hops is not null) lock (results) results[ip] = hops;
             }));
 
+            // Every device that could plausibly *be* a bridge gets asked for its forwarding table:
+            // RouterOS with credentials over REST (richest), everything else – including a MikroTik we
+            // hold no login for – over SNMP with the configured read community.
             var bridges = _devices.Where(d => d.HasIpv4 &&
-                (d.Board.Length > 0 || d.IdentifiedVendor == "MikroTik")).ToList();
+                (d.Board.Length > 0 || d.IdentifiedVendor == "MikroTik" ||
+                 d.KindOf() is DeviceKind.Switch or DeviceKind.AccessPoint or DeviceKind.Router
+                     or DeviceKind.Firewall)).Distinct().ToList();
+            var community = _appData.SnmpCommunity;
             var fdb = new Dictionary<DeviceViewModel, Dictionary<string, string>>();
+            var ssids = new Dictionary<DeviceViewModel, Dictionary<string, string>>();
             var fdbTask = Task.WhenAll(bridges.Select(async d =>
             {
                 var table = await d.GetBridgeHostsAsync();
-                if (table is not null) lock (fdb) fdb[d] = table;
+                if (table is not null)
+                {
+                    // With credentials the neighbour table sweetens the map (extra MAC sightings on
+                    // physical ports), and the SSIDs name the wlan ports.
+                    if (await d.GetNeighborsAsync() is { } neighbours)
+                        foreach (var (mac, port) in neighbours)
+                            if (!table.ContainsKey(mac)) table[mac] = port;
+                    var wifi = await d.GetWifiSsidsAsync();
+                    lock (fdb)
+                    {
+                        fdb[d] = table;
+                        if (wifi is { Count: > 0 }) ssids[d] = wifi;
+                    }
+                    return;
+                }
+                // No login – SNMP is the fallback, and it works vendor-neutrally (Zyxel & Co. too).
+                if (await SnmpFdb.ReadAsync(d.Ipv4Address, community) is { } snmp)
+                    lock (fdb) fdb[d] = snmp;
             }));
 
             await Task.WhenAll(tracesTask, fdbTask);
             _traceResults = results;
             _fdb = fdb;
-            SetStatus(T("Topo_TraceDone", results.Count));
+            _ssids = ssids;
+
+            // A MikroTik without a login still lands on the map via SNMP – but the REST path sees
+            // more (port names, neighbours, SSIDs), and that is worth telling the user.
+            int noLogin = bridges.Count(d =>
+                (d.Board.Length > 0 || d.IdentifiedVendor == "MikroTik") && !d.HasCredentials);
+            SetStatus(noLogin > 0
+                ? T("Topo_TraceDone", results.Count) + " " + T("Topo_LoginHint", noLogin)
+                : T("Topo_TraceDone", results.Count));
         }
         finally { _tracing = false; }
     }
@@ -236,6 +269,13 @@ public partial class MainWindow
             return best;
         }
 
+        // A wlan port carries the network it radiates: "wifi1 (MeinWLAN)" instead of a bare "wifi1".
+        string PortLabel(DeviceViewModel bridge, string port) =>
+            port.Length > 0 && _ssids is not null && _ssids.TryGetValue(bridge, out var wifi) &&
+            wifi.TryGetValue(port, out var ssid)
+                ? $"{port} ({ssid})"
+                : port;
+
         // Layout plumbing: one lane per depth level.
         var nextX = new Dictionary<int, double>();
         void PlaceAt(int level, TopoNode n)
@@ -259,7 +299,7 @@ public partial class MainWindow
             if (path.Add(sw) && AttachOf(sw.Model.MacAddress, sw) is { } at)
             {
                 parent = at.Bridge == sw ? root : EnsureBridge(at.Bridge, path);
-                port = at.Port;
+                port = PortLabel(at.Bridge, at.Port);
             }
             var node = AddDeviceNode(sw, Role.Infrastructure, port);
             nodes[sw] = node;
@@ -280,7 +320,7 @@ public partial class MainWindow
 
             if (AttachOf(d.Model.MacAddress, d) is { } at && nodes.TryGetValue(at.Bridge, out var bridgeNode))
             {
-                var leaf = AddDeviceNode(d, Role.Client, at.Port);
+                var leaf = AddDeviceNode(d, Role.Client, PortLabel(at.Bridge, at.Port));
                 nodes[d] = leaf;
                 levels[leaf] = levels[bridgeNode] + 1;
                 PlaceAt(levels[leaf], leaf);

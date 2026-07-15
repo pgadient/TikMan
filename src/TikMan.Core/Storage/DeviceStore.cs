@@ -50,6 +50,9 @@ public class AppData
     public int PingRetries { get; set; }
     /// <summary>Show the "a standalone client is safer" notice before the built-in VNC viewer (default on).</summary>
     public bool ShowVncNotice { get; set; } = true;
+    /// <summary>Read-only SNMP community for the probes and the FDB reads on the physical topology.
+    /// "public" is what most gear ships with; a site that changed it enters its own here.</summary>
+    public string SnmpCommunity { get; set; } = "public";
     /// <summary>Show the discovery phases as one combined bar instead of one bar per phase. The phases
     /// run in parallel and each on its own clock, so a single "how far along is the scan" bar reads far
     /// more easily than seven – hence on by default.</summary>

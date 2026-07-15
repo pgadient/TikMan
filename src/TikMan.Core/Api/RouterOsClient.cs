@@ -66,6 +66,58 @@ public sealed class RouterOsClient : IDisposable
         return S(doc.RootElement, "name");
     }
 
+    /// <summary>The neighbour table (MNDP/LLDP/CDP): which MAC was heard on which interface. The
+    /// interface field can be a comma list ("bridge,ether5"); the physical member is what places the
+    /// neighbour, so bridge/vlan entries are skipped in favour of the port.</summary>
+    public async Task<List<(string Mac, string Interface)>> GetNeighborsAsync(CancellationToken ct = default)
+    {
+        using var doc = await GetAsync("ip/neighbor", TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+        var list = new List<(string, string)>();
+        foreach (var e in doc.RootElement.EnumerateArray())
+        {
+            var mac = S(e, "mac-address");
+            var ifaceList = S(e, "interface");
+            if (mac.Length == 0 || ifaceList.Length == 0) continue;
+            var parts = ifaceList.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            var port = parts.FirstOrDefault(p =>
+                           !p.StartsWith("bridge", StringComparison.OrdinalIgnoreCase) &&
+                           !p.StartsWith("vlan", StringComparison.OrdinalIgnoreCase))
+                       ?? parts.LastOrDefault() ?? "";
+            if (port.Length > 0) list.Add((mac, port));
+        }
+        return list;
+    }
+
+    /// <summary>Wireless interface name → SSID, for labelling the topology's wlan ports. Tries the v7
+    /// wifi package first (hAP ax & co.), then the legacy wireless one; an empty map when the device
+    /// has no radios.</summary>
+    public async Task<Dictionary<string, string>> GetWifiSsidsAsync(CancellationToken ct = default)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var path in new[] { "interface/wifi", "interface/wireless" })
+        {
+            try
+            {
+                using var doc = await GetAsync(path, TimeSpan.FromSeconds(8), ct).ConfigureAwait(false);
+                foreach (var e in doc.RootElement.EnumerateArray())
+                {
+                    var name = S(e, "name");
+                    if (name.Length == 0) continue;
+                    // The SSID sits flat on legacy wireless, dotted or nested under the v7 wifi package.
+                    var ssid = S(e, "ssid");
+                    if (ssid.Length == 0) ssid = S(e, "configuration.ssid");
+                    if (ssid.Length == 0 && e.TryGetProperty("configuration", out var cfg) &&
+                        cfg.ValueKind == System.Text.Json.JsonValueKind.Object)
+                        ssid = S(cfg, "ssid");
+                    if (ssid.Length > 0) map[name] = ssid;
+                }
+                if (map.Count > 0) return map;
+            }
+            catch (Exception) { /* this package isn't installed on the device – try the other */ }
+        }
+        return map;
+    }
+
     /// <summary>The bridge host (forwarding) table: which MAC is reachable behind which bridge port.
     /// This is the one thing that can *prove* which switch port a device hangs off – switching is
     /// layer 2 and therefore invisible to traceroute. Local entries (the bridge's own MACs) are
