@@ -76,6 +76,7 @@ public partial class MainWindow : Window
         foreach (var vm in _devices) ApplyDefaultExpansion(vm); // persisted devices
 
         if (_appData.ShowIpv6View) AddressTabs.SelectedIndex = 1; // restore the last address view
+        SimpleModeCheck.IsChecked = _appData.SimpleScanMode;
         ApplyContactButtons();
         ApplyListInfo();
         // A quiet bottom-bar hint when Npcap is missing, so ZON discovery's absence is explained.
@@ -93,8 +94,10 @@ public partial class MainWindow : Window
             _ = CheckUpdatesAsync(_devices.ToList());
         }
 
-        // Discovery now runs automatically on startup (MNDP + IPv4 + IPv6), adding every host found.
-        await RunDiscoveryAsync(auto: true);
+        // Discovery normally runs automatically on startup, adding every host found – unless the user
+        // turned that off in the settings.
+        if (!_appData.NoInitialScan) await RunDiscoveryAsync(auto: true);
+        else { UpdateNoLoginBanner(); SetStatus(T("Status_Ready")); }
     }
 
     private void Window_Closing(object sender, CancelEventArgs e) => SaveAppData();

@@ -154,6 +154,13 @@ public partial class MainWindow
         if (ContinuousScanCheck.IsChecked == true && !_scanning) _ = RunDiscoveryAsync(auto: true);
     }
 
+    private void SimpleMode_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        _appData.SimpleScanMode = SimpleModeCheck.IsChecked == true;
+        SaveAppData();
+    }
+
     private async Task RunDiscoveryAsync(bool auto)
     {
         // Clicking the Stop button also ends continuous mode, so a stop really stops.
@@ -162,14 +169,18 @@ public partial class MainWindow
         _scanCts = new CancellationTokenSource();
         var ct = _scanCts.Token;
 
+        // Simple / corporate mode: the plain IPv4 address scan only – no discovery-protocol or probe
+        // traffic. All the other phase bars stay hidden because those phases never run.
+        bool simple = _appData.SimpleScanMode;
+
         ScanButton.Content = T("Sc_Stop");
         DiscoveryProgressPanel.Visibility = Visibility.Visible;
         Ipv4ProgressRow.Visibility = Visibility.Visible;
-        MndpProgressRow.Visibility = Visibility.Visible;
-        ZonProgressRow.Visibility = ZdpScanner.IsAvailable() ? Visibility.Visible : Visibility.Collapsed; // only with Npcap
-        Ipv4MetaProgressRow.Visibility = Visibility.Visible;
-        Ipv6ProgressRow.Visibility = Visibility.Visible;
-        Ipv6MetaProgressRow.Visibility = Visibility.Visible;
+        MndpProgressRow.Visibility = simple ? Visibility.Collapsed : Visibility.Visible;
+        ZonProgressRow.Visibility = !simple && ZdpScanner.IsAvailable() ? Visibility.Visible : Visibility.Collapsed;
+        Ipv4MetaProgressRow.Visibility = simple ? Visibility.Collapsed : Visibility.Visible;
+        Ipv6ProgressRow.Visibility = simple ? Visibility.Collapsed : Visibility.Visible;
+        Ipv6MetaProgressRow.Visibility = simple ? Visibility.Collapsed : Visibility.Visible;
         MdnsProgressRow.Visibility = Visibility.Collapsed; // shown when the meta phase starts them
         SsdpProgressRow.Visibility = Visibility.Collapsed;
         Ipv4Progress.IsIndeterminate = false;
@@ -179,20 +190,21 @@ public partial class MainWindow
         ZonProgress.Value = 0;
         CombinedProgress.Value = 0;
         _combinedShownPct = 0;    // start of a run – the monotonic clamp resets
-        _metaSweepPending = true; // devices can still appear until the mDNS/SSDP sweep is through
+        _metaSweepPending = !simple; // no mDNS/SSDP sweep in simple mode
         ApplyProgressBarMode();
-        StartMndpProgressTimer();
-        StartIpv6ProgressTimer();
+        if (!simple) { StartMndpProgressTimer(); StartIpv6ProgressTimer(); }
         UpdateTopoScanBanner(); // if a map is open, show "updating when the scan finishes"
         SetStatus(T("Msg_Discovering"));
 
         var found = new Progress<DiscoveredDevice>(AddDiscovered);
         try
         {
-            var mndp = MndpScanner.DiscoverAsync(TimeSpan.FromSeconds(5), found, ct);
-            var ipv6 = Ipv6Discovery.DiscoverContinuousAsync(TimeSpan.FromSeconds(Ipv6DurationSeconds), found, ct);
+            // In simple mode these discovery-protocol passes don't run – only the IPv4 subnet scan.
+            Task mndp = simple ? Task.CompletedTask : MndpScanner.DiscoverAsync(TimeSpan.FromSeconds(5), found, ct);
+            Task ipv6 = simple ? Task.CompletedTask
+                : Ipv6Discovery.DiscoverContinuousAsync(TimeSpan.FromSeconds(Ipv6DurationSeconds), found, ct);
             // Zyxel ZON/ZDP: finds Zyxel switches/APs on the local L2 with model + firmware (needs Npcap).
-            var zon = ZdpScanner.DiscoverAsync(TimeSpan.FromSeconds(5), found, ct);
+            Task zon = simple ? Task.CompletedTask : ZdpScanner.DiscoverAsync(TimeSpan.FromSeconds(5), found, ct);
 
             Task subnet = Task.CompletedTask;
             var target = SubnetBox.Text.Trim();
@@ -254,12 +266,12 @@ public partial class MainWindow
             async Task V4ChainAsync()
             {
                 await Task.WhenAll(gm, gs, gz);
-                await RunMetaPhaseAsync(v6: false, ct);
+                if (!simple) await RunMetaPhaseAsync(v6: false, ct); // no per-device probing in simple mode
             }
             async Task V6ChainAsync()
             {
                 await gi;
-                await RunMetaPhaseAsync(v6: true, ct);
+                if (!simple) await RunMetaPhaseAsync(v6: true, ct);
             }
             await Task.WhenAll(V4ChainAsync(), V6ChainAsync());
             SetStatus(T("Msg_DiscoveryDone", _devices.Count));

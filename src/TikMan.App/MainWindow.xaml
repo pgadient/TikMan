@@ -93,6 +93,9 @@
                     <CheckBox x:Name="ContinuousScanCheck" VerticalAlignment="Center" Margin="16,0,0,0"
                               Checked="ContinuousScan_Changed" Unchecked="ContinuousScan_Changed"
                               Content="{loc:Loc Tb_ContinuousScan}" ToolTip="{loc:Loc Tb_ContinuousScanTip}"/>
+                    <CheckBox x:Name="SimpleModeCheck" VerticalAlignment="Center" Margin="16,0,0,0"
+                              Checked="SimpleMode_Changed" Unchecked="SimpleMode_Changed"
+                              Content="{loc:Loc Tb_SimpleMode}" ToolTip="{loc:Loc Tb_SimpleModeTip}"/>
                 </StackPanel>
             </Grid>
         </Border>

@@ -59,6 +59,9 @@
                 <CheckBox x:Name="SingleProgressCheck" Margin="0,12,0,0" Content="{loc:Loc Set_SingleProgress}"/>
                 <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_SingleProgressHint}"/>
 
+                <CheckBox x:Name="NoInitialScanCheck" Margin="0,12,0,0" Content="{loc:Loc Set_NoInitialScan}"/>
+                <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_NoInitialScanHint}"/>
+
                 <CheckBox x:Name="VncNoticeCheck" Margin="0,12,0,0" Content="{loc:Loc Set_VncNotice}"/>
             </StackPanel>
         </ScrollViewer>
