@@ -493,7 +493,7 @@
                     MouseWheel="Topology_MouseWheel">
                 <Border.ContextMenu>
                     <ContextMenu>
-                        <MenuItem Header="{loc:Loc Topo_ExportPng}" Click="Topology_ExportPng_Click"/>
+                        <MenuItem Header="{loc:Loc Topo_Export}" Click="Topology_Export_Click"/>
                         <MenuItem Header="{loc:Loc Topo_Fit}" Click="Topology_Fit_Click"/>
                         <MenuItem Header="{loc:Loc Topo_Relayout}" Click="Topology_Relayout_Click"/>
                     </ContextMenu>
@@ -512,7 +512,7 @@
                         <Button Content="{loc:Loc Topo_Relayout}" Click="Topology_Relayout_Click" Padding="8,3"
                                 Margin="0,0,6,0"/>
                         <Button Content="{loc:Loc Topo_Fit}" Click="Topology_Fit_Click" Padding="8,3" Margin="0,0,6,0"/>
-                        <Button Content="{loc:Loc Topo_ExportPng}" Click="Topology_ExportPng_Click" Padding="8,3"/>
+                        <Button Content="{loc:Loc Topo_Export}" Click="Topology_Export_Click" Padding="8,3"/>
                         <TextBlock x:Name="TopologyHint" VerticalAlignment="Center" Margin="10,0,0,0"
                                    Foreground="#888888" FontSize="11" Text="{loc:Loc Topo_Hint}"/>
                     </StackPanel>

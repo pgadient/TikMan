@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
+using PdfSharp.Drawing;
 using TikMan.Core.Discovery;
 using static TikMan.App.Localization.LocalizationManager;
 
@@ -48,6 +49,8 @@ public partial class MainWindow
         public required Border Visual { get; init; }
         public DeviceViewModel? Device { get; init; }  // null for "Internet" / an address range
         public Point Position { get; set; }
+        // Plain data mirroring the visual, so the PDF export can redraw the node as vector shapes.
+        public string Title = "", Detail = "", Mac = "", Fill = "", Line = "", TextColour = "";
     }
 
     private sealed class TopoEdge
@@ -642,7 +645,11 @@ public partial class MainWindow
             ToolTip = device is null ? title : $"{title}\n{ip}\n{mac}\n{device.DeviceType}",
         };
 
-        var node = new TopoNode { Key = key, Visual = border, Device = device };
+        var node = new TopoNode
+        {
+            Key = key, Visual = border, Device = device,
+            Title = title, Detail = detail, Mac = mac, Fill = fill, Line = line, TextColour = text,
+        };
         border.Tag = node;
         border.MouseLeftButtonDown += Topology_NodeDown;
 
@@ -770,22 +777,42 @@ public partial class MainWindow
         e.Handled = true;
     }
 
-    /// <summary>Exports the whole graph – not just the visible viewport – as a PNG. It is rendered
-    /// fresh at its natural bounds (independent of the current zoom/pan) at 2× for crispness: the
-    /// connecting lines, then each node reflected through a VisualBrush so it looks exactly as on
-    /// screen. PNG only – a real vector PDF would need a PDF library, and a raster-in-PDF is worse
-    /// than a clean PNG.</summary>
-    private void Topology_ExportPng_Click(object sender, RoutedEventArgs e)
+    /// <summary>Exports the whole graph (not just the visible viewport) to the format the user picks
+    /// in the save dialog: a crisp 2× PNG raster, or a true vector PDF – lines, rounded node boxes and
+    /// text drawn as PDF primitives, so it scales losslessly and prints sharp at any size.</summary>
+    private void Topology_Export_Click(object sender, RoutedEventArgs e)
     {
         if (_topoNodes.Count == 0) { SetStatus(T("Topo_ExportEmpty")); return; }
 
-        const double pad = 24, scale = 2.0;
-        double minX = _topoNodes.Min(n => n.Position.X);
-        double minY = _topoNodes.Min(n => n.Position.Y);
+        var kind = _topoPhysical ? "topology" : "ip-distribution";
+        var dlg = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = "PDF (*.pdf)|*.pdf|PNG (*.png)|*.png",
+            FileName = $"tikman-{kind}-{DateTime.Now:yyyyMMdd-HHmmss}",
+        };
+        if (dlg.ShowDialog(this) != true) return;
+        try
+        {
+            if (dlg.FileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) ExportTopologyPdf(dlg.FileName);
+            else ExportTopologyPng(dlg.FileName);
+            SetStatus(T("Topo_ExportSaved", dlg.FileName));
+        }
+        catch (Exception ex) { SetStatus(T("Sc_ScanError", ex.Message)); }
+    }
+
+    /// <summary>The graph bounds and the offset that shifts them to the origin, with a margin.</summary>
+    private (double W, double H, Vector Off) GraphBounds(double pad)
+    {
+        double minX = _topoNodes.Min(n => n.Position.X), minY = _topoNodes.Min(n => n.Position.Y);
         double maxX = _topoNodes.Max(n => n.Position.X + n.Visual.ActualWidth);
         double maxY = _topoNodes.Max(n => n.Position.Y + n.Visual.ActualHeight);
-        double w = maxX - minX + 2 * pad, h = maxY - minY + 2 * pad;
-        var off = new Vector(pad - minX, pad - minY);
+        return (maxX - minX + 2 * pad, maxY - minY + 2 * pad, new Vector(pad - minX, pad - minY));
+    }
+
+    private void ExportTopologyPng(string path)
+    {
+        const double pad = 24, scale = 2.0;
+        var (w, h, off) = GraphBounds(pad);
 
         var dv = new DrawingVisual();
         using (var dc = dv.RenderOpen())
@@ -802,23 +829,63 @@ public partial class MainWindow
         var rtb = new RenderTargetBitmap(Math.Max(1, (int)(w * scale)), Math.Max(1, (int)(h * scale)),
             96 * scale, 96 * scale, PixelFormats.Pbgra32);
         rtb.Render(dv);
+        var enc = new PngBitmapEncoder();
+        enc.Frames.Add(BitmapFrame.Create(rtb));
+        using var fs = File.Create(path);
+        enc.Save(fs);
+    }
 
-        var kind = _topoPhysical ? "topology" : "ip-distribution";
-        var dlg = new Microsoft.Win32.SaveFileDialog
+    /// <summary>Draws the graph as a real vector PDF via PdfSharp: one page sized to the graph, the
+    /// edges as lines, each node as a rounded rectangle with its title/detail/MAC clipped inside.
+    /// Coordinates are used as PDF points directly, so proportions match the screen.</summary>
+    private void ExportTopologyPdf(string path)
+    {
+        PdfExportFonts.EnsureRegistered();
+        const double pad = 24;
+        var (w, h, off) = GraphBounds(pad);
+
+        using var doc = new PdfSharp.Pdf.PdfDocument();
+        var page = doc.AddPage();
+        page.Width = PdfSharp.Drawing.XUnit.FromPoint(w);
+        page.Height = PdfSharp.Drawing.XUnit.FromPoint(h);
+        using var gfx = PdfSharp.Drawing.XGraphics.FromPdfPage(page);
+
+        XColor Col(string hex) => XColorFromHex(hex);
+        gfx.DrawRectangle(new PdfSharp.Drawing.XSolidBrush(XColor.FromArgb(255, 255, 255, 255)), 0, 0, w, h);
+
+        var edgePen = new PdfSharp.Drawing.XPen(Col("#C4CCD2"), 1.4);
+        foreach (var edge in _topoEdges)
         {
-            Filter = "PNG (*.png)|*.png",
-            FileName = $"tikman-{kind}-{DateTime.Now:yyyyMMdd-HHmmss}.png",
-        };
-        if (dlg.ShowDialog(this) != true) return;
-        try
-        {
-            var enc = new PngBitmapEncoder();
-            enc.Frames.Add(BitmapFrame.Create(rtb));
-            using var fs = File.Create(dlg.FileName);
-            enc.Save(fs);
-            SetStatus(T("Topo_ExportSaved", dlg.FileName));
+            var a = Centre(edge.From) + off; var b = Centre(edge.To) + off;
+            gfx.DrawLine(edgePen, a.X, a.Y, b.X, b.Y);
         }
-        catch (IOException ex) { SetStatus(T("Sc_ScanError", ex.Message)); }
+
+        var titleFont = new PdfSharp.Drawing.XFont("Segoe UI", 9, PdfSharp.Drawing.XFontStyleEx.Bold);
+        var detailFont = new PdfSharp.Drawing.XFont("Segoe UI", 7.5);
+        var macFont = new PdfSharp.Drawing.XFont("Segoe UI", 7);
+        foreach (var n in _topoNodes)
+        {
+            double x = n.Position.X + off.X, y = n.Position.Y + off.Y, nw = NodeWidth, nh = n.Visual.ActualHeight;
+            gfx.DrawRoundedRectangle(new PdfSharp.Drawing.XPen(Col(n.Line), 1), new PdfSharp.Drawing.XSolidBrush(Col(n.Fill)),
+                x, y, nw, nh, 12, 12);
+
+            gfx.Save();
+            gfx.IntersectClip(new PdfSharp.Drawing.XRect(x + 6, y, nw - 12, nh));
+            var text = new PdfSharp.Drawing.XSolidBrush(Col(n.TextColour));
+            double ty = y + 6;
+            gfx.DrawString(n.Title, titleFont, text, new PdfSharp.Drawing.XPoint(x + 8, ty + 8));
+            if (n.Detail.Length > 0) { ty += 15; gfx.DrawString(n.Detail, detailFont, text, new PdfSharp.Drawing.XPoint(x + 8, ty + 6)); }
+            if (n.Mac.Length > 0) { ty += 13; gfx.DrawString(n.Mac, macFont, text, new PdfSharp.Drawing.XPoint(x + 8, ty + 6)); }
+            gfx.Restore();
+        }
+
+        doc.Save(path);
+    }
+
+    private static XColor XColorFromHex(string hex)
+    {
+        var c = (Color)ColorConverter.ConvertFromString(hex)!;
+        return XColor.FromArgb(c.A, c.R, c.G, c.B);
     }
 
     private async void Topology_Relayout_Click(object sender, RoutedEventArgs e)

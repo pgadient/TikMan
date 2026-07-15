@@ -10,7 +10,7 @@
     <RootNamespace>TikMan.App</RootNamespace>
     <ApplicationIcon>tikman.ico</ApplicationIcon>
     <!-- Build number auto-increments: 1.1.<days since 2026-01-01> (recomputed on every build). -->
-    <Version>1.10.24</Version>
+    <Version>1.10.25</Version>
     <Product>TikMan</Product>
     <Company>Pascal Montico-Gadient</Company>
   </PropertyGroup>
@@ -23,6 +23,9 @@
     <!-- Embedded VNC viewer: MarcusW.VncClient RFB client (MIT). Negotiates RFB 3.3/3.7/3.8, so it
          reaches older VNC servers too. The framebuffer is rendered into a WPF WriteableBitmap. -->
     <PackageReference Include="Community.MarcusW.VncClient" Version="2.0.4" />
+    <!-- Vector PDF export of the topology graphs. PdfSharp is MIT-licensed, pure managed C# and has
+         been the go-to .NET PDF library for ~20 years. -->
+    <PackageReference Include="PdfSharp" Version="6.2.0" />
   </ItemGroup>
 
   <ItemGroup>
