@@ -170,8 +170,24 @@ public partial class MainWindow : Window
 
     /// <summary>Refreshes the "N devices · X IPv4 · Y IPv6" counter under the list. The total is shown
     /// too because a device may have both or only IPv6, so IPv4+IPv6 don't add up to it.</summary>
-    private void UpdateDeviceCount() =>
-        DeviceCountText.Text = T("Cnt_Devices", _devices.Count, _devices.Count(d => d.HasIpv4), _devices.Count(d => d.HasIpv6));
+    private void UpdateDeviceCount()
+    {
+        var text = T("Cnt_Devices", _devices.Count, _devices.Count(d => d.HasIpv4), _devices.Count(d => d.HasIpv6));
+
+        // With a filter active, how many rows survive it – so the user sees the reach of their query.
+        if (DeviceGrid.ItemsSource is not null && DeviceFilterBox.Text.Trim().Length > 0)
+        {
+            int shown = CollectionViewSource.GetDefaultView(DeviceGrid.ItemsSource).Cast<object>().Count();
+            text += "   " + T("Cnt_Shown", shown);
+        }
+
+        // How many devices are highlighted (distinct, since a v6 device spans several address rows).
+        int selected = DeviceGrid.SelectedItems.Cast<object>().Select(RowDevice)
+            .Where(d => d is not null).Distinct().Count();
+        if (selected > 0) text += "   " + T("Cnt_Selected", selected);
+
+        DeviceCountText.Text = text;
+    }
 
     // ----- Drag selection: press a row and drag to mark a range -----
     private int _dragAnchor = -1;
@@ -918,6 +934,7 @@ public partial class MainWindow : Window
             ? obj => obj is Ipv6RowVm r && (tokens.Length == 0 || DeviceMatchesFilter(r.Device, tokens))
             // The v4 view only lists devices that actually have an IPv4 (v6-only ones live in the IPv6 tab).
             : obj => obj is DeviceViewModel d && d.HasIpv4 && (tokens.Length == 0 || DeviceMatchesFilter(d, tokens));
+        UpdateDeviceCount(); // the "shown" count reflects the filter just applied
     }
 
     /// <summary>Every term must match somewhere on the device (AND) – each extra term narrows the
@@ -937,6 +954,7 @@ public partial class MainWindow : Window
     private void DeviceGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         DetailTabs.DataContext = SelectedDevice; // the bottom tabs always talk to the device itself
+        UpdateDeviceCount();                     // reflect the new selection count
         ApplyLogFilter();
         if (SelectedDevice is { } vm)
         {
