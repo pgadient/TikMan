@@ -1013,6 +1013,7 @@ public class DeviceViewModel : INotifyPropertyChanged
         Notify(nameof(ConnectionDisplay));
         Notify(nameof(TransportDisplay));
         Notify(nameof(SupportedProtocols));
+        Notify(nameof(HasCredentials));
     }
 
     /// <summary>Switches this device from HTTPS to plain HTTP (port 80 if it was 443).</summary>
