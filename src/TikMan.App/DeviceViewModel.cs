@@ -1174,15 +1174,39 @@ public class DeviceViewModel : INotifyPropertyChanged
         }
     }
 
-    /// <summary>Downloads the config export and returns (Config, Identity); null on error.</summary>
+    /// <summary>Downloads the config export and returns (Config, Identity); null on error.
+    /// Like the topology reads, this tries plain HTTP:80 first – most RouterOS devices refuse or break
+    /// the HTTPS handshake on 443 while answering the same REST call fine on 80 (proven on a live
+    /// network) – and falls back to the configured transport for a device that only speaks HTTPS.</summary>
     public async Task<(string Config, string Identity)?> DownloadConfigAsync(CancellationToken ct = default)
     {
+        async Task<(string Config, string Identity)> Export(RouterOsClient c)
+        {
+            var identity = await c.GetIdentityAsync(ct);
+            var config = await c.GetConfigExportAsync(ct);
+            return (config, identity);
+        }
+
+        if (Model.EncryptedPassword.Length > 0)
+        {
+            try
+            {
+                var password = CredentialProtector.Unprotect(Model.EncryptedPassword);
+                using var http = new RouterOsClient(Model.Host, 80, useHttps: false, Model.Username, password,
+                    ignoreCertErrors: true);
+                var r = await Export(http);
+                LastError = "";
+                return r;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception) { /* HTTP off / not reachable on 80 – fall through to the configured client */ }
+        }
+
         try
         {
-            var identity = await Client.GetIdentityAsync(ct);
-            var config = await Client.GetConfigExportAsync(ct);
+            var r = await Export(Client);
             LastError = "";
-            return (config, identity);
+            return r;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)

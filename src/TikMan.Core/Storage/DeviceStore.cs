@@ -117,6 +117,7 @@ public static class DeviceStore
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
+        PropertyNameCaseInsensitive = true,
         Converters = { new JsonStringEnumConverter() }, // store enums as readable strings
     };
 
@@ -132,7 +133,10 @@ public static class DeviceStore
             if (File.Exists(StorageFile))
             {
                 var text = File.ReadAllText(StorageFile);
-                var data = JsonSerializer.Deserialize<AppData>(text) ?? new AppData();
+                // Must use JsonOptions here too: the enums (Language/BackupMethod) are stored as strings,
+                // and without the JsonStringEnumConverter deserialisation throws – which used to be swallowed
+                // as "corrupt" and silently reset every setting to its default (settings never persisted).
+                var data = JsonSerializer.Deserialize<AppData>(text, JsonOptions) ?? new AppData();
                 // Grandfather existing users: a config written before the persistence toggle existed
                 // and that already holds devices must keep persisting them – otherwise upgrading to a
                 // build with the (default-off) toggle would silently wipe the device list on the next save.
