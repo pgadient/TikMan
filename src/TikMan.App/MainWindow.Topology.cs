@@ -292,13 +292,20 @@ public partial class MainWindow
                 ? $"{port} ({ssid})"
                 : port;
 
-        // Layout plumbing: one lane per depth level.
-        var nextX = new Dictionary<int, double>();
+        // Layout plumbing: nodes are tiered by depth, but a tier with many nodes (a switch's clients,
+        // or every device when there is no forwarding table at all) wraps into a grid instead of one
+        // endless row – otherwise the map stretches kilometres wide. Wrapping the leaf tiers is safe:
+        // they have no children whose edges the extra rows could cross.
+        const int MaxCols = 10;
+        const double TierGap = 90;
+        var tierCount = new Dictionary<int, int>();
         void PlaceAt(int level, TopoNode n)
         {
-            double x = nextX.TryGetValue(level, out var v) ? v : 0;
-            Place(n, x, 40 + level * (NodeHeight + 70));
-            nextX[level] = x + NodeWidth + ColGap;
+            int idx = tierCount.TryGetValue(level, out var c) ? c : 0;
+            tierCount[level] = idx + 1;
+            double baseY = 40 + level * (NodeHeight + TierGap);
+            Place(n, idx % MaxCols * (NodeWidth + ColGap),
+                     baseY + idx / MaxCols * (NodeHeight + RowGap));
         }
         var levels = new Dictionary<TopoNode, int> { [root] = 0 };
         PlaceAt(0, root);

@@ -90,7 +90,9 @@ public partial class MainWindow
     /// has finished. Its colour tells device-finding (red) from meta enrichment (green).</summary>
     private void UpdateCombinedProgress()
     {
-        CombinedProgress.Foreground = DiscoveryStillFindingDevices() ? DiscoveryBrush : CompleteBrush;
+        bool finding = DiscoveryStillFindingDevices();
+        CombinedProgress.Foreground = finding ? DiscoveryBrush : CompleteBrush;
+        CombinedProgressLabel.Text = T(finding ? "Prog_Discovery" : "Prog_Meta");
 
         var phases = PhaseBars.Where(p => p.Bar.Maximum > 0).ToList();
         if (phases.Count == 0) return;

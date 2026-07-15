@@ -106,8 +106,8 @@
                      clock, so a single bar showing how far the whole scan has come is easier to read
                      than seven. Switch it off in the settings to watch each phase separately. -->
                 <DockPanel x:Name="CombinedProgressRow" Visibility="Collapsed">
-                    <TextBlock DockPanel.Dock="Left" Width="120" VerticalAlignment="Center" Foreground="#666666"
-                               Text="{loc:Loc Prog_All}"/>
+                    <TextBlock x:Name="CombinedProgressLabel" DockPanel.Dock="Left" Width="150" VerticalAlignment="Center"
+                               Foreground="#666666" Text="{loc:Loc Prog_Discovery}"/>
                     <!-- Own template so the fill honours Foreground (the default theme sometimes doesn't),
                          letting the bar signal red while scanning and green when the list is complete. -->
                     <ProgressBar x:Name="CombinedProgress" Height="10" Minimum="0" Maximum="100">

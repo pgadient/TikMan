@@ -103,12 +103,18 @@ public sealed class RouterOsClient : IDisposable
                 {
                     var name = S(e, "name");
                     if (name.Length == 0) continue;
-                    // The SSID sits flat on legacy wireless, dotted or nested under the v7 wifi package.
+                    // The SSID sits flat on legacy wireless and on a non-CAPsMAN v7 wifi (either as
+                    // "ssid" or the dotted "configuration.ssid"). A CAPsMAN-managed interface carries it
+                    // only in the ".about" summary ("mode: AP, SSID: icn [S], channel: …"), where the
+                    // trailing "[S]"/"[G]" is a band marker, not part of the network name.
                     var ssid = S(e, "ssid");
                     if (ssid.Length == 0) ssid = S(e, "configuration.ssid");
-                    if (ssid.Length == 0 && e.TryGetProperty("configuration", out var cfg) &&
-                        cfg.ValueKind == System.Text.Json.JsonValueKind.Object)
-                        ssid = S(cfg, "ssid");
+                    if (ssid.Length == 0)
+                    {
+                        var m = System.Text.RegularExpressions.Regex.Match(S(e, ".about"), @"SSID:\s*(.+?)(?:,|$)");
+                        if (m.Success) ssid = m.Groups[1].Value.Trim();
+                    }
+                    ssid = System.Text.RegularExpressions.Regex.Replace(ssid, @"\s*\[[^\]]*\]\s*$", "");
                     if (ssid.Length > 0) map[name] = ssid;
                 }
                 if (map.Count > 0) return map;

@@ -927,49 +927,55 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// <summary>This device's bridge forwarding table (MAC → port name), read over REST; null when it
     /// has no credentials, isn't RouterOS, or didn't answer. The physical topology view uses it to
     /// prove which port every neighbour hangs off.</summary>
-    public async Task<Dictionary<string, string>?> GetBridgeHostsAsync(CancellationToken ct = default)
+    /// <summary>Runs a read-only REST call, falling back to plain HTTP when the HTTPS attempt fails.
+    /// RouterOS commonly ships an HTTPS service whose TLS handshake .NET/curl reject ("handshake
+    /// failure"), while the same endpoint answers fine on HTTP – so the topology reads that used to
+    /// return nothing now succeed. Read-only endpoints only; nothing here writes. The password is used
+    /// transiently to build the client, exactly as monitoring does; it is never stored or logged.</summary>
+    private async Task<T?> RestReadAsync<T>(Func<RouterOsClient, CancellationToken, Task<T>> read,
+        CancellationToken ct) where T : class
     {
         if (Model.EncryptedPassword.Length == 0) return null;
+        try { return await read(Client, ct); } catch (Exception) { /* try HTTP below */ }
         try
         {
-            var entries = await Client.GetBridgeHostsAsync(ct);
-            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (mac, port) in entries)
-            {
-                var key = NormalizeMac(mac);
-                if (key.Length == 12 && !map.ContainsKey(key)) map[key] = port;
-            }
-            return map.Count > 0 ? map : null;
+            var password = CredentialProtector.Unprotect(Model.EncryptedPassword);
+            using var http = new RouterOsClient(Model.Host, 80, useHttps: false, Model.Username, password,
+                ignoreCertErrors: true);
+            return await read(http, ct);
         }
-        catch (Exception) { return null; } // not RouterOS / no rest policy / unreachable – no table then
+        catch (Exception) { return null; } // not RouterOS / no rest policy / unreachable
+    }
+
+    public async Task<Dictionary<string, string>?> GetBridgeHostsAsync(CancellationToken ct = default)
+    {
+        var entries = await RestReadAsync((c, t) => c.GetBridgeHostsAsync(t), ct);
+        if (entries is null) return null;
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (mac, port) in entries)
+        {
+            var key = NormalizeMac(mac);
+            if (key.Length == 12 && !map.ContainsKey(key)) map[key] = port;
+        }
+        return map.Count > 0 ? map : null;
     }
 
     /// <summary>The device's neighbour sightings (MAC → interface) over REST; null without credentials
     /// or when it isn't RouterOS. Supplements the bridge table in the physical topology.</summary>
     public async Task<List<(string Mac, string Port)>?> GetNeighborsAsync(CancellationToken ct = default)
     {
-        if (Model.EncryptedPassword.Length == 0) return null;
-        try
-        {
-            return (await Client.GetNeighborsAsync(ct))
-                .Select(n => (NormalizeMac(n.Mac), n.Interface))
-                .Where(t => t.Item1.Length == 12 && t.Item2.Length > 0)
-                .ToList();
-        }
-        catch (Exception) { return null; }
+        var raw = await RestReadAsync((c, t) => c.GetNeighborsAsync(t), ct);
+        return raw?.Select(n => (NormalizeMac(n.Mac), n.Interface))
+            .Where(t => t.Item1.Length == 12 && t.Item2.Length > 0)
+            .ToList();
     }
 
     /// <summary>Wireless interface name → SSID, so the topology can label "wifi1" with the network it
     /// actually radiates; null without credentials / not RouterOS / no radios.</summary>
     public async Task<Dictionary<string, string>?> GetWifiSsidsAsync(CancellationToken ct = default)
     {
-        if (Model.EncryptedPassword.Length == 0) return null;
-        try
-        {
-            var map = await Client.GetWifiSsidsAsync(ct);
-            return map.Count > 0 ? map : null;
-        }
-        catch (Exception) { return null; }
+        var map = await RestReadAsync((c, t) => c.GetWifiSsidsAsync(t), ct);
+        return map is { Count: > 0 } ? map : null;
     }
 
     /// <summary>True when device credentials are stored – i.e. the API paths are worth trying.</summary>
