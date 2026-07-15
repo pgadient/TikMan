@@ -1,77 +1,121 @@
 # TikMan
 
-A small Windows tool (WPF, .NET 8) for keeping an eye on several MikroTik devices
-(RouterOS v7) from one place: discovery, status/monitoring, logs, backups and updates —
-without reimplementing RouterOS logic, just a convenient front-end over the REST API for
-managing many devices at once.
+A Windows desktop tool (WPF, .NET 10) for managing and monitoring the devices on a LAN from
+one place. It knows **MikroTik** (RouterOS v7) inside out and auto-discovers and classifies
+**everything else** on the network too — switches, access points, firewalls, printers, NAS,
+cameras, VoIP phones, IoT, UPS, PCs/servers and virtual machines — without you having to pick
+protocols or ports: TikMan probes the services itself and figures out what each device is.
 
-> ⚠️ **Disclaimer**
->
-> This tool is **vibe-coded** — largely generated with an AI assistant and only tested
-> with a handful of devices, so it almost certainly still contains plenty of bugs. It is
-> provided **without any warranty** (see [LICENSE](LICENSE), MIT) and used **entirely at
-> your own risk**. The author accepts **no liability** for any damage, downtime,
-> misconfiguration or data loss — in particular not for the "Install update" and "Backup"
-> features, which reboot devices and export configurations. Test first, verify your
-> backups, and mind the ordering when doing bulk updates.
+It doesn't reimplement RouterOS; it's a fast, convenient front-end over the REST API **and**
+SSH for managing many devices at once — with a strong bias towards doing the secure thing by
+default. Open source (MIT): **github.com/pgadient/TikMan**.
+
+> ⚠️ **Disclaimer.** TikMan is developed with heavy AI assistance and tested against a real,
+> mixed-vendor network — but not against every device out there. It is provided **without any
+> warranty** ([LICENSE](LICENSE), MIT) and used **at your own risk**. Be especially careful
+> with **"Install update"** and **"Backup"**, which reboot devices and export configurations:
+> test first, verify your backups, and mind the ordering when doing bulk updates.
 
 ## Screenshot
 
 ![TikMan main window with the network scan dialog open](screenshots/main_window.png)
 
-*Main window (device list, tabs for logs/monitoring/update/details) with the MNDP
-network-scan dialog on top.*
+*Main window: the device list with per-device details, monitoring, logs, updates and the
+topology maps — here with the network-scan dialog on top.*
+
+## Highlights
+
+- **Zero-config discovery.** Point it at your network and it finds and identifies devices over
+  many channels at once — no manual protocol or port picking.
+- **Multi-vendor, not just MikroTik.** Deep RouterOS support, plus solid identification and
+  actions for the rest of the fleet.
+- **Secure by default.** Credentials and config only ever travel over **HTTPS or SSH**. Plain
+  HTTP is off unless you explicitly allow it — so nothing sensitive leaks over the wire.
+- **A picture of your network.** Interactive logical and physical topology maps, exportable as
+  PNG or true vector PDF.
+- **Remote hands, built in.** SSH terminal and a VNC viewer inside the app, plus Wake-on-LAN.
+- **Runs in your browser, too.** A built-in web server mirrors the whole app — including the
+  SSH terminal and VNC — so you can manage the fleet from your phone. HTTPS-only for anything
+  that touches a password or a screen.
+- **Seven languages**, self-contained builds for x64 and ARM64, and quiet auto-updates.
+
+## Features in detail
+
+### Discovery & classification
+- **Parallel discovery:** MikroTik MNDP (UDP 5678), a subnet ping/port scan, IPv6, **Zyxel ZON**
+  (raw Ethernet, needs Npcap), **mDNS/Bonjour** and **UPnP/SSDP** for the devices that only name
+  themselves that way (Apple gear, Smart-TVs, Sonos, Chromecast…), and **SNMP** for the physical
+  topology.
+- **Honest identification:** active probes first (web fingerprint / SNMP / WMI / model title),
+  MAC-OUI only as a last resort — so a device looks the same locally and over a VPN. Recognises
+  firewalls, switches, APs, printers/MFPs, VoIP phones and PBXs, cameras, NAS, payment terminals,
+  franking machines, BMC/out-of-band controllers, and virtual machines (by hypervisor MAC range).
+- **Simple/corporate mode:** a plain IPv4-only scan (ping + TCP) with none of the extra
+  broadcasts/probes, for locked-down networks.
+
+### Monitoring
+- Auto-refresh (configurable) of CPU, RAM, uptime and version, with a per-device history chart.
+- Reads happen over the **secure path first**: HTTPS REST → **SSH CLI** → HTTP only if you've
+  allowed it. A RouterOS device whose HTTPS handshake is broken is still read — over SSH — instead
+  of falling back to clear-text HTTP.
+
+### Topology
+- **Logical map** (IP-address distribution) and a **physical map** built from real evidence:
+  RouterOS bridge forwarding tables (which switch port a MAC hangs off — the one thing traceroute
+  can't see), **SNMP** FDB for non-MikroTik and login-less gear, `/ip neighbor`, and traceroute for
+  routed hops. Tidy-tree layout, pan/zoom, port grouping.
+- **Export** the whole graph as a PNG or a lossless **vector PDF**.
+
+### Remote access
+- **Built-in SSH terminal** (with the non-standard MAC handling some firewalls need) and an
+  **embedded VNC viewer** (RFB 3.3/3.7/3.8).
+- Clickable **RDP / VNC / RTSP** badges, **Wake-on-LAN**, and "open in WinSCP / PuTTY / VLC".
+
+### Backups
+- **Config export (.rsc):** the full text configuration, per device or for the whole fleet into
+  one folder. Runs over **HTTPS**, and over **SSH (`/export`)** when HTTPS is broken — so it stays
+  secure and works even on devices with a broken TLS stack. Files are named automatically
+  (`<Identity/Board>_<IP>_<timestamp>.rsc`).
+- **Full backup (.backup):** the exact binary image (including secrets, restorable on the same
+  model/version), fetched **entirely over SSH** — create, download (SCP) and clean-up.
+
+### Updates
+- Update check across every device, per-device update channel (stable / long-term / testing /
+  development), and an assistant that installs sequentially in a chosen order and waits for each
+  device to come back online. *(Updates reboot devices — see the note below.)*
+
+### Web server (optional)
+- Toggle it from the **Web server** menu (off by default). It runs in-process and mirrors the app
+  in a browser: live device list, scan control with progress, the topology map, per-device details,
+  Wake-on-LAN, **set login**, **backup download**, an **SSH terminal** (xterm.js) and **VNC**
+  (noVNC).
+- **Security:** HTTP Basic auth is mandatory; every credential- or screen-bearing action
+  (login, backup, terminal, VNC) is **HTTPS-only** and refused over plain HTTP. Bring your own
+  certificate or let TikMan generate and cache a self-signed one. Built on a small `TcpListener`
+  server (no admin, no extra runtime) so the framework-dependent builds stay slim.
+
+### Language
+- English, German, Swiss German, Spanish, Italian, French and Portuguese, switchable under
+  **Settings (⚙️)** and effective immediately. First run follows the Windows display language.
 
 ## Structure
 
 ```
 src/
-  TikMan.Core   Logic: REST client, MNDP/subnet discovery, storage (no UI dependencies)
-  TikMan.App    WPF user interface (exe)
+  TikMan.Core   Logic: REST + SSH clients, discovery, classification, backup, storage (no UI)
+  TikMan.App    WPF desktop UI, and the built-in web server (exe, AssemblyName = TikMan)
 ```
 
-`Core` is deliberately kept UI-free — a later web server (ASP.NET) can reference the same
-library.
-
-## Features
-
-- **Scan:** MNDP discovery (finds MikroTiks on the LAN via broadcast, port 5678) and a
-  subnet scan (ping + port check, also finds other devices). Tick the discovered devices
-  and add them with default credentials.
-- **Monitoring:** auto-refresh (configurable interval) of CPU, RAM, uptime, version; a
-  history chart per device.
-- **Logs:** load a device's log on click, filterable (topic/text), newest first.
-- **Updates:** update check across all devices; update channel switchable per device
-  (stable / testing / long-term / development); an assistant installs sequentially in a
-  chosen order and waits for each device to come back online.
-- **Config backups (.rsc):** full text export of the configuration over HTTPS — per device
-  (file dialog) or for all devices at once into a target folder. Sensitive values
-  (passwords/keys) are hidden, as with the standard RouterOS export; restorable with
-  `/import`. Files are named automatically: `<Identity/Board>_<IP>_<timestamp>.rsc`.
-
-  Technical background: RouterOS does **not** return the `/export` output in the REST
-  response (the command only writes to a file). The app therefore exports to a temporary
-  device file, reads its content via the `contents` field, and deletes it again.
-
-- **Full backup (.backup):** an exact binary copy including passwords (restorable only on
-  the same model/version). The binary image **cannot** be fetched over the REST API, so the
-  download uses one of two transports (selectable in settings):
-  - **Web (WebFig):** MikroTik's proprietary, encrypted `jsproxy` protocol — *not yet
-    implemented*, automatically falls back to SSH. (Reproducing the handshake is planned;
-    it has to be developed and tested against a real device.)
-  - **SSH (SCP):** over the factory-enabled, encrypted SSH service (port 22, via SSH.NET).
-    The user needs the `ssh` policy. Active as the fallback by default.
-
-- **Language:** English, German and Swiss German, switchable under **Settings** (⚙️). On
-  first start the app follows the Windows display language: `de-CH` → Swiss German, other
-  `de…` → German, everything else → English. The choice is stored in `devices.json` and
-  takes effect immediately.
+`Core` is deliberately UI-free so other front-ends (like the built-in web server) can sit on top
+of the same logic.
 
 ## Device requirements (RouterOS v7)
 
-The app talks to the REST API (`https://<device>/rest/...`). For that, on each device:
+TikMan reaches RouterOS over the **REST API** (`https://<device>/rest/…`) **and/or SSH** — both
+encrypted. You don't have to choose: it prefers HTTPS, falls back to SSH when the HTTPS handshake
+fails, and only uses plain HTTP if you turn that on in the settings.
 
-1. **Enable www-ssl** (with a certificate; self-signed is fine):
+1. **HTTPS (recommended):** enable `www-ssl` with a certificate (self-signed is fine on a LAN):
    ```
    /certificate add name=local common-name=local key-usage=key-cert-sign,crl-sign
    /certificate sign local
@@ -79,68 +123,62 @@ The app talks to the REST API (`https://<device>/rest/...`). For that, on each d
    /certificate sign https ca=local
    /ip service set www-ssl certificate=https disabled=no
    ```
-   Alternatively, on a trusted LAN: enable `www` (HTTP, port 80) and untick HTTPS in the
-   app.
-2. **Create a dedicated API user** instead of using `admin`:
+   SSH (port 22) is enabled out of the box and is enough on its own for monitoring, topology and
+   backups if you'd rather not set up certificates.
+2. **A dedicated API user** instead of `admin`:
    ```
-   /user group add name=monitor policy=read,write,reboot,rest-api,test
+   /user group add name=monitor policy=read,write,reboot,ssh,ftp,rest-api,test
    /user add name=monitor group=monitor password=<strong-password>
    ```
-   Permission overview:
-   - Monitoring / logs / checking updates: `read, rest-api`
-   - Switching the update channel & installing updates: additionally `write, reboot, test`
-   - Config backup (.rsc): runs over HTTPS with `write` (for the temporary export file) —
-     no FTP needed.
+   - Monitoring / logs / topology / checking updates: `read`, plus `rest-api` (HTTPS) and/or `ssh`.
+   - Config backup (.rsc): `write` (temporary export file) over HTTPS, or `ssh` for `/export`.
+   - Full backup (.backup) over SSH: `ssh`, `ftp`.
+   - Switching channels & installing updates: additionally `write`, `reboot`, `test`.
 
-## Build & Run
+## Build & run
 
 ```powershell
-dotnet build                         # Debug build
-dotnet run --project src\TikMan.App
+dotnet build src\TikMan.App\TikMan.App.csproj -c Debug
+dotnet run   --project src\TikMan.App
 
-# Release exe (single file, requires the .NET 8 Desktop Runtime):
-dotnet publish src\TikMan.App -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o dist
+# Release single-file exe (self-contained – no .NET install needed on the target):
+dotnet publish src\TikMan.App -c Release -r win-x64 --self-contained true `
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+  -p:EnableCompressionInSingleFile=true -o dist\release
 ```
 
-The finished `TikMan.exe` will then be in `dist\`.
+Requires the **.NET 10 SDK**. Releases ship four variants: `win-x64` / `win-arm64`, each
+self-contained (~65 MB, no runtime needed) or framework-dependent (`-fdd`, ~11 MB, needs the
+.NET 10 Desktop Runtime). ZON discovery additionally needs **Npcap** (WinPcap-compatible mode);
+it's detected at runtime and simply skipped if absent.
 
 ## Security & data storage
 
-- **Where are the credentials?** All settings including device passwords live in
-  `%AppData%\TikMan\devices.json` — i.e. in the user profile, **not** in the program folder
-  and **not** in the Git repository.
-- **Passwords are encrypted.** They are encrypted with Windows DPAPI and bound to the
-  Windows user account. The file cannot simply be moved to another PC/user; passwords must
-  be re-entered there.
-- **Nothing sensitive in the repo.** `.gitignore` excludes `devices.json`, exported backups
-  (`*.rsc`, `*.backup`), the local `.claude/` folder and the `memory/` folder, so no
-  internal network details or credentials are published by accident. **Before your first
-  push, still run `git status` to confirm none of these files are listed.**
-- **Config exports contain configuration.** A `.rsc` export hides passwords/keys; a binary
-  `.backup` contains them. Neither belongs in a public repo.
-- **Transport:** REST runs over HTTPS (self-signed certificates are accepted — common on a
-  LAN). Choosing HTTP instead of HTTPS transmits credentials in clear text — only use it on
-  a trusted network. Recommendation: a dedicated API user with minimal rights instead of
-  `admin` (see above).
+- **Credentials live in your profile,** not the repo: `%AppData%\TikMan\devices.json`.
+- **Passwords are DPAPI-encrypted** and bound to your Windows account — the file can't just be
+  copied to another PC/user; passwords are re-entered there.
+- **Secure by default on the wire:** monitoring, topology, config export and backups use HTTPS or
+  SSH. Plain HTTP (which sends credentials in clear text) is **off unless you enable it** in
+  Settings → Connections; when it's off, devices that only answer over HTTP are simply skipped
+  with a hint rather than silently leaking.
+- **Nothing sensitive in the repo:** `.gitignore` excludes `devices.json`, exported backups
+  (`*.rsc`, `*.backup`), and the local `.claude/` and `memory/` folders. Still run `git status`
+  before your first push.
+- **The web server** requires a username + password (Basic auth, stored DPAPI-encrypted) and
+  keeps every password/screen action on HTTPS; device passwords are never handed out over the web.
 
-## Notes on bulk updates
+## Note on bulk updates
 
-Updates reboot the device. The assistant therefore works sequentially and in list order:
-**edge devices first (APs, switches), the uplink router last** — otherwise you cut off the
-connection to the remaining devices.
+Updates reboot the device, so the assistant works sequentially and in list order: **edge devices
+first (APs, switches), the uplink router last** — otherwise you cut off the path to the devices
+still waiting.
 
-## Versioning & releases (maintainer notes)
+## Releases (maintainer notes)
 
-1. Bump `<Version>` in `src/TikMan.App/TikMan.App.csproj` (e.g. `1.1.0`). This sets the
-   exe's file/product version.
-2. Build a self-contained single-file exe — runs on any Windows x64 **without** requiring
-   a separate .NET install:
-   ```powershell
-   dotnet publish src\TikMan.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o dist\release
-   ```
-3. On GitHub → **Releases → Draft a new release**: create a tag `vX.Y.Z` (match `<Version>`),
-   write short notes, and attach `dist\release\TikMan.exe`. Binaries live in Releases, not
-   in git (`dist/` is git-ignored).
-4. The exe is **unsigned**, so Windows SmartScreen shows an "unknown publisher" warning on
-   first run — users click *More info → Run anyway*. (Code signing would remove this but
-   needs a paid certificate.)
+1. Bump `<Version>` in `src/TikMan.App/TikMan.App.csproj`.
+2. Publish all four variants (`win-x64`/`win-arm64` × self-contained/`-fdd`) and name the assets
+   exactly `TikMan-<version>-win-<arch>[-fdd].exe` — the in-app auto-updater matches on that name.
+3. On GitHub → **Releases → Draft a new release**: tag `vX.Y.Z` (matching `<Version>`), write
+   notes, attach the four exes. Binaries live in Releases, not in git.
+4. The exes are **unsigned**, so SmartScreen shows an "unknown publisher" warning on first run
+   (*More info → Run anyway*). Code signing would remove it but needs a paid certificate.
