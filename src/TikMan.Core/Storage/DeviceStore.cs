@@ -62,6 +62,9 @@ public class AppData
     public bool UseExternalSshClient { get; set; }
     /// <summary>Path to the external SSH client executable (e.g. PuTTY).</summary>
     public string ExternalSshClientPath { get; set; } = "";
+    /// <summary>Path to VLC (or another player) for the RTSP camera preview. When empty, the rtsp://
+    /// badge falls back to whatever player registered the scheme system-wide.</summary>
+    public string VlcPath { get; set; } = "";
     /// <summary>Path to WinSCP.exe, for the "Open in WinSCP" context-menu action.</summary>
     public string WinScpPath { get; set; } = "";
     /// <summary>When true, the device list and its config (encrypted credentials included) are

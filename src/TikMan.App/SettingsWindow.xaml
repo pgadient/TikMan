@@ -147,6 +147,13 @@
                     <TextBox x:Name="WinScpPathBox" Height="24" VerticalContentAlignment="Center"/>
                 </DockPanel>
 
+                <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_VlcPath}"/>
+                <DockPanel Margin="0,4,0,0">
+                    <Button DockPanel.Dock="Right" Content="…" Padding="8,2" Margin="4,0,0,0" Click="VlcBrowse_Click"/>
+                    <TextBox x:Name="VlcPathBox" Height="24" VerticalContentAlignment="Center"/>
+                </DockPanel>
+                <TextBlock Margin="0,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_VlcHint}"/>
+
                 <TextBlock Margin="0,14,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_CredsMovedHint}"/>
             </StackPanel>
         </ScrollViewer>

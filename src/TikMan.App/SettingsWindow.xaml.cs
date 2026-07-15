@@ -46,6 +46,7 @@ public partial class SettingsWindow : Window
         ExternalSshCheck.IsChecked = data.UseExternalSshClient;
         SshClientPathBox.Text = data.ExternalSshClientPath;
         WinScpPathBox.Text = data.WinScpPath;
+        VlcPathBox.Text = data.VlcPath;
         var npcap = ZdpScanner.NpcapVersion();
         NpcapStatusText.Text = npcap is { Length: > 0 }
             ? LocalizationManager.T("Set_NpcapFound", npcap)
@@ -115,6 +116,12 @@ public partial class SettingsWindow : Window
         if (dialog.ShowDialog(this) == true) WinScpPathBox.Text = dialog.FileName;
     }
 
+    private void VlcBrowse_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "vlc.exe|vlc.exe|*.exe|*.exe" };
+        if (dialog.ShowDialog(this) == true) VlcPathBox.Text = dialog.FileName;
+    }
+
     private void Reset_Click(object sender, RoutedEventArgs e)
     {
         var answer = MessageBox.Show(this,
@@ -150,6 +157,7 @@ public partial class SettingsWindow : Window
         _data.UseExternalSshClient = ExternalSshCheck.IsChecked == true;
         _data.ExternalSshClientPath = SshClientPathBox.Text.Trim();
         _data.WinScpPath = WinScpPathBox.Text.Trim();
+        _data.VlcPath = VlcPathBox.Text.Trim();
 
         DialogResult = true;
     }

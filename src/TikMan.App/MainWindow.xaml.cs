@@ -646,9 +646,18 @@ public partial class MainWindow : Window
         }
         else if (proto.IsRtsp)
         {
-            // Hand the stream to whatever owns rtsp:// (VLC registers itself). No player, no preview –
-            // but then the status bar says what is missing instead of failing silently.
-            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(proto.Url) { UseShellExecute = true }); }
+            // A configured VLC gets the stream directly; otherwise whatever owns rtsp:// system-wide.
+            // No player either way → the status bar says what is missing instead of failing silently.
+            try
+            {
+                var vlc = _appData.VlcPath.Trim();
+                if (vlc.Length > 0 && System.IO.File.Exists(vlc))
+                    System.Diagnostics.Process.Start(
+                        new System.Diagnostics.ProcessStartInfo(vlc, proto.Url) { UseShellExecute = true });
+                else
+                    System.Diagnostics.Process.Start(
+                        new System.Diagnostics.ProcessStartInfo(proto.Url) { UseShellExecute = true });
+            }
             catch { SetStatus(T("Rtsp_NoPlayer")); }
             e.Handled = true;
         }
@@ -1210,13 +1219,20 @@ public partial class MainWindow : Window
     {
         if (!ReferenceEquals(e.OriginalSource, AddressTabs) || Ipv6Column is null || !IsLoaded) return;
 
-        // Tabs 3 and 4 swap the grid for a topology map (logical / physical) – same devices, drawn.
-        if (AddressTabs.SelectedIndex >= 2)
+        // Tabs 3/4 swap the grid for a map (IP distribution / topology), tab 5 for the backup panel.
+        bool backup = AddressTabs.SelectedIndex == 4;
+        BackupHost.Visibility = backup ? Visibility.Visible : Visibility.Collapsed;
+        if (AddressTabs.SelectedIndex is 2 or 3)
         {
             ShowTopology(physical: AddressTabs.SelectedIndex == 3);
             return;
         }
         HideTopology();
+        if (backup)
+        {
+            DeviceGrid.Visibility = Visibility.Collapsed;
+            return;
+        }
 
         _v6Mode = AddressTabs.SelectedIndex == 1;
         if (_v6Mode)

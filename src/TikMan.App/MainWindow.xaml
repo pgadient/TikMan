@@ -21,7 +21,6 @@
                 </MenuItem>
             </MenuItem>
             <MenuItem Header="{loc:Loc Menu_Actions}">
-                <MenuItem Header="{loc:Loc Tb_BackupAll}" Click="BackupAll_Click"/>
                 <MenuItem Header="{loc:Loc Tb_InstallUpdates}" Click="InstallUpdates_Click"/>
             </MenuItem>
             <MenuItem Header="{loc:Loc Menu_View}">
@@ -190,6 +189,7 @@
                         <TabItem Header="IPv6"/>
                         <TabItem Header="{loc:Loc Tab_Topology}"/>
                         <TabItem Header="{loc:Loc Tab_TopoPhys}"/>
+                        <TabItem Header="{loc:Loc Tab_Backup}"/>
                     </TabControl>
                 </DockPanel>
                 <TextBlock x:Name="DeviceCountText" DockPanel.Dock="Bottom" Foreground="#666666" FontSize="11"
@@ -481,6 +481,23 @@
                                    Foreground="#888888" FontSize="11" Text="{loc:Loc Topo_Hint}"/>
                     </StackPanel>
                 </Grid>
+            </Border>
+
+            <!-- Backup tab: the backup actions that used to live in the title menu. Single-device
+                 backups stay on the device's details tab, where the device context already is. -->
+            <Border x:Name="BackupHost" Visibility="Collapsed" Background="#FBFCFD"
+                    BorderBrush="#DDDDDD" BorderThickness="1" Padding="18">
+                <StackPanel MaxWidth="640" HorizontalAlignment="Left">
+                    <TextBlock FontWeight="SemiBold" FontSize="15" Text="{loc:Loc Tab_Backup}"/>
+                    <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#555555"
+                               Text="{loc:Loc Det_BackupDesc}"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                        <Button Style="{StaticResource ToolButton}" Click="BackupAll_Click"
+                                Content="{loc:Loc Tb_BackupAll}"/>
+                    </StackPanel>
+                    <TextBlock Margin="0,10,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11"
+                               Text="{loc:Loc Bak_SingleHint}"/>
+                </StackPanel>
             </Border>
             </Grid>
             </DockPanel>

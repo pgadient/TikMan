@@ -211,7 +211,12 @@ public partial class MainWindow
 
             for (int i = 0; i < members.Count; i++)
             {
-                var n = AddDeviceNode(members[i], Role.Client);
+                // Infrastructure stands out in warm orange amid the green clients, so the eye finds
+                // the routers and switches of a range at a glance.
+                var role = members[i].KindOf() is DeviceKind.Router or DeviceKind.Firewall
+                    or DeviceKind.Switch or DeviceKind.AccessPoint
+                    ? Role.Gateway : Role.Client;
+                var n = AddDeviceNode(members[i], role);
                 Place(n, x + i % cols * (NodeWidth + ColGap),
                          deviceRow + i / cols * (NodeHeight + RowGap));
                 Connect(rangeNode, n);
