@@ -87,6 +87,14 @@ public class AppData
     public string WebServerUser { get; set; } = "";
     /// <summary>Web-server password, DPAPI-encrypted (never stored in clear), like every other secret here.</summary>
     public string WebServerEncryptedPassword { get; set; } = "";
+    /// <summary>Serve the web server over HTTPS (TLS). Off by default. Required for any credential-carrying
+    /// action – passwords are never accepted over plain HTTP.</summary>
+    public bool WebServerUseHttps { get; set; }
+    /// <summary>Path to the user's own certificate (.pfx/.p12) for HTTPS. Empty ⇒ a self-signed certificate
+    /// is generated and cached automatically.</summary>
+    public string WebServerCertPath { get; set; } = "";
+    /// <summary>Password for the user's own .pfx, DPAPI-encrypted. Empty if the .pfx has none.</summary>
+    public string WebServerCertPassword { get; set; } = "";
     /// <summary>Saved device-list column layout (order + width), only kept while
     /// <see cref="PersistDeviceList"/> is on. One entry per column in creation order.</summary>
     public List<ColumnState> ColumnLayout { get; set; } = new();

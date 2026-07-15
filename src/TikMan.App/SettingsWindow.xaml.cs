@@ -52,6 +52,9 @@ public partial class SettingsWindow : Window
         WebPortBox.Text = data.WebServerPort.ToString();
         WebUserBox.Text = data.WebServerUser;
         WebPasswordBox.Password = CredentialProtector.Unprotect(data.WebServerEncryptedPassword);
+        WebHttpsCheck.IsChecked = data.WebServerUseHttps;
+        WebCertPathBox.Text = data.WebServerCertPath;
+        WebCertPasswordBox.Password = CredentialProtector.Unprotect(data.WebServerCertPassword);
         SnmpCommunityBox.Text = data.SnmpCommunity;
         VncNoticeCheck.IsChecked = data.ShowVncNotice;
         PingTimeoutBox.Text = data.PingTimeoutMs.ToString();
@@ -135,6 +138,12 @@ public partial class SettingsWindow : Window
         if (dialog.ShowDialog(this) == true) VlcPathBox.Text = dialog.FileName;
     }
 
+    private void WebCertBrowse_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "PFX/PKCS#12 (*.pfx;*.p12)|*.pfx;*.p12|*.*|*.*" };
+        if (dialog.ShowDialog(this) == true) WebCertPathBox.Text = dialog.FileName;
+    }
+
     private async void CheckNow_Click(object sender, RoutedEventArgs e)
     {
         CheckNowButton.IsEnabled = false;
@@ -214,6 +223,9 @@ public partial class SettingsWindow : Window
             _data.WebServerPort = Math.Clamp(webPort, 1, 65535);
         _data.WebServerUser = WebUserBox.Text.Trim();
         _data.WebServerEncryptedPassword = CredentialProtector.Protect(WebPasswordBox.Password);
+        _data.WebServerUseHttps = WebHttpsCheck.IsChecked == true;
+        _data.WebServerCertPath = WebCertPathBox.Text.Trim();
+        _data.WebServerCertPassword = CredentialProtector.Protect(WebCertPasswordBox.Password);
         _data.SnmpCommunity = SnmpCommunityBox.Text.Trim() is { Length: > 0 } comm ? comm : "public";
         _data.ShowVncNotice = VncNoticeCheck.IsChecked == true;
         // Ping tuning – clamp to sane bounds so a typo can't hang or disable the scan.

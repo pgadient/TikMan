@@ -31,15 +31,31 @@ public partial class MainWindow : IWebBackend
         }
 
         var port = _appData.WebServerPort is > 0 and < 65536 ? _appData.WebServerPort : 9090;
+
+        System.Security.Cryptography.X509Certificates.X509Certificate2? cert = null;
+        if (_appData.WebServerUseHttps)
+        {
+            try
+            {
+                cert = WebCertificate.LoadOrCreate(_appData.WebServerCertPath?.Trim() ?? "",
+                    CredentialProtector.Unprotect(_appData.WebServerCertPassword));
+            }
+            catch (Exception ex)
+            {
+                if (announce)
+                    MessageBox.Show(this, T("Web_CertFailed", ex.Message), T("Menu_WebServer"),
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                UpdateWebServerMenu();
+                return;
+            }
+        }
+
         try
         {
-            var server = new WebServer(this, port, user, pass);
+            var server = new WebServer(this, port, user, pass, cert);
             server.Start();
             _webServer = server;
             SetStatus(T("Web_StatusStarted", server.BoundUrl));
-            if (server.LocalOnly && announce)
-                MessageBox.Show(this, T("Web_LocalOnly", WebServer.ReservationCommand(port)),
-                    T("Menu_WebServer"), MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
@@ -64,7 +80,7 @@ public partial class MainWindow : IWebBackend
         WebServerToggleItem.IsChecked = running;
         WebServerOpenItem.IsEnabled = running;
         WebServerStatusItem.Header = running
-            ? T(_webServer!.LocalOnly ? "Web_RunningLocal" : "Web_RunningLan", _webServer.BoundUrl)
+            ? T("Web_RunningLan", _webServer!.BoundUrl)
             : T("Web_Stopped");
     }
 
