@@ -907,10 +907,16 @@ public partial class MainWindow : Window
             : obj => obj is DeviceViewModel d && d.HasIpv4 && (tokens.Length == 0 || DeviceMatchesFilter(d, tokens));
     }
 
+    /// <summary>Every term must match somewhere on the device (AND) – each extra term narrows the
+    /// result. The protocol badges count as searchable text, so "snmp" finds everything with an snmp
+    /// badge and "snmp ssh" only what carries both.</summary>
     private static bool DeviceMatchesFilter(DeviceViewModel d, string[] tokens)
     {
         var haystack = string.Join(" ",
-            d.Name, d.AllAddressesText, d.TransportDisplay, d.MacVendor, d.IdentifiedVendor, d.DeviceType, d.ModelDisplay, d.Version, d.LatestWithChannel,
+            d.Name, d.AllAddressesText, d.Model.MacAddress, d.TransportDisplay,
+            string.Join(" ", d.SupportedProtocols.Select(p => p.Name)),   // the badges: ssh, snmp, airprint …
+            d.Hypervisor,
+            d.MacVendor, d.IdentifiedVendor, d.DeviceType, d.ModelDisplay, d.Version, d.LatestWithChannel,
             d.CpuText, d.MemoryText, d.Uptime, d.UpdateChannel, d.StatusText, d.LastError);
         return tokens.All(t => haystack.Contains(t, StringComparison.OrdinalIgnoreCase));
     }

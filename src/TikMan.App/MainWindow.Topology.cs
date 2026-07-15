@@ -159,8 +159,8 @@ public partial class MainWindow
             int noLogin = bridges.Count(d =>
                 (d.Board.Length > 0 || d.IdentifiedVendor == "MikroTik") && !d.HasCredentials);
             SetStatus(noLogin > 0
-                ? T("Topo_TraceDone", results.Count) + " " + T("Topo_LoginHint", noLogin)
-                : T("Topo_TraceDone", results.Count));
+                ? T("Topo_TraceDone", fdb.Count) + " " + T("Topo_LoginHint", noLogin)
+                : T("Topo_TraceDone", fdb.Count));
         }
         finally { _tracing = false; }
     }
@@ -186,15 +186,15 @@ public partial class MainWindow
         RedrawEdges();
     }
 
-    /// <summary>Internet → one blue node per address range → that range's devices in green. The range
-    /// nodes are ranges and nothing more: no mask (the /24 grouping is visual, the real subnet may be
-    /// a /21), and no device doubles as a range.</summary>
+    /// <summary>Internet → one blue node per address segment → that segment's devices below (clients
+    /// green, infrastructure orange). The segments are computed, not assumed: the network is cut at
+    /// prefix boundaries into 4–8 roughly equal slices – a /21 falls into /23s or /24s, a lone /24
+    /// into /26s or /27s – so the picture stays readable however the site is addressed.</summary>
     private void BuildLogical(List<DeviceViewModel> devices)
     {
         var internet = AddNode("::internet", null, T("Topo_Internet"), "", "", Role.Internet);
 
-        var ranges = devices.GroupBy(d => RangeOf(d.Ipv4Address))
-            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase).ToList();
+        var ranges = SegmentDevices(devices);
 
         double x = 0;
         const double rangeRow = 130, deviceRow = 250;
@@ -205,7 +205,7 @@ public partial class MainWindow
             int cols = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(members.Count)));
             double width = cols * (NodeWidth + ColGap);
 
-            var rangeNode = AddNode("::range:" + range.Key, null, range.Key + ".x", "", "", Role.Infrastructure);
+            var rangeNode = AddNode("::range:" + range.Key, null, range.Key, "", "", Role.Infrastructure);
             Place(rangeNode, x + width / 2 - NodeWidth / 2, rangeRow);
             Connect(internet, rangeNode);
 
@@ -374,12 +374,62 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>The first three octets – an address *range* for visual grouping, deliberately not
-    /// called a subnet (the real one may be a /21; we can't know its size from here).</summary>
-    private static string RangeOf(string ip)
+    /// <summary>Cuts the device population into 4–8 roughly equal segments along prefix boundaries.
+    /// The split length adapts to how the addresses actually spread: first the shortest prefix all
+    /// devices share is found, then it is lengthened bit by bit until at least four (and at most
+    /// eight) non-empty slices emerge – a /21 population lands on /23s or /24s, a single /24 on /26s
+    /// or /27s. Segments are labelled with their true CIDR, since here it is computed, not assumed.</summary>
+    private static List<IGrouping<string, DeviceViewModel>> SegmentDevices(List<DeviceViewModel> devices)
+    {
+        var parsed = devices
+            .Select(d => (Device: d, Ip: ParseIpv4(d.Ipv4Address)))
+            .ToList();
+        var addressed = parsed.Where(p => p.Ip is not null).Select(p => (p.Device, Ip: p.Ip!.Value)).ToList();
+
+        int len = 32;                                   // the longest prefix every address shares
+        if (addressed.Count > 1)
+        {
+            uint min = addressed.Min(p => p.Ip), max = addressed.Max(p => p.Ip);
+            uint diff = min ^ max;
+            while (len > 0 && (diff >> (32 - len)) != 0) len--;
+        }
+
+        // Lengthen the prefix until at least 4 slices emerge; stop before it fragments past 8. Bucket
+        // counts only grow with the length, so the first length reaching 4 gives the largest segments.
+        int chosen = len;
+        for (int candidate = len + 1; candidate <= 30; candidate++)
+        {
+            int buckets = addressed.Select(p => p.Ip >> (32 - candidate)).Distinct().Count();
+            if (buckets > 8) break;
+            chosen = candidate;
+            if (buckets >= 4) break;
+        }
+
+        var final = chosen;
+        return addressed
+            .GroupBy(p => Cidr(p.Ip, final), p => p.Device)
+            .Concat(parsed.Where(p => p.Ip is null).GroupBy(p => p.Device.Ipv4Address, p => p.Device))
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static uint? ParseIpv4(string ip)
     {
         var parts = ip.Split('.');
-        return parts.Length >= 3 ? string.Join('.', parts[..3]) : ip;
+        if (parts.Length != 4) return null;
+        uint v = 0;
+        foreach (var part in parts)
+        {
+            if (!byte.TryParse(part, out var b)) return null;
+            v = (v << 8) | b;
+        }
+        return v;
+    }
+
+    private static string Cidr(uint ip, int prefixLen)
+    {
+        uint net = prefixLen == 0 ? 0 : ip & (uint.MaxValue << (32 - prefixLen));
+        return $"{net >> 24}.{(net >> 16) & 0xFF}.{(net >> 8) & 0xFF}.{net & 0xFF}/{prefixLen}";
     }
 
     // ---- nodes ----------------------------------------------------------------------------------
