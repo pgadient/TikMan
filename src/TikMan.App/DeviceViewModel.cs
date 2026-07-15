@@ -959,9 +959,42 @@ public class DeviceViewModel : INotifyPropertyChanged
         return null;
     }
 
+    /// <summary>Like <see cref="RestReadAsync{T}"/> but with an encrypted SSH-CLI step between HTTPS and
+    /// the (opt-in) HTTP fallback: HTTPS REST → SSH → HTTP-if-allowed. The SSH path lets TikMan read a
+    /// RouterOS device whose HTTPS handshake is broken WITHOUT ever touching plain HTTP.</summary>
+    private async Task<T?> SecureReadAsync<T>(
+        Func<RouterOsClient, CancellationToken, Task<T>> rest,
+        Func<string, int, string, string, CancellationToken, Task<T?>> ssh,
+        CancellationToken ct) where T : class
+    {
+        if (Model.EncryptedPassword.Length == 0) return null;
+        var password = CredentialProtector.Unprotect(Model.EncryptedPassword);
+
+        // 1) Secure: HTTPS REST (the configured client).
+        try { var r = await rest(Client, ct); if (r is not null) return r; }
+        catch (Exception) { /* HTTPS broken – try SSH next */ }
+
+        // 2) Secure: SSH CLI – works even when the device's HTTPS is broken.
+        try { var r = await ssh(Model.Host, Model.SshPort, Model.Username, password, ct); if (r is not null) return r; }
+        catch (Exception) { /* SSH off / not RouterOS */ }
+
+        // 3) Insecure: plain HTTP:80 – ONLY with explicit consent.
+        if (RouterOsClient.AllowHttpFallback && Model.UseHttps)
+        {
+            try
+            {
+                using var http = new RouterOsClient(Model.Host, 80, useHttps: false, Model.Username, password,
+                    ignoreCertErrors: true);
+                return await rest(http, ct);
+            }
+            catch (Exception) { }
+        }
+        return null;
+    }
+
     public async Task<Dictionary<string, string>?> GetBridgeHostsAsync(CancellationToken ct = default)
     {
-        var entries = await RestReadAsync((c, t) => c.GetBridgeHostsAsync(t), ct);
+        var entries = await SecureReadAsync((c, t) => c.GetBridgeHostsAsync(t), RouterOsSsh.GetBridgeHostsAsync, ct);
         if (entries is null) return null;
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (mac, port) in entries)
@@ -976,8 +1009,8 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// or when it isn't RouterOS. Supplements the bridge table in the physical topology.</summary>
     public async Task<List<(string Mac, string Port)>?> GetNeighborsAsync(CancellationToken ct = default)
     {
-        var raw = await RestReadAsync((c, t) => c.GetNeighborsAsync(t), ct);
-        return raw?.Select(n => (NormalizeMac(n.Mac), n.Interface))
+        var raw = await SecureReadAsync((c, t) => c.GetNeighborsAsync(t), RouterOsSsh.GetNeighborsAsync, ct);
+        return raw?.Select(n => (NormalizeMac(n.Mac), n.Item2))
             .Where(t => t.Item1.Length == 12 && t.Item2.Length > 0)
             .ToList();
     }
@@ -1039,57 +1072,71 @@ public class DeviceViewModel : INotifyPropertyChanged
         IsRefreshing = true;
         try
         {
-            var r = await Client.GetSystemResourceAsync(ct);
-            Version = r.Version;
-            Board = r.BoardName;
-            if (Model.SerialNumber.Length == 0)
+            // 1) Secure: HTTPS REST.
+            try
             {
-                try
+                var r = await Client.GetSystemResourceAsync(ct);
+                if (Model.SerialNumber.Length == 0)
                 {
-                    Model.SerialNumber = await Client.GetSerialNumberAsync(ct);
-                    Notify(nameof(SerialNumber));
+                    try { Model.SerialNumber = await Client.GetSerialNumberAsync(ct); Notify(nameof(SerialNumber)); }
+                    catch { /* CHR/x86 has no routerboard endpoint */ }
                 }
-                catch { /* CHR/x86 has no routerboard endpoint */ }
+                ApplyResource(r);
+                Status = DeviceStatus.Online; LastError = ""; HadTlsError = false;
+                _ = FetchChangelogDatesAsync(ct); // fire-and-forget; fills the release-date columns
+                return true;
             }
-            Uptime = r.Uptime;
-            CpuLoad = r.CpuLoad;
-            MemoryText = r.TotalMemory > 0
-                ? $"{(r.TotalMemory - r.FreeMemory) / 1048576} / {r.TotalMemory / 1048576} MB"
-                : "";
-
-            History.Add(new ResourceSnapshot
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex)
             {
-                Timestamp = DateTime.Now,
-                CpuLoad = r.CpuLoad,
-                MemoryUsedPercent = r.MemoryUsedPercent,
-            });
-            while (History.Count > MaxHistory) History.RemoveAt(0);
+                LastError = Shorten(ex);
+                HadTlsError = ErrorText.IsTlsProblem(ex);
 
-            if (LatestVersion != "" && Version != "")
-                UpdateAvailable = LatestVersion != StripChannelSuffix(Version);
+                // 2) Secure: read the same data over the SSH CLI – the reliable path when a RouterOS
+                //    device's HTTPS handshake is broken. Never touches HTTP.
+                if (Model.EncryptedPassword.Length > 0)
+                {
+                    var pw = CredentialProtector.Unprotect(Model.EncryptedPassword);
+                    var sr = await RouterOsSsh.GetResourceAsync(Model.Host, Model.SshPort, Model.Username, pw, ct);
+                    if (sr is not null)
+                    {
+                        ApplyResource(sr);
+                        Status = DeviceStatus.Online; LastError = ""; HadTlsError = false;
+                        _ = FetchChangelogDatesAsync(ct);
+                        return true;
+                    }
+                }
 
-            Status = DeviceStatus.Online;
-            LastError = "";
-            HadTlsError = false;
-            _ = FetchChangelogDatesAsync(ct); // fire-and-forget; fills the release-date columns
-            return true;
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            LastError = Shorten(ex);
-            HadTlsError = ErrorText.IsTlsProblem(ex);
-            // REST failed, but keep the dot green if the host still pings (reachable, just not logged in).
-            Status = await PingAsync(ct).ConfigureAwait(false) ? DeviceStatus.Online : DeviceStatus.Offline;
-            return false;
+                // 3) Neither worked – keep the dot green if the host still pings (reachable, not logged in).
+                Status = await PingAsync(ct).ConfigureAwait(false) ? DeviceStatus.Online : DeviceStatus.Offline;
+                return false;
+            }
         }
         finally
         {
             IsRefreshing = false;
         }
+    }
+
+    /// <summary>Applies a fetched resource snapshot (from REST or SSH) to the device's live columns.</summary>
+    private void ApplyResource(ResourceInfo r)
+    {
+        Version = r.Version;
+        Board = r.BoardName;
+        Uptime = r.Uptime;
+        CpuLoad = r.CpuLoad;
+        MemoryText = r.TotalMemory > 0
+            ? $"{(r.TotalMemory - r.FreeMemory) / 1048576} / {r.TotalMemory / 1048576} MB"
+            : "";
+        History.Add(new ResourceSnapshot
+        {
+            Timestamp = DateTime.Now,
+            CpuLoad = r.CpuLoad,
+            MemoryUsedPercent = r.MemoryUsedPercent,
+        });
+        while (History.Count > MaxHistory) History.RemoveAt(0);
+        if (LatestVersion != "" && Version != "")
+            UpdateAvailable = LatestVersion != StripChannelSuffix(Version);
     }
 
     /// <summary>Refreshes a TP-Link switch over SSH (no REST API): reads firmware + model via
