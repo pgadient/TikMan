@@ -235,6 +235,23 @@ public partial class MainWindow : IWebBackend
         catch (Exception) { return BackupResult.Fail(T("Web_BackupFailed")); }
     }
 
+    /// <summary>Opens an SSH shell to the device using its stored login. Reads the credentials on the UI
+    /// thread, then connects off-thread. The password is used only to authenticate – never logged.</summary>
+    async Task<TikMan.Core.Api.ITerminalSession?> IWebBackend.OpenSshShellAsync(string id, uint cols, uint rows)
+    {
+        var conn = await Dispatcher.InvokeAsync<(string Host, int Port, string User, string Pass)>(() =>
+        {
+            var d = FindByWebId(id);
+            if (d is null || !d.HasCredentials) return ("", 0, "", "");
+            var host = d.Ipv4Address.Length > 0 ? d.Ipv4Address : d.Host;
+            return (host, d.Model.SshPort, d.Model.Username,
+                CredentialProtector.Unprotect(d.Model.EncryptedPassword));
+        });
+        if (conn.Host.Length == 0) return null;
+        return await TikMan.Core.Api.SshTerminalSession.ConnectAsync(
+            conn.Host, conn.Port, conn.User, conn.Pass, cols, rows);
+    }
+
     private DeviceDto ToDto(DeviceViewModel d) => new(
         Id: WebId(d),
         Name: d.Name,

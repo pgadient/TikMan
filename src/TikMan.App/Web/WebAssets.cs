@@ -96,6 +96,12 @@ internal static class WebAssets
   #mapsvg.grabbing { cursor:grabbing; }
   #mapsvg text { pointer-events:none; }
   #mapsvg .node { cursor:pointer; }
+  #term { position:fixed; inset:0; z-index:20; background:#000; flex-direction:column; }
+  #term:not([hidden]) { display:flex; }
+  .termhead { display:flex; align-items:center; gap:10px; padding:8px 14px; background:#111; color:#ddd; }
+  .termhead span { flex:1; font-size:13px; font-weight:600; }
+  .termhead .x { color:#ddd; }
+  #termbox { flex:1; min-height:0; padding:6px 8px; overflow:hidden; }
 </style>
 </head>
 <body>
@@ -158,8 +164,16 @@ internal static class WebAssets
         <button id="mbfull">Full (.backup)</button>
       </div>
     </div>
-    <div class="mfoot"><button id="mwake" hidden>⏻ Wake</button><span class="muted" id="mtoast"></span></div>
+    <div class="mfoot">
+      <button id="mterm" hidden>⌨ Terminal</button>
+      <button id="mwake" hidden>⏻ Wake</button>
+      <span class="muted" id="mtoast"></span>
+    </div>
   </div>
+</div>
+<div id="term" hidden>
+  <div class="termhead"><span id="termtitle">SSH</span><button class="x" id="termclose">✕</button></div>
+  <div id="termbox"></div>
 </div>
 <footer>TikMan web · live · tap a row for details</footer>
 <script>
@@ -239,6 +253,7 @@ async function openDetail(id){
     $("#mluser").value = d.user || ""; $("#mlpass").value = "";
     $("#mloginhttp").hidden = secure; $("#mloginform").style.display = secure ? "flex" : "none";
     $("#mbackup").hidden = !(secure && d.hasLogin);
+    $("#mterm").hidden = !(secure && d.hasLogin);
     $("#mtoast").textContent=""; $("#modal").hidden=false;
   } catch(e){}
 }
@@ -274,6 +289,45 @@ async function wake(id){
   try { const r = await (await fetch("/api/wake?id="+encodeURIComponent(id),{method:"POST"})).json();
         $("#mtoast").textContent = r.message || (r.ok?"sent":"failed"); }
   catch { $("#mtoast").textContent="failed"; }
+}
+
+// ---- SSH terminal (xterm.js, lazy-loaded) ----
+let xtermReady = null, currentTerm = null;
+function loadXterm(){
+  if(xtermReady) return xtermReady;
+  xtermReady = new Promise((resolve,reject)=>{
+    const css=document.createElement("link"); css.rel="stylesheet"; css.href="/xterm.css"; document.head.appendChild(css);
+    const s1=document.createElement("script"); s1.src="/xterm.js";
+    s1.onload=()=>{ const s2=document.createElement("script"); s2.src="/xterm-addon-fit.js"; s2.onload=resolve; s2.onerror=reject; document.head.appendChild(s2); };
+    s1.onerror=reject; document.head.appendChild(s1);
+  });
+  return xtermReady;
+}
+async function openTerminal(id){
+  if(!id || !secure) return;
+  try { await loadXterm(); } catch { $("#mtoast").textContent="failed to load terminal"; return; }
+  $("#modal").hidden=true;
+  $("#termtitle").textContent = "SSH · " + ($("#mname").textContent || id);
+  $("#term").hidden=false;
+  const term = new Terminal({ fontSize:13, cursorBlink:true, theme:{ background:"#000000" } });
+  const fit = new FitAddon.FitAddon(); term.loadAddon(fit);
+  term.open($("#termbox")); fit.fit(); term.focus();
+  const ws = new WebSocket(`wss://${location.host}/ws/ssh?id=${encodeURIComponent(id)}&cols=${term.cols}&rows=${term.rows}`);
+  ws.binaryType="arraybuffer";
+  const enc=new TextEncoder();
+  ws.onmessage = e => term.write(typeof e.data==="string" ? e.data : new Uint8Array(e.data));
+  ws.onclose = ()=>{ try{ term.write("\r\n\x1b[90m[disconnected]\x1b[0m\r\n"); }catch{} };
+  term.onData(d=>{ if(ws.readyState===1) ws.send(enc.encode(d)); });
+  const onResize=()=>{ try{ fit.fit(); }catch{} };
+  window.addEventListener("resize", onResize);
+  currentTerm = { term, ws, onResize };
+}
+function closeTerminal(){
+  if(!currentTerm) return;
+  window.removeEventListener("resize", currentTerm.onResize);
+  try{ currentTerm.ws.close(); }catch{}
+  try{ currentTerm.term.dispose(); }catch{}
+  currentTerm=null; $("#term").hidden=true;
 }
 
 // ---- topology map ----
@@ -350,6 +404,8 @@ $("#mwake").onclick = ()=> wake($("#mwake").dataset.id);
 $("#mlsave").onclick = ()=> saveLogin($("#modal").dataset.id);
 $("#mbrsc").onclick = ()=> backup($("#modal").dataset.id, false);
 $("#mbfull").onclick = ()=> backup($("#modal").dataset.id, true);
+$("#mterm").onclick = ()=> openTerminal($("#modal").dataset.id);
+$("#termclose").onclick = closeTerminal;
 loadInfo(); tick(); pollStatus();
 setInterval(tick, 4000); setInterval(pollStatus, 1200);
 </script>

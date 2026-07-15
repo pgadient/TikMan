@@ -10,13 +10,21 @@
     <RootNamespace>TikMan.App</RootNamespace>
     <ApplicationIcon>tikman.ico</ApplicationIcon>
     <!-- Build number auto-increments: 1.1.<days since 2026-01-01> (recomputed on every build). -->
-    <Version>1.10.35</Version>
+    <Version>1.10.36</Version>
     <Product>TikMan</Product>
     <Company>Pascal Montico-Gadient</Company>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\TikMan.Core\TikMan.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Browser terminal (xterm.js, MIT) served by the built-in web server; embedded so it ships
+         inside the single-file exe. -->
+    <EmbeddedResource Include="Web\assets\xterm.js" />
+    <EmbeddedResource Include="Web\assets\xterm.css" />
+    <EmbeddedResource Include="Web\assets\xterm-addon-fit.js" />
   </ItemGroup>
 
   <ItemGroup>

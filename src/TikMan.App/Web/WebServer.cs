@@ -2,10 +2,12 @@ using System.IO;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
+using TikMan.Core.Api;
 
 namespace TikMan.App.Web;
 
@@ -99,7 +101,9 @@ public sealed class WebServer : IDisposable
                     stream = ssl;
                 }
                 var req = await ReadRequestAsync(stream, readCts.Token).ConfigureAwait(false);
-                if (req is not null) await RespondAsync(stream, req).ConfigureAwait(false);
+                if (req is null) { }
+                else if (IsWebSocketUpgrade(req)) await HandleWebSocketAsync(stream, req, ct).ConfigureAwait(false);
+                else await RespondAsync(stream, req).ConfigureAwait(false);
             }
             catch (Exception) { /* client hiccup / TLS failure / timeout – just drop it */ }
             finally { ssl?.Dispose(); }
@@ -276,6 +280,15 @@ public sealed class WebServer : IDisposable
             case "/api/info":
                 await WriteJsonAsync(stream, new { title = _backend.AppTitle, version = _backend.AppVersion });
                 break;
+            case "/xterm.js":
+                await ServeAssetAsync(stream, "xterm.js", "application/javascript; charset=utf-8");
+                break;
+            case "/xterm-addon-fit.js":
+                await ServeAssetAsync(stream, "xterm-addon-fit.js", "application/javascript; charset=utf-8");
+                break;
+            case "/xterm.css":
+                await ServeAssetAsync(stream, "xterm.css", "text/css; charset=utf-8");
+                break;
             default:
                 await WriteAsync(stream, 404, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("404 Not Found"));
                 break;
@@ -344,6 +357,138 @@ public sealed class WebServer : IDisposable
         }
         catch { }
         return Dns.GetHostName();
+    }
+
+    // ---- WebSocket: SSH terminal ----
+
+    private static bool IsWebSocketUpgrade(Request req) =>
+        req.Headers.TryGetValue("Upgrade", out var up) &&
+        up.Contains("websocket", StringComparison.OrdinalIgnoreCase) &&
+        req.Headers.ContainsKey("Sec-WebSocket-Key");
+
+    /// <summary>Upgrades to a WebSocket and bridges it to an SSH shell. Auth + HTTPS are mandatory:
+    /// a terminal carries keystrokes and shell output, so it never runs over plain HTTP.</summary>
+    private async Task HandleWebSocketAsync(Stream stream, Request req, CancellationToken ct)
+    {
+        if (!Authorised(req))
+        {
+            await WriteAsync(stream, 401, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("401 Unauthorized"),
+                "WWW-Authenticate: Basic realm=\"TikMan\", charset=\"UTF-8\"");
+            return;
+        }
+        if (!IsHttps)
+        {
+            await WriteAsync(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("HTTPS required"));
+            return;
+        }
+        if (req.Path != "/ws/ssh" || !req.Headers.TryGetValue("Sec-WebSocket-Key", out var wsKey))
+        {
+            await WriteAsync(stream, 404, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("404 Not Found"));
+            return;
+        }
+
+        // RFC 6455 handshake, then let the framework own the framing over our (TLS) stream.
+        var accept = Convert.ToBase64String(SHA1.HashData(
+            Encoding.ASCII.GetBytes(wsKey.Trim() + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")));
+        var handshake = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+                        "Sec-WebSocket-Accept: " + accept + "\r\n\r\n";
+        await stream.WriteAsync(Encoding.ASCII.GetBytes(handshake), ct).ConfigureAwait(false);
+        await stream.FlushAsync(ct).ConfigureAwait(false);
+
+        using var ws = WebSocket.CreateFromStream(stream,
+            new WebSocketCreationOptions { IsServer = true, KeepAliveInterval = TimeSpan.FromSeconds(30) });
+
+        var id = QueryValue(req.Query, "id") ?? "";
+        var cols = ParseDim(QueryValue(req.Query, "cols"), 120);
+        var rows = ParseDim(QueryValue(req.Query, "rows"), 32);
+
+        ITerminalSession? session = null;
+        try { session = await _backend.OpenSshShellAsync(id, cols, rows).ConfigureAwait(false); }
+        catch { }
+        if (session is null)
+        {
+            try
+            {
+                await ws.SendAsync(Encoding.UTF8.GetBytes("\r\n[31mConnection failed.[0m\r\n"),
+                    WebSocketMessageType.Binary, true, ct);
+                await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "no session", ct);
+            }
+            catch { }
+            return;
+        }
+        using (session) await BridgeAsync(ws, session, ct);
+    }
+
+    private static uint ParseDim(string? s, uint fallback) =>
+        uint.TryParse(s, out var v) && v is > 0 and <= 500 ? v : fallback;
+
+    /// <summary>Pumps bytes both ways: shell output → WebSocket (through a queue, so SSH.NET's callback
+    /// thread never touches the socket), WebSocket input → shell.</summary>
+    private static async Task BridgeAsync(WebSocket ws, ITerminalSession session, CancellationToken ct)
+    {
+        var outbox = System.Threading.Channels.Channel.CreateUnbounded<byte[]>();
+        void OnData(byte[] d) => outbox.Writer.TryWrite(d);
+        session.DataReceived += OnData;
+
+        var sender = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (var chunk in outbox.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+                    await ws.SendAsync(chunk, WebSocketMessageType.Binary, true, ct).ConfigureAwait(false);
+            }
+            catch { }
+        }, ct);
+
+        var buf = new byte[16384];
+        try
+        {
+            while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
+            {
+                WebSocketReceiveResult res;
+                try { res = await ws.ReceiveAsync(new ArraySegment<byte>(buf), ct).ConfigureAwait(false); }
+                catch { break; }
+                if (res.MessageType == WebSocketMessageType.Close) break;
+                if (res.Count > 0) session.Write(buf, res.Count); // browser keystrokes → shell
+            }
+        }
+        finally
+        {
+            session.DataReceived -= OnData;
+            outbox.Writer.TryComplete();
+            try { await sender.ConfigureAwait(false); } catch { }
+            try
+            {
+                if (ws.State == WebSocketState.Open)
+                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None).ConfigureAwait(false);
+            }
+            catch { }
+        }
+    }
+
+    // ---- embedded static assets (xterm.js …) ----
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte[]?> AssetCache = new();
+
+    private static byte[]? EmbeddedAsset(string fileName) => AssetCache.GetOrAdd(fileName, fn =>
+    {
+        var asm = typeof(WebServer).Assembly;
+        var name = Array.Find(asm.GetManifestResourceNames(), n => n.EndsWith("." + fn, StringComparison.Ordinal));
+        if (name is null) return null;
+        using var s = asm.GetManifestResourceStream(name);
+        if (s is null) return null;
+        using var ms = new MemoryStream();
+        s.CopyTo(ms);
+        return ms.ToArray();
+    });
+
+    private static async Task ServeAssetAsync(Stream stream, string file, string contentType)
+    {
+        var bytes = EmbeddedAsset(file);
+        if (bytes is null)
+            await WriteAsync(stream, 404, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("404 Not Found"));
+        else
+            await WriteAsync(stream, 200, contentType, bytes);
     }
 
     public void Stop()

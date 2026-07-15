@@ -84,6 +84,11 @@ public interface IWebBackend
     /// <summary>Starts a discovery scan if one isn't already running (same as the GUI's Scan button).</summary>
     void StartScan();
 
+    /// <summary>Opens an interactive SSH shell to the device with the stored login, at the given
+    /// terminal size. Returns null if the device is unknown, has no login, or the connection fails.
+    /// The web server only ever calls this over HTTPS. The password is never logged.</summary>
+    Task<TikMan.Core.Api.ITerminalSession?> OpenSshShellAsync(string id, uint cols, uint rows);
+
     /// <summary>Product name + version for the page header.</summary>
     string AppTitle { get; }
     string AppVersion { get; }
