@@ -1142,61 +1142,17 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void BackupAll_Click(object sender, RoutedEventArgs e)
+    private void BackupAll_Click(object sender, RoutedEventArgs e)
     {
-        // Nothing marked → back up every device.
-        var targets = MarkedDevices();
-        if (targets.Count == 0) targets = _devices.ToList();
-        if (targets.Count == 0)
+        // Only devices with a stored login can be backed up (the config export/SSH both need credentials).
+        var candidates = _devices.Where(d => d.HasCredentials).ToList();
+        if (candidates.Count == 0)
         {
-            SetStatus(T("Msg_NoDevicesMarked"));
+            MessageBox.Show(this, T("Msg_NoBackupCandidates"), T("Ba_Title"),
+                MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-
-        var folderDialog = new OpenFolderDialog { Title = T("Dlg_FolderTitle") };
-        if (folderDialog.ShowDialog(this) != true) return;
-        var folder = folderDialog.FolderName;
-
-        var timestamp = DateTime.Now;
-        SetStatus(T("Msg_BackingUpAll", targets.Count));
-        BeginProgress(targets.Count);
-
-        int ok = 0;
-        var failures = new List<string>();
-        foreach (var vm in targets)
-        {
-            SetStatus(T("Msg_LoadingConfig", vm.Name));
-            var result = await vm.DownloadConfigAsync();
-            if (result is { } data)
-            {
-                try
-                {
-                    var fileName = BackupNaming.SuggestFileName(data.Identity, vm.Board, vm.Host, timestamp);
-                    File.WriteAllText(Path.Combine(folder, fileName), data.Config);
-                    ok++;
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"{vm.Name} ({vm.Host}): {ex.Message}");
-                }
-            }
-            else
-            {
-                failures.Add($"{vm.Name} ({vm.Host}): {vm.LastError}");
-            }
-            StepProgress();
-        }
-        EndProgress();
-
-        SetStatus(T("Msg_BackupAllDone", ok, failures.Count, folder));
-        if (failures.Count > 0)
-        {
-            var body = T("Msg_BackupAllReport", ok, targets.Count, folder, string.Join("\n• ", failures));
-            // If secure paths failed and the user hasn't allowed plain HTTP, point them at the setting –
-            // TikMan never sends credentials over HTTP unless it's explicitly enabled.
-            if (!_appData.AllowHttpFallback) body += "\n\n" + T("Msg_BackupHttpHint");
-            MessageBox.Show(this, body, T("Msg_BackupAllReportTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
-        }
+        new BackupAllWindow(candidates, _appData.BackupMethod) { Owner = this }.ShowDialog();
     }
 
     private void InstallUpdates_Click(object sender, RoutedEventArgs e)
