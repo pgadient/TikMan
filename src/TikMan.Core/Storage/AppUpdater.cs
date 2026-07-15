@@ -42,7 +42,10 @@ public static class AppUpdater
                 var url = a.TryGetProperty("browser_download_url", out var u) ? u.GetString() ?? "" : "";
                 // Match the exact variant, e.g. "TikMan-1.10.24-win-x64.exe". The "-fdd" must match too:
                 // require the suffix immediately before ".exe" so win-x64 never matches win-x64-fdd.
-                if (url.Length > 0 && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
+                // The name must be a bare filename (no path) and the URL an https GitHub URL – belt and
+                // braces on top of the already-TLS API response.
+                if (IsTrustedGithubUrl(url) && IsSafeAssetName(name) &&
+                    name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
                     name.Contains(variant, StringComparison.OrdinalIgnoreCase) &&
                     IsFdd(name) == IsFdd(currentExeName))
                     return new Available(latest, name, url);
@@ -57,7 +60,10 @@ public static class AppUpdater
     public static async Task<string?> DownloadAsync(Available update, string targetDirectory,
         IProgress<double>? progress = null, CancellationToken ct = default)
     {
-        var path = Path.Combine(targetDirectory, update.AssetName);
+        // Re-check the guards here too – DownloadAsync must never trust its input blindly. The asset
+        // name is reduced to a bare filename so it can't escape the target directory.
+        if (!IsTrustedGithubUrl(update.DownloadUrl) || !IsSafeAssetName(update.AssetName)) return null;
+        var path = Path.Combine(targetDirectory, Path.GetFileName(update.AssetName));
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
@@ -99,11 +105,35 @@ public static class AppUpdater
     {
         var m = Regex.Match(exeName, @"win-(x64|arm64)", RegexOptions.IgnoreCase);
         if (m.Success) return m.Value.ToLowerInvariant();
-        return System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture ==
-               System.Runtime.InteropServices.Architecture.Arm64 ? "win-arm64" : "win-x64";
+        // Renamed file – fall back to the actual architecture. x86 maps to a suffix no asset carries,
+        // so a 32-bit process never grabs an incompatible x64 build.
+        return System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture switch
+        {
+            System.Runtime.InteropServices.Architecture.Arm64 => "win-arm64",
+            System.Runtime.InteropServices.Architecture.X64 => "win-x64",
+            _ => "win-none",
+        };
     }
 
     private static bool IsFdd(string exeName) => exeName.Contains("-fdd", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The download URL must be HTTPS and on a GitHub host – GitHub serves release assets from
+    /// github.com (which redirects) and *.githubusercontent.com. Nothing else is accepted.</summary>
+    private static bool IsTrustedGithubUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var u) &&
+        u.Scheme == Uri.UriSchemeHttps &&
+        (u.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
+         u.Host.EndsWith(".github.com", StringComparison.OrdinalIgnoreCase) ||
+         u.Host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>A safe asset name is a bare "TikMan-…exe" filename with no path separators or traversal –
+    /// so it can only ever be written inside the target directory.</summary>
+    private static bool IsSafeAssetName(string name) =>
+        name.Length is > 0 and < 128 &&
+        name.StartsWith("TikMan", StringComparison.OrdinalIgnoreCase) &&
+        name.IndexOfAny(new[] { '/', '\\', ':' }) < 0 &&
+        !name.Contains("..", StringComparison.Ordinal) &&
+        name == Path.GetFileName(name);
 
     private static bool TryParseVersion(string tag, out Version version)
     {
