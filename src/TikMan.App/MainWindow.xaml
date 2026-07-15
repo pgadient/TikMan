@@ -108,7 +108,21 @@
                 <DockPanel x:Name="CombinedProgressRow" Visibility="Collapsed">
                     <TextBlock DockPanel.Dock="Left" Width="120" VerticalAlignment="Center" Foreground="#666666"
                                Text="{loc:Loc Prog_All}"/>
-                    <ProgressBar x:Name="CombinedProgress" Height="10" Minimum="0" Maximum="100"/>
+                    <!-- Own template so the fill honours Foreground (the default theme sometimes doesn't),
+                         letting the bar signal red while scanning and green when the list is complete. -->
+                    <ProgressBar x:Name="CombinedProgress" Height="10" Minimum="0" Maximum="100">
+                        <ProgressBar.Template>
+                            <ControlTemplate TargetType="ProgressBar">
+                                <Border Background="#E9E9E9" CornerRadius="2" ClipToBounds="True">
+                                    <Grid>
+                                        <Rectangle x:Name="PART_Track"/>
+                                        <Rectangle x:Name="PART_Indicator" HorizontalAlignment="Left"
+                                                   Fill="{TemplateBinding Foreground}"/>
+                                    </Grid>
+                                </Border>
+                            </ControlTemplate>
+                        </ProgressBar.Template>
+                    </ProgressBar>
                 </DockPanel>
 
                 <StackPanel x:Name="PhaseRows">

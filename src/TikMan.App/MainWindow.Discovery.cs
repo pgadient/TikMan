@@ -55,11 +55,39 @@ public partial class MainWindow
         if (single) UpdateCombinedProgress();
     }
 
+    // The combined bar is red while devices can still appear – the subnet/MNDP/ZON/IPv6 scans and the
+    // mDNS/SSDP sweep – and turns green once they are through and only the per-device meta enrichment
+    // (WMI/web/SNMP, the slow part) is left. So a green bar means "the list is complete".
+    private static readonly System.Windows.Media.Brush DiscoveryBrush =
+        new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xC0, 0x39, 0x2B));
+    private static readonly System.Windows.Media.Brush CompleteBrush =
+        new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x2E, 0x9E, 0x44));
+
+    /// <summary>True while the device-finding phases run: the four scans (rows still visible and
+    /// progressing) or the mDNS/SSDP sweep (tracked separately, since its rows only appear once the
+    /// meta phase starts).</summary>
+    private bool _metaSweepPending;
+    private bool DiscoveryStillFindingDevices()
+    {
+        if (_metaSweepPending) return true;
+        var scanRows = new[] { Ipv4ProgressRow, MndpProgressRow, ZonProgressRow, Ipv6ProgressRow,
+                               MdnsProgressRow, SsdpProgressRow };
+        var scanBars = new[] { Ipv4Progress, MndpProgress, ZonProgress, Ipv6Progress,
+                               MdnsProgress, SsdpProgress };
+        for (int i = 0; i < scanRows.Length; i++)
+            if (scanRows[i].Visibility == Visibility.Visible &&
+                (scanBars[i].IsIndeterminate || scanBars[i].Value < scanBars[i].Maximum))
+                return true;
+        return false;
+    }
+
     /// <summary>The combined bar is the mean of how far each running phase has come. A phase that has
     /// finished has hidden its row, and counts as done rather than dropping out of the average – so the
-    /// bar only ever moves forwards.</summary>
+    /// bar only ever moves forwards. Its colour tells device-finding (red) from meta enrichment (green).</summary>
     private void UpdateCombinedProgress()
     {
+        CombinedProgress.Foreground = DiscoveryStillFindingDevices() ? DiscoveryBrush : CompleteBrush;
+
         var phases = PhaseBars.Where(p => p.Bar.Maximum > 0).ToList();
         if (phases.Count == 0) return;
 
@@ -143,6 +171,7 @@ public partial class MainWindow
         Ipv6MetaProgress.Value = 0;
         ZonProgress.Value = 0;
         CombinedProgress.Value = 0;
+        _metaSweepPending = true; // devices can still appear until the mDNS/SSDP sweep is through
         ApplyProgressBarMode();
         StartMndpProgressTimer();
         StartIpv6ProgressTimer();
@@ -235,6 +264,8 @@ public partial class MainWindow
             ScanButton.Content = T("Tb_Scan");
             _ipv6ProgressTimer.Stop();
             _mndpProgressTimer.Stop();
+            _sweepProgressTimer.Stop();
+            _metaSweepPending = false; // whatever happened, the list won't grow any further now
             Ipv4Progress.IsIndeterminate = false;
             DiscoveryProgressPanel.Visibility = Visibility.Collapsed;
             MarkGateways();
@@ -262,6 +293,7 @@ public partial class MainWindow
         if (targets.Count == 0 || ct.IsCancellationRequested)
         {
             row.Visibility = Visibility.Collapsed;
+            if (!v6) { _metaSweepPending = false; UpdateCombinedProgress(); } // no v4 sweep will run
             return;
         }
 
@@ -367,7 +399,11 @@ public partial class MainWindow
         var v = Math.Min(_sweepElapsed, MetaSweepSeconds);
         MdnsProgress.Value = v;
         SsdpProgress.Value = v;
-        if (_sweepElapsed >= MetaSweepSeconds) _sweepProgressTimer.Stop();
+        if (_sweepElapsed >= MetaSweepSeconds)
+        {
+            _sweepProgressTimer.Stop();
+            _metaSweepPending = false; // the list is complete now – only meta enrichment is left
+        }
         UpdateCombinedProgress();
     }
 
