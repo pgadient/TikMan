@@ -464,7 +464,12 @@ public partial class MainWindow : Window
     {
         var targets = MarkedDevices();
         if (targets.Count == 0 && SelectedDevice is { } sel) targets.Add(sel);
-        if (targets.Count == 0) { SetStatus(T("Msg_SelectDeviceFirst")); return; }
+        if (targets.Count == 0)
+        {
+            MessageBox.Show(this, T("Msg_SelectDeviceFirst"), T("Tb_SetCreds"),
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
         if (targets.Count == 1)
         {
             var dialog = new DeviceEditWindow(targets[0].Model) { Owner = this };

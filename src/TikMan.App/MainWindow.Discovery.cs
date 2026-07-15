@@ -63,6 +63,12 @@ public partial class MainWindow
     private static readonly System.Windows.Media.Brush CompleteBrush =
         new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x2E, 0x9E, 0x44));
 
+    // The progress phases that actually run this scan (mode-dependent), and which of them have been
+    // seen running – so a collapsed row counts as done only if it truly ran, and a phase that never
+    // runs (simple mode, or ZON without Npcap) is left out of the average entirely.
+    private readonly HashSet<DockPanel> _activePhaseRows = new();
+    private readonly HashSet<DockPanel> _startedRows = new();
+
     /// <summary>True while the device-finding phases run: the four scans (rows still visible and
     /// progressing) or the mDNS/SSDP sweep (tracked separately, since its rows only appear once the
     /// meta phase starts).</summary>
@@ -94,16 +100,25 @@ public partial class MainWindow
         CombinedProgress.Foreground = finding ? DiscoveryBrush : CompleteBrush;
         CombinedProgressLabel.Text = T(finding ? "Prog_Discovery" : "Prog_Meta");
 
-        var phases = PhaseBars.Where(p => p.Bar.Maximum > 0).ToList();
+        // Only the phases planned for this scan count – so simple mode averages just the address scan,
+        // and a phase that hasn't started yet doesn't inflate the bar (nor does a never-run one drag it).
+        var phases = PhaseBars.Where(p => _activePhaseRows.Contains(p.Row)).ToList();
         if (phases.Count == 0) return;
 
         bool anyIndeterminate = phases.Any(p => p.Row.Visibility == Visibility.Visible && p.Bar.IsIndeterminate);
         CombinedProgress.IsIndeterminate = anyIndeterminate;
         if (anyIndeterminate) return;
 
-        double sum = phases.Sum(p => p.Row.Visibility == Visibility.Visible
-            ? Math.Clamp(p.Bar.Value / p.Bar.Maximum, 0, 1)
-            : 1.0); // hidden ⇒ that phase is through
+        double sum = 0;
+        foreach (var p in phases)
+        {
+            if (p.Row.Visibility == Visibility.Visible)
+            {
+                _startedRows.Add(p.Row);                          // it's running now
+                sum += Math.Clamp(p.Bar.Value / Math.Max(1, p.Bar.Maximum), 0, 1);
+            }
+            else sum += _startedRows.Contains(p.Row) ? 1.0 : 0.0; // hidden: done only if it actually ran
+        }
         _combinedShownPct = Math.Max(_combinedShownPct, sum / phases.Count * 100);
         CombinedProgress.Value = _combinedShownPct;
     }
@@ -190,6 +205,21 @@ public partial class MainWindow
         ZonProgress.Value = 0;
         CombinedProgress.Value = 0;
         _combinedShownPct = 0;    // start of a run – the monotonic clamp resets
+
+        // Declare which phases this scan will actually run, so the combined bar averages exactly those.
+        _startedRows.Clear();
+        _activePhaseRows.Clear();
+        _activePhaseRows.Add(Ipv4ProgressRow);
+        if (!simple)
+        {
+            _activePhaseRows.Add(MndpProgressRow);
+            _activePhaseRows.Add(Ipv6ProgressRow);
+            if (ZdpScanner.IsAvailable()) _activePhaseRows.Add(ZonProgressRow);
+            _activePhaseRows.Add(Ipv4MetaProgressRow);
+            _activePhaseRows.Add(Ipv6MetaProgressRow);
+            _activePhaseRows.Add(MdnsProgressRow);   // shown once the meta phase starts them
+            _activePhaseRows.Add(SsdpProgressRow);
+        }
         _metaSweepPending = !simple; // no mDNS/SSDP sweep in simple mode
         ApplyProgressBarMode();
         if (!simple) { StartMndpProgressTimer(); StartIpv6ProgressTimer(); }
