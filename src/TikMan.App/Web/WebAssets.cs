@@ -31,12 +31,33 @@ internal static class WebAssets
   button { padding:7px 14px; border:none; border-radius:7px; background:var(--accent); color:#fff;
            font-size:14px; font-weight:600; cursor:pointer; }
   button:disabled { opacity:.5; cursor:default; }
-  .prog { padding:0 18px 8px; display:flex; align-items:center; gap:10px; }
+  .prog { padding:0 18px 8px; align-items:center; gap:10px; }
+  .prog:not([hidden]) { display:flex; } /* keep [hidden] able to hide it – a bare display:flex would win over [hidden] */
   .track { flex:1; height:8px; border-radius:6px; background:var(--line); overflow:hidden; }
   .fill { height:100%; width:0; background:var(--gw); border-radius:6px; transition:width .3s ease; }
   .fill.indet { width:35% !important; animation:slide 1.1s ease-in-out infinite; }
   @keyframes slide { 0%{margin-left:-35%} 100%{margin-left:100%} }
   .pphase { color:var(--muted); font-size:12px; white-space:nowrap; }
+  tr.row { cursor:pointer; }
+  tr.row:hover td { background:color-mix(in srgb, var(--accent) 8%, transparent); }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.45); align-items:center; justify-content:center;
+           padding:16px; z-index:10; }
+  .modal:not([hidden]) { display:flex; }
+  .sheet { background:var(--card); border-radius:12px; max-width:560px; width:100%; max-height:85vh;
+           overflow:auto; box-shadow:0 8px 40px rgba(0,0,0,.35); }
+  .mhead { display:flex; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--line);
+           position:sticky; top:0; background:var(--card); }
+  .mhead h2 { margin:0; font-size:17px; font-weight:600; flex:1; }
+  .x { background:transparent; color:var(--muted); padding:4px 9px; font-weight:400; }
+  #mbody { padding:4px 18px; }
+  .kv { display:grid; grid-template-columns:130px 1fr; gap:2px 12px; padding:7px 0;
+        border-bottom:1px solid var(--line); font-size:13px; }
+  .kv:last-child { border-bottom:none; }
+  .kv b { color:var(--muted); font-weight:600; }
+  .kv span { word-break:break-word; }
+  .mfoot { padding:14px 18px; display:flex; align-items:center; gap:12px; border-top:1px solid var(--line);
+           position:sticky; bottom:0; background:var(--card); }
+  .mfoot button { background:var(--gw); }
   .wrap { overflow-x:auto; padding:0 18px 24px; }
   table { border-collapse:collapse; width:100%; min-width:640px; background:var(--card); border-radius:10px;
           overflow:hidden; box-shadow:0 1px 2px rgba(0,0,0,.06); }
@@ -79,7 +100,14 @@ internal static class WebAssets
   </table>
   <div class="empty" id="empty" hidden>No devices yet — start a scan in the desktop app.</div>
 </div>
-<footer>TikMan web · live</footer>
+<div class="modal" id="modal" hidden>
+  <div class="sheet">
+    <div class="mhead"><h2 id="mname"></h2><button class="x" id="mclose">✕</button></div>
+    <div id="mbody"></div>
+    <div class="mfoot"><button id="mwake" hidden>⏻ Wake</button><span class="muted" id="mtoast"></span></div>
+  </div>
+</div>
+<footer>TikMan web · live · tap a row for details</footer>
 <script>
 let devices = [], sortKey = "ip", sortDir = 1;
 const $ = s => document.querySelector(s);
@@ -106,7 +134,7 @@ function render(){
   });
   $("#count").textContent = devices.length + " devices" + (f? " · "+list.length+" shown":"");
   $("#empty").hidden = devices.length>0;
-  $("#rows").innerHTML = list.map(d => `<tr>
+  $("#rows").innerHTML = list.map(d => `<tr class="row" data-id="${esc(d.id)}">
     <td class="name">${esc(d.name)||'<span class="muted">—</span>'} ${d.hasLogin?'<span class="lock" title="has login">🔑</span>':''}</td>
     <td>${esc(d.ip)}</td>
     <td>${d.type?`<span class="tag ${d.isGateway?'gw':''}">${esc(d.type)}</span>`:''}</td>
@@ -140,11 +168,36 @@ async function pollStatus(){
 }
 async function scanNow(){ try { await fetch("/api/scan",{method:"POST"}); pollStatus(); } catch{} }
 
+async function openDetail(id){
+  try {
+    const d = await j("/api/device?id="+encodeURIComponent(id));
+    $("#mname").textContent = d.name || d.ip || "Device";
+    const rows = [["IP",d.ip],["MAC",d.mac],["Type",d.type],["Vendor",d.vendor],
+                  ["Model",d.model],["Status",d.status],["Login",d.hasLogin?"yes":"no"]];
+    if(d.ipv6 && d.ipv6.length) rows.push(["IPv6", d.ipv6.join("\n")]);
+    (d.info||[]).forEach(kv=>rows.push([kv.key, kv.value]));
+    $("#mbody").innerHTML = rows.filter(r=>r[1]!=null && r[1]!=="").map(r=>
+      `<div class="kv"><b>${esc(r[0])}</b><span>${esc(r[1]).replace(/\n/g,"<br>")}</span></div>`).join("");
+    const w=$("#mwake"); w.hidden=!d.canWake; w.dataset.id=d.id;
+    $("#mtoast").textContent=""; $("#modal").hidden=false;
+  } catch(e){}
+}
+async function wake(id){
+  $("#mtoast").textContent="…";
+  try { const r = await (await fetch("/api/wake?id="+encodeURIComponent(id),{method:"POST"})).json();
+        $("#mtoast").textContent = r.message || (r.ok?"sent":"failed"); }
+  catch { $("#mtoast").textContent="failed"; }
+}
+
 document.querySelectorAll("th[data-k]").forEach(th=>th.onclick=()=>{
   const k=th.dataset.k; if(sortKey===k) sortDir*=-1; else {sortKey=k; sortDir=1;} render();
 });
 $("#filter").oninput = render;
 $("#scan").onclick = scanNow;
+$("#rows").addEventListener("click", e=>{ const tr=e.target.closest("tr[data-id]"); if(tr) openDetail(tr.dataset.id); });
+$("#mclose").onclick = ()=>{ $("#modal").hidden=true; };
+$("#modal").onclick = e=>{ if(e.target.id==="modal") $("#modal").hidden=true; };
+$("#mwake").onclick = ()=> wake($("#mwake").dataset.id);
 loadInfo(); tick(); pollStatus();
 setInterval(tick, 4000); setInterval(pollStatus, 1200);
 </script>

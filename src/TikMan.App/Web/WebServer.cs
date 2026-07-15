@@ -127,6 +127,24 @@ public sealed class WebServer : IDisposable
                 case "/api/status":
                     await WriteJsonAsync(ctx, _backend.GetStatus());
                     break;
+                case "/api/device":
+                    var detail = _backend.GetDevice(ctx.Request.QueryString["id"] ?? "");
+                    if (detail is null)
+                    {
+                        ctx.Response.StatusCode = 404;
+                        await WriteAsync(ctx, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("404 Not Found"));
+                    }
+                    else await WriteJsonAsync(ctx, detail);
+                    break;
+                case "/api/wake":
+                    if (!string.Equals(ctx.Request.HttpMethod, "POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ctx.Response.StatusCode = 405;
+                        await WriteAsync(ctx, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("405 Method Not Allowed"));
+                        break;
+                    }
+                    await WriteJsonAsync(ctx, _backend.Wake(ctx.Request.QueryString["id"] ?? ""));
+                    break;
                 case "/api/scan":
                     if (!string.Equals(ctx.Request.HttpMethod, "POST", StringComparison.OrdinalIgnoreCase))
                     {

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Windows;
 using TikMan.App.Web;
+using TikMan.Core.Discovery;
 using TikMan.Core.Storage;
 using static TikMan.App.Localization.LocalizationManager;
 
@@ -103,15 +104,47 @@ public partial class MainWindow : IWebBackend
         if (!_scanning) _ = RunDiscoveryAsync(auto: false);
     });
 
-    IReadOnlyList<DeviceDto> IWebBackend.GetDevices() => Dispatcher.Invoke(() => _devices.Select(d =>
-        new DeviceDto(
-            Name: d.Name,
-            Ip: d.Ipv4Address.Length > 0 ? d.Ipv4Address : d.Host,
-            Mac: d.Model.MacAddress,
-            Vendor: d.IdentifiedVendor,
-            Type: d.DeviceType,
-            Model: d.ModelDisplay,
-            Status: d.StatusText,
-            IsGateway: d.IsGateway,
-            HasLogin: d.HasCredentials)).ToList());
+    IReadOnlyList<DeviceDto> IWebBackend.GetDevices() =>
+        Dispatcher.Invoke(() => _devices.Select(ToDto).ToList());
+
+    DeviceDetail? IWebBackend.GetDevice(string id) => Dispatcher.Invoke(() =>
+    {
+        var d = FindByWebId(id);
+        if (d is null) return null;
+        var info = d.ExtraInfo.Select(r => new KeyVal(r.Key, r.Value)).ToList();
+        return new DeviceDetail(
+            Id: WebId(d), Name: d.Name, Ip: d.Ipv4Address.Length > 0 ? d.Ipv4Address : d.Host,
+            Mac: d.Model.MacAddress, Vendor: d.IdentifiedVendor, Type: d.DeviceType, Model: d.ModelDisplay,
+            Status: d.StatusText, HasLogin: d.HasCredentials, CanWake: d.Model.MacAddress.Length > 0,
+            Ipv6: d.Ipv6List, Info: info);
+    });
+
+    ActionResult IWebBackend.Wake(string id) => Dispatcher.Invoke(() =>
+    {
+        var d = FindByWebId(id);
+        if (d is null) return new ActionResult(false, T("Web_DeviceGone"));
+        if (d.Model.MacAddress.Length == 0) return new ActionResult(false, T("Wol_NoMac", d.Host));
+        var ok = WakeOnLan.Send(d.Model.MacAddress);
+        return new ActionResult(ok, ok ? T("Wol_Sent", d.Model.MacAddress) : T("Wol_Failed", d.Host));
+    });
+
+    private DeviceDto ToDto(DeviceViewModel d) => new(
+        Id: WebId(d),
+        Name: d.Name,
+        Ip: d.Ipv4Address.Length > 0 ? d.Ipv4Address : d.Host,
+        Mac: d.Model.MacAddress,
+        Vendor: d.IdentifiedVendor,
+        Type: d.DeviceType,
+        Model: d.ModelDisplay,
+        Status: d.StatusText,
+        IsGateway: d.IsGateway,
+        HasLogin: d.HasCredentials);
+
+    /// <summary>A stable id for the web layer: the MAC (the app's real device identity) when known,
+    /// otherwise the host address. Only used to map a web request back to a live device.</summary>
+    private static string WebId(DeviceViewModel d) =>
+        d.Model.MacAddress.Length > 0 ? d.Model.MacAddress : d.Host;
+
+    private DeviceViewModel? FindByWebId(string id) =>
+        _devices.FirstOrDefault(d => string.Equals(WebId(d), id, StringComparison.OrdinalIgnoreCase));
 }
