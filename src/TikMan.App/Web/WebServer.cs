@@ -18,6 +18,12 @@ public sealed class WebServer : IDisposable
     private HttpListener? _listener;
     private CancellationTokenSource? _cts;
 
+    // camelCase so the JSON keys match the dashboard's JavaScript (d.name, s.scanning, …).
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
     /// <summary>The URL the server is actually listening on once started (LAN or localhost), else "".</summary>
     public string BoundUrl { get; private set; } = "";
 
@@ -116,12 +122,24 @@ public sealed class WebServer : IDisposable
                     await WriteAsync(ctx, "text/html; charset=utf-8", Encoding.UTF8.GetBytes(WebAssets.IndexHtml));
                     break;
                 case "/api/devices":
-                    var json = JsonSerializer.Serialize(_backend.GetDevices());
-                    await WriteAsync(ctx, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(json));
+                    await WriteJsonAsync(ctx, _backend.GetDevices());
+                    break;
+                case "/api/status":
+                    await WriteJsonAsync(ctx, _backend.GetStatus());
+                    break;
+                case "/api/scan":
+                    if (!string.Equals(ctx.Request.HttpMethod, "POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ctx.Response.StatusCode = 405;
+                        await WriteAsync(ctx, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("405 Method Not Allowed"));
+                        break;
+                    }
+                    _backend.StartScan();
+                    ctx.Response.StatusCode = 202;
+                    await WriteAsync(ctx, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"started\":true}"));
                     break;
                 case "/api/info":
-                    var info = JsonSerializer.Serialize(new { title = _backend.AppTitle, version = _backend.AppVersion });
-                    await WriteAsync(ctx, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(info));
+                    await WriteJsonAsync(ctx, new { title = _backend.AppTitle, version = _backend.AppVersion });
                     break;
                 default:
                     ctx.Response.StatusCode = 404;
@@ -131,6 +149,9 @@ public sealed class WebServer : IDisposable
         }
         catch (Exception) { try { ctx.Response.Abort(); } catch { } }
     }
+
+    private static Task WriteJsonAsync(HttpListenerContext ctx, object value) =>
+        WriteAsync(ctx, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value, JsonOpts)));
 
     private static async Task WriteAsync(HttpListenerContext ctx, string contentType, byte[] body)
     {

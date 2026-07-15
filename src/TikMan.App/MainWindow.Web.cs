@@ -89,6 +89,20 @@ public partial class MainWindow : IWebBackend
     /// <summary>A snapshot of the live device list, taken on the UI thread (the web request runs on a
     /// background thread and must not touch the WPF-bound view models directly). Never includes any
     /// password – only whether the device has a stored login.</summary>
+    WebStatus IWebBackend.GetStatus() => Dispatcher.Invoke(() =>
+    {
+        double progress = !_scanning ? 0
+            : CombinedProgress.IsIndeterminate ? -1
+            : _combinedShownPct / 100.0;
+        var phase = _scanning ? CombinedProgressLabel.Text : "";
+        return new WebStatus(_scanning, progress, phase, _devices.Count);
+    });
+
+    void IWebBackend.StartScan() => Dispatcher.Invoke(() =>
+    {
+        if (!_scanning) _ = RunDiscoveryAsync(auto: false);
+    });
+
     IReadOnlyList<DeviceDto> IWebBackend.GetDevices() => Dispatcher.Invoke(() => _devices.Select(d =>
         new DeviceDto(
             Name: d.Name,

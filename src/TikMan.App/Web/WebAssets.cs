@@ -28,6 +28,15 @@ internal static class WebAssets
   .bar { padding:10px 18px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   input[type=search] { flex:1; min-width:160px; padding:7px 10px; border:1px solid var(--line);
            border-radius:7px; background:var(--card); color:var(--fg); font-size:14px; }
+  button { padding:7px 14px; border:none; border-radius:7px; background:var(--accent); color:#fff;
+           font-size:14px; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  .prog { padding:0 18px 8px; display:flex; align-items:center; gap:10px; }
+  .track { flex:1; height:8px; border-radius:6px; background:var(--line); overflow:hidden; }
+  .fill { height:100%; width:0; background:var(--gw); border-radius:6px; transition:width .3s ease; }
+  .fill.indet { width:35% !important; animation:slide 1.1s ease-in-out infinite; }
+  @keyframes slide { 0%{margin-left:-35%} 100%{margin-left:100%} }
+  .pphase { color:var(--muted); font-size:12px; white-space:nowrap; }
   .wrap { overflow-x:auto; padding:0 18px 24px; }
   table { border-collapse:collapse; width:100%; min-width:640px; background:var(--card); border-radius:10px;
           overflow:hidden; box-shadow:0 1px 2px rgba(0,0,0,.06); }
@@ -51,8 +60,13 @@ internal static class WebAssets
   <span class="count" id="count"></span>
 </header>
 <div class="bar">
+  <button id="scan">⟳ Scan</button>
   <input type="search" id="filter" placeholder="Filter… (name, IP, MAC, vendor, type)" autocomplete="off">
   <span class="muted" id="status"></span>
+</div>
+<div class="prog" id="prog" hidden>
+  <div class="track"><div class="fill" id="pfill"></div></div>
+  <span class="pphase" id="pphase"></span>
 </div>
 <div class="wrap">
   <table>
@@ -65,7 +79,7 @@ internal static class WebAssets
   </table>
   <div class="empty" id="empty" hidden>No devices yet — start a scan in the desktop app.</div>
 </div>
-<footer>TikMan web · auto-refresh every 5&nbsp;s</footer>
+<footer>TikMan web · live</footer>
 <script>
 let devices = [], sortKey = "ip", sortDir = 1;
 const $ = s => document.querySelector(s);
@@ -105,11 +119,34 @@ async function tick(){
   try { devices = await j("/api/devices"); $("#status").textContent=""; render(); }
   catch(e){ $("#status").textContent = "connection lost…"; }
 }
+
+let wasScanning = false;
+async function pollStatus(){
+  try {
+    const s = await j("/api/status");
+    const prog = $("#prog"), fill = $("#pfill");
+    if(s.scanning){
+      prog.hidden = false; $("#scan").disabled = true;
+      if(s.progress < 0){ fill.classList.add("indet"); }
+      else { fill.classList.remove("indet"); fill.style.width = Math.round(s.progress*100)+"%"; }
+      $("#pphase").textContent = (s.phase||"Scanning") + (s.progress>=0 ? " · "+Math.round(s.progress*100)+"%" : "");
+      tick(); // devices appear live during the scan
+    } else {
+      prog.hidden = true; $("#scan").disabled = false;
+      if(wasScanning) tick(); // one final refresh when a scan just finished
+    }
+    wasScanning = s.scanning;
+  } catch(e){ $("#status").textContent = "connection lost…"; }
+}
+async function scanNow(){ try { await fetch("/api/scan",{method:"POST"}); pollStatus(); } catch{} }
+
 document.querySelectorAll("th[data-k]").forEach(th=>th.onclick=()=>{
   const k=th.dataset.k; if(sortKey===k) sortDir*=-1; else {sortKey=k; sortDir=1;} render();
 });
 $("#filter").oninput = render;
-loadInfo(); tick(); setInterval(tick, 5000);
+$("#scan").onclick = scanNow;
+loadInfo(); tick(); pollStatus();
+setInterval(tick, 4000); setInterval(pollStatus, 1200);
 </script>
 </body>
 </html>
