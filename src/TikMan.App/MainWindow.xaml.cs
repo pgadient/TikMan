@@ -170,8 +170,16 @@ public partial class MainWindow : Window
 
     /// <summary>Refreshes the "N devices · X IPv4 · Y IPv6" counter under the list. The total is shown
     /// too because a device may have both or only IPv6, so IPv4+IPv6 don't add up to it.</summary>
+    /// <summary>Shows the "set a login" banner while devices are present but none has credentials –
+    /// that is when the map and the readouts are poorest. Hidden the moment any device has a login (or
+    /// there are no devices yet). Today only MikroTik is read in full; the wording says so.</summary>
+    private void UpdateNoLoginBanner() =>
+        NoLoginBanner.Visibility = _devices.Count > 0 && !_devices.Any(d => d.HasCredentials)
+            ? Visibility.Visible : Visibility.Collapsed;
+
     private void UpdateDeviceCount()
     {
+        UpdateNoLoginBanner();
         var text = T("Cnt_Devices", _devices.Count, _devices.Count(d => d.HasIpv4), _devices.Count(d => d.HasIpv6));
 
         // With a filter active, how many rows survive it – so the user sees the reach of their query.
@@ -400,6 +408,7 @@ public partial class MainWindow : Window
     /// already open rebuilds right away with whatever the new login reveals.</summary>
     private async Task AfterCredentialsChangedAsync(IReadOnlyList<DeviceViewModel> vms)
     {
+        UpdateNoLoginBanner();   // a login was just added – the banner can go
         await Task.WhenAll(vms.Select(RefreshAndProbeAsync));
         InvalidateTopologyEvidence();
         if (!_scanning) _ = RunDiscoveryAsync(auto: true);

@@ -27,6 +27,8 @@ public partial class MainWindow
     private readonly List<TopoEdge> _topoEdges = new();
 
     private bool _topoPhysical;                       // which of the two views the canvas is showing
+    private readonly Dictionary<TopoNode, List<TopoNode>> _children = new(); // parent → children, for the tree layout
+    private TopoNode? _topoRoot;                       // the node every edge ultimately hangs off
     private Dictionary<string, List<string>>? _traceResults;   // device ip → router hops (physical view)
     private Dictionary<DeviceViewModel, Dictionary<string, string>>? _fdb; // bridge → (MAC → port)
     private Dictionary<DeviceViewModel, Dictionary<string, string>>? _ssids; // bridge → (wlan port → SSID)
@@ -36,6 +38,7 @@ public partial class MainWindow
     private Point _dragOffset;
     private Point _panStart;
     private bool _panning;
+    private bool _topoUserFramed; // the user panned/zoomed – stop auto-fitting on resize until "Fit"
 
     private sealed class TopoNode
     {
@@ -88,6 +91,14 @@ public partial class MainWindow
         TopologyHost.Visibility = Visibility.Collapsed;
         DeviceGrid.Visibility = Visibility.Visible;
         SetTopologyFullscreen(false);
+    }
+
+    /// <summary>Keep the graph nicely framed as the window resizes – but only auto-fit while the user
+    /// hasn't zoomed/panned in themselves, so a resize doesn't yank away a view they set up by hand.</summary>
+    private void TopologyHost_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (TopologyHost.Visibility == Visibility.Visible && !_topoUserFramed)
+            Topology_Fit_Click(this, new RoutedEventArgs());
     }
 
     /// <summary>A map wants the whole window: the details pane and its splitter fold away while a
@@ -188,13 +199,62 @@ public partial class MainWindow
         TopologyCanvas.Children.Clear();
         _topoNodes.Clear();
         _topoEdges.Clear();
+        _children.Clear();
+        _topoRoot = null;
 
         var devices = _devices.Where(d => d.HasIpv4).ToList();
         if (devices.Count == 0) return;
 
         if (_topoPhysical) BuildPhysical(devices);
         else BuildLogical(devices);
+
+        // Tidy-tree layout: infrastructure is the spine, clients cluster under their parent. Replaces
+        // whatever coarse positions the build put down. Only when nothing has been manually dragged –
+        // a re-arrange or first open – so a map the user has tweaked stays put.
+        if (_topoRoot is not null) LayoutSubtree(_topoRoot, 0, 0, new HashSet<TopoNode>());
         RedrawEdges();
+    }
+
+    private const double TierHeight = NodeHeight + 84;   // vertical distance between depth tiers
+
+    /// <summary>Places a subtree and returns the width it occupies. A node's infrastructure children
+    /// (those with children of their own – switches, port groups, routed hops) are laid out as
+    /// side-by-side subtree bands, so a chain of switches stacks straight down; its client leaves fill
+    /// a compact grid to the right, under the same tier; and the node is centred over the whole span.</summary>
+    private double LayoutSubtree(TopoNode node, int depth, double left, HashSet<TopoNode> seen)
+    {
+        double y = 30 + depth * TierHeight;
+        var kids = seen.Add(node) && _children.TryGetValue(node, out var k) ? k : new List<TopoNode>();
+        if (kids.Count == 0) { SetPos(node, left, y); return NodeWidth; }
+
+        bool HasKids(TopoNode n) => _children.TryGetValue(n, out var c) && c.Count > 0;
+        var infra = kids.Where(HasKids).ToList();
+        var leaves = kids.Where(n => !HasKids(n)).ToList();
+
+        double x = left;
+        foreach (var c in infra) x += LayoutSubtree(c, depth + 1, x, seen) + ColGap;
+
+        if (leaves.Count > 0)
+        {
+            // A wide-ish grid (√n·1.4 columns) keeps a big client cluster from towering too tall.
+            int cols = Math.Max(1, Math.Min(leaves.Count, (int)Math.Ceiling(Math.Sqrt(leaves.Count) * 1.4)));
+            double gy = 30 + (depth + 1) * TierHeight;
+            for (int i = 0; i < leaves.Count; i++)
+                SetPos(leaves[i], x + i % cols * (NodeWidth + ColGap), gy + i / cols * (NodeHeight + RowGap));
+            x += cols * (NodeWidth + ColGap);
+        }
+
+        double width = Math.Max(NodeWidth, x - left - ColGap);
+        SetPos(node, left + width / 2 - NodeWidth / 2, y);
+        return width;
+    }
+
+    private void SetPos(TopoNode node, double x, double y)
+    {
+        node.Position = new Point(x, y);
+        Canvas.SetLeft(node.Visual, x);
+        Canvas.SetTop(node.Visual, y);
+        Panel.SetZIndex(node.Visual, 2);
     }
 
     /// <summary>Internet → one blue node per address segment → that segment's devices below (clients
@@ -590,6 +650,12 @@ public partial class MainWindow
         Panel.SetZIndex(line, 1);
         TopologyCanvas.Children.Add(line);
         _topoEdges.Add(new TopoEdge { Visual = line, From = from, To = to });
+
+        // Record the parent→child link for the tree layout, and remember the ultimate root (the one
+        // node that is never a child).
+        if (!_children.TryGetValue(from, out var list)) _children[from] = list = new List<TopoNode>();
+        list.Add(to);
+        _topoRoot ??= from;
     }
 
     private void RedrawEdges()
@@ -628,6 +694,7 @@ public partial class MainWindow
     {
         if (_dragNode is not null) return;         // a node handled this already
         _panning = true;
+        _topoUserFramed = true;
         _panStart = e.GetPosition(TopologyHost);
         TopologyHost.CaptureMouse();
         TopologyHost.Cursor = Cursors.ScrollAll;
@@ -665,6 +732,7 @@ public partial class MainWindow
     /// <summary>Zooms towards the pointer, so the thing under the cursor stays under the cursor.</summary>
     private void Topology_MouseWheel(object sender, MouseWheelEventArgs e)
     {
+        _topoUserFramed = true;
         var before = e.GetPosition(TopologyCanvas);          // in canvas coordinates
         var factor = e.Delta > 0 ? 1.12 : 1 / 1.12;
         var next = Math.Clamp(TopologyScale.ScaleX * factor, 0.2, 3.0);
@@ -691,6 +759,7 @@ public partial class MainWindow
     /// <summary>Scales the graph until it fills the view (up to a sane maximum) and centres it.</summary>
     private void Topology_Fit_Click(object sender, RoutedEventArgs e)
     {
+        _topoUserFramed = false; // back to auto-fit until the user pans/zooms again
         if (_topoNodes.Count == 0 || TopologyHost.ActualWidth < 50) return;
         double maxX = _topoNodes.Max(n => n.Position.X) + NodeWidth;
         double maxY = _topoNodes.Max(n => n.Position.Y) + NodeHeight;
