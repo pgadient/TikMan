@@ -63,6 +63,28 @@ public static class RouterOsSsh
         return list.Count > 0 ? list : null;
     }
 
+    public static async Task<Dictionary<string, string>?> GetWifiSsidsAsync(string host, int port, string user,
+        string password, CancellationToken ct = default)
+    {
+        var text = await RunAsync(host, port, user, password, "/interface wifi print detail", ct);
+        var map = text is null ? new() : ParseWifiSsids(text);
+        if (map.Count == 0) // legacy driver
+        {
+            var legacy = await RunAsync(host, port, user, password, "/interface wireless print detail", ct);
+            if (legacy is not null) map = ParseWifiSsids(legacy);
+        }
+        return map.Count > 0 ? map : null;
+    }
+
+    public static async Task<List<Models.LogEntry>?> GetLogAsync(string host, int port, string user, string password,
+        int maxEntries, CancellationToken ct = default)
+    {
+        var text = await RunAsync(host, port, user, password, "/log print", ct);
+        if (text is null) return null;
+        var list = ParseLog(text, maxEntries);
+        return list.Count > 0 ? list : null;
+    }
+
     // ---- parsers (pure, tested) ----
 
     /// <summary>Parses a "key: value" block (/system resource, routerboard, identity) – the keys are
@@ -152,6 +174,75 @@ public static class RouterOsSsh
             if (key.Length == 12 && port.Length > 0) list.Add((key, port));
         }
         return list;
+    }
+
+    /// <summary>Parses "/interface wifi print detail" → interface name → SSID. Two shapes: a CAPsMAN
+    /// CONTROLLER lists each interface with <c>name="…"</c> + <c>configuration.ssid="…"</c>; an AP/CAP
+    /// only carries the SSID in the <c>;;; mode: AP, SSID: &lt;ssid&gt;, channel:</c> comment (its
+    /// <c>name</c> is like "wifi1"). A trailing "[S]"/"[G]"/"[L]" is part of the network name – kept
+    /// verbatim (that's what a client sees). Also covers the legacy "/interface wireless" layout.</summary>
+    public static Dictionary<string, string> ParseWifiSsids(string detail)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var record in SplitRecords(detail))
+        {
+            var name = Cap(record, @"(?<![\w-])name=""([^""]*)""");
+            if (name.Length == 0) continue;
+            var ssid = Cap(record, @"(?<![\w-])(?:configuration\.)?ssid=""([^""]*)""");
+            if (ssid.Length == 0)
+            {
+                // AP/CAP side: SSID only in the ";;; mode: AP, SSID: <ssid>, channel:" comment.
+                var m = Regex.Match(record, @"SSID:\s*(.+?)(?:,\s*channel:|,\s*\w+:|\s+[\w.-]+=|$)");
+                if (m.Success) ssid = m.Groups[1].Value.Trim();
+            }
+            if (ssid.Length > 0 && !map.ContainsKey(name)) map[name] = ssid;
+        }
+        return map;
+    }
+
+    /// <summary>Splits a "print detail" dump into one string per record. A record starts at a line that
+    /// begins (after indent) with the entry number; its wrapped continuation lines are folded in.</summary>
+    private static IEnumerable<string> SplitRecords(string text)
+    {
+        var sb = new System.Text.StringBuilder();
+        bool started = false;
+        foreach (var raw in text.Split('\n'))
+        {
+            var line = raw.TrimEnd('\r');
+            if (Regex.IsMatch(line, @"^\s*\d+\s+\S"))
+            {
+                if (started) { yield return sb.ToString(); sb.Clear(); }
+                started = true;
+                sb.Append(line);
+            }
+            else if (started) sb.Append(' ').Append(line.Trim());
+        }
+        if (started) yield return sb.ToString();
+    }
+
+    /// <summary>Parses "/log print" lines: "&lt;date&gt; &lt;time&gt; &lt;topics&gt; &lt;message&gt;".</summary>
+    public static List<Models.LogEntry> ParseLog(string text, int maxEntries = 0)
+    {
+        var list = new List<Models.LogEntry>();
+        foreach (var raw in text.Split('\n'))
+        {
+            var m = Regex.Match(raw.TrimEnd('\r'), @"^\s*(\S+)\s+(\S+)\s+(\S+)\s+(.*)$");
+            if (!m.Success) continue;
+            list.Add(new Models.LogEntry
+            {
+                Time = m.Groups[1].Value + " " + m.Groups[2].Value,
+                Topics = m.Groups[3].Value,
+                Message = m.Groups[4].Value.Trim(),
+            });
+        }
+        if (maxEntries > 0 && list.Count > maxEntries) list.RemoveRange(0, list.Count - maxEntries);
+        return list;
+    }
+
+    private static string Cap(string s, string pattern)
+    {
+        var m = Regex.Match(s, pattern);
+        return m.Success ? m.Groups[1].Value : "";
     }
 
     /// <summary>Value of "key=" up to the next whitespace (RouterOS terse fields are space-separated;

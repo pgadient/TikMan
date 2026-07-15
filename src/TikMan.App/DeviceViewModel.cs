@@ -1019,7 +1019,7 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// actually radiates; null without credentials / not RouterOS / no radios.</summary>
     public async Task<Dictionary<string, string>?> GetWifiSsidsAsync(CancellationToken ct = default)
     {
-        var map = await RestReadAsync((c, t) => c.GetWifiSsidsAsync(t), ct);
+        var map = await SecureReadAsync((c, t) => c.GetWifiSsidsAsync(t), RouterOsSsh.GetWifiSsidsAsync, ct);
         return map is { Count: > 0 } ? map : null;
     }
 
@@ -1171,21 +1171,16 @@ public class DeviceViewModel : INotifyPropertyChanged
     public async Task<bool> LoadLogsAsync(int maxEntries, CancellationToken ct = default)
     {
         if (Model.Vendor != DeviceVendor.MikroTik) { Logs.Clear(); return true; } // no RouterOS log on non-MikroTik
-        try
-        {
-            var entries = await Client.GetLogAsync(maxEntries, ct);
-            Logs.Clear();
-            // newest first
-            for (int i = entries.Count - 1; i >= 0; i--) Logs.Add(entries[i]);
-            LastError = "";
-            return true;
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (Exception ex)
-        {
-            LastError = Shorten(ex);
-            return false;
-        }
+        // HTTPS REST → SSH (/log print) → HTTP only if allowed. Cap the SSH transfer for a huge log.
+        var entries = await SecureReadAsync(
+            (c, t) => c.GetLogAsync(maxEntries, t),
+            (h, p, u, pw, t) => RouterOsSsh.GetLogAsync(h, p, u, pw, maxEntries > 0 ? maxEntries : 300, t),
+            ct);
+        if (entries is null) { LastError = LastError.Length > 0 ? LastError : "log unavailable"; return false; }
+        Logs.Clear();
+        for (int i = entries.Count - 1; i >= 0; i--) Logs.Add(entries[i]); // newest first
+        LastError = "";
+        return true;
     }
 
     public async Task<bool> CheckUpdateAsync(CancellationToken ct = default)
