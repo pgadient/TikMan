@@ -176,6 +176,32 @@
         </ScrollViewer>
         </TabItem>
 
+        <TabItem Header="{loc:Loc SetTab_Web}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,8,12,0">
+            <StackPanel>
+                <TextBlock TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_WebIntro}"/>
+
+                <CheckBox x:Name="WebAutoStartCheck" Margin="0,14,0,0" Content="{loc:Loc Set_WebAutoStart}"/>
+                <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_WebAutoStartHint}"/>
+
+                <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_WebPort}"/>
+                <TextBox x:Name="WebPortBox" Width="100" HorizontalAlignment="Left" Height="24" Margin="0,3,0,0"
+                         VerticalContentAlignment="Center"/>
+
+                <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_WebUser}"/>
+                <TextBox x:Name="WebUserBox" Width="220" HorizontalAlignment="Left" Height="24" Margin="0,3,0,0"
+                         VerticalContentAlignment="Center"/>
+
+                <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_WebPassword}"/>
+                <PasswordBox x:Name="WebPasswordBox" Width="220" HorizontalAlignment="Left" Height="24" Margin="0,3,0,0"
+                             VerticalContentAlignment="Center"/>
+                <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_WebCredsHint}"/>
+
+                <TextBlock Margin="0,14,0,0" TextWrapping="Wrap" Foreground="#B36B00" FontSize="11" Text="{loc:Loc Set_WebSecurityHint}"/>
+            </StackPanel>
+        </ScrollViewer>
+        </TabItem>
+
         <TabItem Header="{loc:Loc SetTab_Files}">
         <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,8,12,0">
             <StackPanel>

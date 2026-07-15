@@ -20,6 +20,12 @@
                 <Separator/>
                 <MenuItem Header="{loc:Loc Tb_Settings}" Click="Settings_Click"/>
             </MenuItem>
+            <MenuItem Header="{loc:Loc Menu_WebServer}">
+                <MenuItem x:Name="WebServerToggleItem" Header="{loc:Loc Web_Enable}" IsCheckable="True" Click="WebServerToggle_Click"/>
+                <Separator/>
+                <MenuItem x:Name="WebServerStatusItem" Header="{loc:Loc Web_Stopped}" IsEnabled="False"/>
+                <MenuItem x:Name="WebServerOpenItem" Header="{loc:Loc Web_OpenBrowser}" Click="WebServerOpen_Click" IsEnabled="False"/>
+            </MenuItem>
         </Menu>
         <Border DockPanel.Dock="Top" Background="#F3F3F3" BorderBrush="#DDDDDD" BorderThickness="0,0,0,1" Padding="6,5">
             <!-- Row 1: scan + device actions left, coloured contact buttons right (one shared

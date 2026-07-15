@@ -100,6 +100,8 @@ public partial class MainWindow : Window
         else { UpdateNoLoginBanner(); SetStatus(T("Status_Ready")); }
 
         if (_appData.CheckForUpdates) _ = CheckForUpdateAsync();
+
+        if (_appData.WebServerAutoStart) StartWebServer(announce: false);
     }
 
     /// <summary>This build's version (Major.Minor.Build) and the running exe's filename – what the
@@ -152,7 +154,7 @@ public partial class MainWindow : Window
         catch (Exception) { SetStatus(T("Upd_Failed")); }
     }
 
-    private void Window_Closing(object sender, CancelEventArgs e) => SaveAppData();
+    private void Window_Closing(object sender, CancelEventArgs e) { StopWebServer(); SaveAppData(); }
 
     private void SaveAppData()
     {

@@ -78,6 +78,15 @@ public class AppData
     /// <summary>When true, the device list and its config (encrypted credentials included) are
     /// persisted to disk. Off by default – devices then only live for the current session.</summary>
     public bool PersistDeviceList { get; set; }
+    /// <summary>Start the built-in web server automatically on launch. Off by default – the server is
+    /// normally toggled on demand from the "Web server" menu.</summary>
+    public bool WebServerAutoStart { get; set; }
+    /// <summary>TCP port for the built-in web server (default 9090 – 80/8080 are usually already taken).</summary>
+    public int WebServerPort { get; set; } = 9090;
+    /// <summary>Username required to sign in to the web server (HTTP Basic auth).</summary>
+    public string WebServerUser { get; set; } = "";
+    /// <summary>Web-server password, DPAPI-encrypted (never stored in clear), like every other secret here.</summary>
+    public string WebServerEncryptedPassword { get; set; } = "";
     /// <summary>Saved device-list column layout (order + width), only kept while
     /// <see cref="PersistDeviceList"/> is on. One entry per column in creation order.</summary>
     public List<ColumnState> ColumnLayout { get; set; } = new();

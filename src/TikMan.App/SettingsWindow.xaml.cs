@@ -48,6 +48,10 @@ public partial class SettingsWindow : Window
         SingleProgressCheck.IsChecked = data.SingleProgressBar;
         NoInitialScanCheck.IsChecked = data.NoInitialScan;
         CheckUpdatesCheck.IsChecked = data.CheckForUpdates;
+        WebAutoStartCheck.IsChecked = data.WebServerAutoStart;
+        WebPortBox.Text = data.WebServerPort.ToString();
+        WebUserBox.Text = data.WebServerUser;
+        WebPasswordBox.Password = CredentialProtector.Unprotect(data.WebServerEncryptedPassword);
         SnmpCommunityBox.Text = data.SnmpCommunity;
         VncNoticeCheck.IsChecked = data.ShowVncNotice;
         PingTimeoutBox.Text = data.PingTimeoutMs.ToString();
@@ -205,6 +209,11 @@ public partial class SettingsWindow : Window
         _data.SingleProgressBar = SingleProgressCheck.IsChecked == true;
         _data.NoInitialScan = NoInitialScanCheck.IsChecked == true;
         _data.CheckForUpdates = CheckUpdatesCheck.IsChecked == true;
+        _data.WebServerAutoStart = WebAutoStartCheck.IsChecked == true;
+        if (int.TryParse(WebPortBox.Text.Trim(), out var webPort))
+            _data.WebServerPort = Math.Clamp(webPort, 1, 65535);
+        _data.WebServerUser = WebUserBox.Text.Trim();
+        _data.WebServerEncryptedPassword = CredentialProtector.Protect(WebPasswordBox.Password);
         _data.SnmpCommunity = SnmpCommunityBox.Text.Trim() is { Length: > 0 } comm ? comm : "public";
         _data.ShowVncNotice = VncNoticeCheck.IsChecked == true;
         // Ping tuning – clamp to sane bounds so a typo can't hang or disable the scan.
