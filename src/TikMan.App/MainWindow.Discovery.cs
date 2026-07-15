@@ -81,9 +81,13 @@ public partial class MainWindow
         return false;
     }
 
-    /// <summary>The combined bar is the mean of how far each running phase has come. A phase that has
-    /// finished has hidden its row, and counts as done rather than dropping out of the average – so the
-    /// bar only ever moves forwards. Its colour tells device-finding (red) from meta enrichment (green).</summary>
+    private double _combinedShownPct; // clamps the combined bar to be monotonic (see below)
+
+    /// <summary>The combined bar is the mean of how far each running phase has come, but a later phase
+    /// (the mDNS/SSDP sweep, the meta enrichment) only enters the pool once it starts – joining at 0 and
+    /// enlarging the denominator, which would drag the average backwards and make the bar climb twice.
+    /// So the shown value is clamped to never decrease within a run; it reaches 100 % when every phase
+    /// has finished. Its colour tells device-finding (red) from meta enrichment (green).</summary>
     private void UpdateCombinedProgress()
     {
         CombinedProgress.Foreground = DiscoveryStillFindingDevices() ? DiscoveryBrush : CompleteBrush;
@@ -98,7 +102,8 @@ public partial class MainWindow
         double sum = phases.Sum(p => p.Row.Visibility == Visibility.Visible
             ? Math.Clamp(p.Bar.Value / p.Bar.Maximum, 0, 1)
             : 1.0); // hidden ⇒ that phase is through
-        CombinedProgress.Value = sum / phases.Count * 100;
+        _combinedShownPct = Math.Max(_combinedShownPct, sum / phases.Count * 100);
+        CombinedProgress.Value = _combinedShownPct;
     }
 
     /// <summary>Fills the subnet box + source label from the local adapters (first one selected).</summary>
@@ -171,6 +176,7 @@ public partial class MainWindow
         Ipv6MetaProgress.Value = 0;
         ZonProgress.Value = 0;
         CombinedProgress.Value = 0;
+        _combinedShownPct = 0;    // start of a run – the monotonic clamp resets
         _metaSweepPending = true; // devices can still appear until the mDNS/SSDP sweep is through
         ApplyProgressBarMode();
         StartMndpProgressTimer();
