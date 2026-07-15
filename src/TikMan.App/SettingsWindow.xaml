@@ -64,6 +64,13 @@
 
                 <CheckBox x:Name="CheckUpdatesCheck" Margin="0,12,0,0" Content="{loc:Loc Set_CheckUpdates}"/>
                 <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_CheckUpdatesHint}"/>
+                <StackPanel Orientation="Horizontal" Margin="20,6,0,0">
+                    <Button x:Name="CheckNowButton" Padding="10,4" Click="CheckNow_Click" Content="{loc:Loc Set_CheckNow}"/>
+                    <Button x:Name="DoUpdateButton" Padding="10,4" Margin="8,0,0,0" Visibility="Collapsed"
+                            Click="DoUpdate_Click" Content="{loc:Loc Upd_UpdateNow}"/>
+                    <TextBlock x:Name="UpdateStatusText" VerticalAlignment="Center" Margin="10,0,0,0"
+                               Foreground="#777777" TextWrapping="Wrap" MaxWidth="260"/>
+                </StackPanel>
 
                 <CheckBox x:Name="VncNoticeCheck" Margin="0,12,0,0" Content="{loc:Loc Set_VncNotice}"/>
             </StackPanel>

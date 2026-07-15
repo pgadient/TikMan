@@ -21,6 +21,11 @@ public partial class SettingsWindow : Window
     /// <summary>Set when the user confirmed a reset; the caller wipes the config and reloads defaults.</summary>
     public bool ResetRequested { get; private set; }
 
+    /// <summary>Set when the user hit "update now" on a found release; the caller performs the swap.</summary>
+    public AppUpdater.Available? UpdateRequested { get; private set; }
+
+    private AppUpdater.Available? _foundUpdate;
+
     public SettingsWindow(AppData data)
     {
         InitializeComponent();
@@ -124,6 +129,51 @@ public partial class SettingsWindow : Window
     {
         var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "vlc.exe|vlc.exe|*.exe|*.exe" };
         if (dialog.ShowDialog(this) == true) VlcPathBox.Text = dialog.FileName;
+    }
+
+    private async void CheckNow_Click(object sender, RoutedEventArgs e)
+    {
+        CheckNowButton.IsEnabled = false;
+        DoUpdateButton.Visibility = Visibility.Collapsed;
+        _foundUpdate = null;
+        UpdateStatusText.Foreground = System.Windows.Media.Brushes.Gray;
+        UpdateStatusText.Text = LocalizationManager.T("Upd_Checking");
+        try
+        {
+            var (current, exeName) = MainWindow.CurrentBuild();
+            var result = await AppUpdater.CheckDetailedAsync(current, exeName);
+            switch (result.Outcome)
+            {
+                case AppUpdater.Outcome.UpToDate:
+                    UpdateStatusText.Foreground = System.Windows.Media.Brushes.ForestGreen;
+                    UpdateStatusText.Text = LocalizationManager.T("Upd_UpToDate", current.ToString());
+                    break;
+                case AppUpdater.Outcome.UpdateAvailable when result.Update is { } upd:
+                    _foundUpdate = upd;
+                    UpdateStatusText.Foreground = System.Windows.Media.Brushes.DarkOrange;
+                    UpdateStatusText.Text = LocalizationManager.T("Upd_FoundNamed",
+                        upd.Version.ToString(), upd.ReleaseName);
+                    DoUpdateButton.Visibility = Visibility.Visible;
+                    break;
+                default:
+                    UpdateStatusText.Foreground = System.Windows.Media.Brushes.DarkOrange;
+                    UpdateStatusText.Text = LocalizationManager.T("Upd_CheckFailed");
+                    break;
+            }
+        }
+        catch (Exception)
+        {
+            UpdateStatusText.Foreground = System.Windows.Media.Brushes.DarkOrange;
+            UpdateStatusText.Text = LocalizationManager.T("Upd_CheckFailed");
+        }
+        finally { CheckNowButton.IsEnabled = true; }
+    }
+
+    private void DoUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        if (_foundUpdate is null) return;
+        UpdateRequested = _foundUpdate; // the caller runs the download + swap after we close
+        DialogResult = true;
     }
 
     private void Reset_Click(object sender, RoutedEventArgs e)

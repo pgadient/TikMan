@@ -102,31 +102,43 @@ public partial class MainWindow : Window
         if (_appData.CheckForUpdates) _ = CheckForUpdateAsync();
     }
 
-    /// <summary>On startup: if GitHub has a newer release for this build's variant, offer to update.
-    /// On yes, download it next to the current exe, launch it (telling it to delete this one once we
-    /// exit), and quit. Entirely best-effort – any failure just leaves the running version in place.</summary>
+    /// <summary>This build's version (Major.Minor.Build) and the running exe's filename – what the
+    /// updater needs to compare and to pick the matching asset.</summary>
+    internal static (Version Version, string ExeName) CurrentBuild()
+    {
+        var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
+        var exe = "";
+        try { exe = Path.GetFileName(Environment.ProcessPath ?? ""); } catch { /* keep empty */ }
+        return (new Version(v.Major, v.Minor, v.Build), exe);
+    }
+
+    /// <summary>On startup: if GitHub has a newer release for this build's variant, offer to update.</summary>
     private async Task CheckForUpdateAsync()
+    {
+        var (current, exeName) = CurrentBuild();
+        if (exeName.Length == 0) return;
+        var update = await AppUpdater.CheckAsync(current, exeName);
+        if (update is null) return;
+
+        var answer = MessageBox.Show(this,
+            T("Upd_AvailableBody", $"{update.Version} „{update.ReleaseName}“", current.ToString()),
+            T("Upd_AvailableTitle"), MessageBoxButton.YesNo, MessageBoxImage.Information);
+        if (answer == MessageBoxResult.Yes) await PerformUpdateAsync(update);
+    }
+
+    /// <summary>Downloads the update next to the current exe, launches it (telling it to delete this
+    /// one once we exit) and quits. Best-effort – any failure leaves the running version in place.</summary>
+    internal async Task PerformUpdateAsync(AppUpdater.Available update)
     {
         string exePath;
         try { exePath = Environment.ProcessPath ?? ""; } catch { return; }
         if (exePath.Length == 0) return;
-        var current = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-        if (current is null) return;
-        current = new Version(current.Major, current.Minor, current.Build); // drop the .0 revision
-
-        var update = await AppUpdater.CheckAsync(current, Path.GetFileName(exePath));
-        if (update is null) return;
-
-        var answer = MessageBox.Show(this, T("Upd_AvailableBody", update.Version.ToString(), current.ToString()),
-            T("Upd_AvailableTitle"), MessageBoxButton.YesNo, MessageBoxImage.Information);
-        if (answer != MessageBoxResult.Yes) return;
 
         SetStatus(T("Upd_Downloading", update.Version.ToString()));
         var dir = Path.GetDirectoryName(exePath) ?? "";
         var newExe = await AppUpdater.DownloadAsync(update, dir);
-        if (newExe is null) { SetStatus(T("Upd_Failed")); return; }
-        if (string.Equals(newExe, exePath, StringComparison.OrdinalIgnoreCase))
-        { SetStatus(T("Upd_Failed")); return; } // same filename – can't swap in place, don't self-delete
+        if (newExe is null || string.Equals(newExe, exePath, StringComparison.OrdinalIgnoreCase))
+        { SetStatus(T("Upd_Failed")); return; } // failed, or same filename (can't swap in place)
 
         try
         {
@@ -280,6 +292,7 @@ public partial class MainWindow : Window
         var oldPersist = _appData.PersistDeviceList;
         var dialog = new SettingsWindow(_appData) { Owner = this };
         if (dialog.ShowDialog() != true) return;
+        if (dialog.UpdateRequested is { } requestedUpdate) { _ = PerformUpdateAsync(requestedUpdate); return; }
         if (dialog.ResetRequested) ResetToDefaults();
         else
         {

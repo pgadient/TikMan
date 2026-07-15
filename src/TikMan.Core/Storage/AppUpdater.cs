@@ -12,12 +12,21 @@ public static class AppUpdater
 {
     private const string LatestReleaseApi = "https://api.github.com/repos/pgadient/TikMan/releases/latest";
 
-    public sealed record Available(Version Version, string AssetName, string DownloadUrl);
+    public sealed record Available(Version Version, string ReleaseName, string AssetName, string DownloadUrl);
+
+    public enum Outcome { UpToDate, UpdateAvailable, Failed }
+    public sealed record Result(Outcome Outcome, Available? Update);
 
     /// <summary>The newest release on GitHub if it is strictly newer than <paramref name="current"/>
     /// and it ships an asset for this build's variant; null otherwise (including on any network/parse
     /// error – a failed check must never get in the way of starting up).</summary>
     public static async Task<Available?> CheckAsync(Version current, string currentExeName,
+        CancellationToken ct = default) => (await CheckDetailedAsync(current, currentExeName, ct)).Update;
+
+    /// <summary>Like <see cref="CheckAsync"/> but reports why it found nothing – up to date, or the
+    /// check failed (offline / rate-limited / no asset for this variant) – so the settings screen can
+    /// tell the user which it was.</summary>
+    public static async Task<Result> CheckDetailedAsync(Version current, string currentExeName,
         CancellationToken ct = default)
     {
         try
@@ -31,10 +40,14 @@ public static class AppUpdater
             var root = doc.RootElement;
 
             var tag = root.TryGetProperty("tag_name", out var t) ? t.GetString() ?? "" : "";
-            if (!TryParseVersion(tag, out var latest) || latest <= current) return null;
+            if (!TryParseVersion(tag, out var latest)) return new Result(Outcome.Failed, null);
+            if (latest <= current) return new Result(Outcome.UpToDate, null);
+            var releaseName = root.TryGetProperty("name", out var rn) ? rn.GetString() ?? "" : "";
+            if (releaseName.Length == 0) releaseName = tag;
 
             var variant = VariantSuffix(currentExeName); // e.g. "win-x64" or "win-arm64-fdd"
-            if (!root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array) return null;
+            if (!root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
+                return new Result(Outcome.Failed, null);
 
             foreach (var a in assets.EnumerateArray())
             {
@@ -48,11 +61,11 @@ public static class AppUpdater
                     name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
                     name.Contains(variant, StringComparison.OrdinalIgnoreCase) &&
                     IsFdd(name) == IsFdd(currentExeName))
-                    return new Available(latest, name, url);
+                    return new Result(Outcome.UpdateAvailable, new Available(latest, releaseName, name, url));
             }
-            return null;
+            return new Result(Outcome.Failed, null); // newer version exists but no asset for this variant
         }
-        catch (Exception) { return null; } // offline / rate-limited / unexpected JSON – just skip
+        catch (Exception) { return new Result(Outcome.Failed, null); } // offline / rate-limited / bad JSON
     }
 
     /// <summary>Downloads the release asset next to the current executable and returns its full path;
