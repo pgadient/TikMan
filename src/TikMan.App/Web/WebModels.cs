@@ -27,6 +27,13 @@ public sealed record DeviceDetail(
 /// <summary>Result of a web-triggered action (Wake …), for a small toast in the browser.</summary>
 public sealed record ActionResult(bool Ok, string Message);
 
+/// <summary>A backup ready to stream to the browser as a download, or a failure with a reason.
+/// The bytes are the file content; they are never logged.</summary>
+public sealed record BackupResult(bool Ok, string Message, string FileName, string ContentType, byte[] Bytes)
+{
+    public static BackupResult Fail(string message) => new(false, message, "", "", Array.Empty<byte>());
+}
+
 /// <summary>Live scan state for the dashboard's progress indicator. <see cref="Progress"/> is 0..1, or
 /// -1 when the current phase is indeterminate; both are only meaningful while <see cref="Scanning"/>.</summary>
 public sealed record WebStatus(bool Scanning, double Progress, string Phase, int DeviceCount);
@@ -49,6 +56,11 @@ public interface IWebBackend
     /// password is used only to DPAPI-encrypt it into the device; it is never logged. The web server
     /// only ever calls this over HTTPS.</summary>
     ActionResult SetLogin(string id, string user, string password);
+
+    /// <summary>Produces a backup of the device: the config export (.rsc, text) or the full binary
+    /// backup (.backup) when <paramref name="full"/>. Needs the device's stored login. The web server
+    /// only ever calls this over HTTPS (the backup can contain secrets).</summary>
+    Task<BackupResult> MakeBackupAsync(string id, bool full);
 
     /// <summary>Current scan state (running? how far? which phase? how many devices).</summary>
     WebStatus GetStatus();

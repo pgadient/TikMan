@@ -64,6 +64,10 @@ internal static class WebAssets
   #mloginform { display:flex; gap:8px; flex-wrap:wrap; }
   #mloginform input { flex:1; min-width:120px; padding:7px 10px; border:1px solid var(--line);
                       border-radius:7px; background:var(--card); color:var(--fg); font-size:14px; }
+  .mbackup { padding:10px 18px 4px; border-top:1px solid var(--line); }
+  .mbackup h3 { margin:0 0 8px; font-size:12px; color:var(--muted); font-weight:600;
+                text-transform:uppercase; letter-spacing:.03em; }
+  #mbackupbtns { display:flex; gap:8px; flex-wrap:wrap; }
   .wrap { overflow-x:auto; padding:0 18px 24px; }
   table { border-collapse:collapse; width:100%; min-width:640px; background:var(--card); border-radius:10px;
           overflow:hidden; box-shadow:0 1px 2px rgba(0,0,0,.06); }
@@ -117,6 +121,13 @@ internal static class WebAssets
         <input id="mluser" placeholder="User" autocomplete="off">
         <input id="mlpass" type="password" placeholder="Password" autocomplete="new-password">
         <button id="mlsave">Save login</button>
+      </div>
+    </div>
+    <div class="mbackup" id="mbackup" hidden>
+      <h3>Backup</h3>
+      <div id="mbackupbtns">
+        <button id="mbrsc">Config (.rsc)</button>
+        <button id="mbfull">Full (.backup)</button>
       </div>
     </div>
     <div class="mfoot"><button id="mwake" hidden>⏻ Wake</button><span class="muted" id="mtoast"></span></div>
@@ -198,6 +209,7 @@ async function openDetail(id){
     $("#modal").dataset.id = d.id;
     $("#mluser").value = d.user || ""; $("#mlpass").value = "";
     $("#mloginhttp").hidden = secure; $("#mloginform").style.display = secure ? "flex" : "none";
+    $("#mbackup").hidden = !(secure && d.hasLogin);
     $("#mtoast").textContent=""; $("#modal").hidden=false;
   } catch(e){}
 }
@@ -211,6 +223,22 @@ async function saveLogin(id){
     $("#mtoast").textContent = r.message || (r.ok?"saved":"failed");
     if(r.ok){ $("#mlpass").value=""; tick(); }
   } catch { $("#mtoast").textContent="failed"; }
+}
+async function backup(id, full){
+  if(!id) return;
+  $("#mtoast").textContent = full ? "creating full backup…" : "creating config backup…";
+  try {
+    const r = await fetch(`/api/backup?id=${encodeURIComponent(id)}&full=${full?"true":"false"}`, {method:"POST"});
+    if(!r.ok){ let m="backup failed"; try{ m=(await r.json()).message||m; }catch{} $("#mtoast").textContent=m; return; }
+    const blob = await r.blob();
+    const cd = r.headers.get("Content-Disposition")||"";
+    const mm = cd.match(/filename="?([^"]+)"?/);
+    const name = mm ? mm[1] : (full?"backup.backup":"config.rsc");
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href=url; a.download=name;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    $("#mtoast").textContent = "downloaded "+name;
+  } catch { $("#mtoast").textContent="backup failed"; }
 }
 async function wake(id){
   $("#mtoast").textContent="…";
@@ -229,6 +257,8 @@ $("#mclose").onclick = ()=>{ $("#modal").hidden=true; };
 $("#modal").onclick = e=>{ if(e.target.id==="modal") $("#modal").hidden=true; };
 $("#mwake").onclick = ()=> wake($("#mwake").dataset.id);
 $("#mlsave").onclick = ()=> saveLogin($("#modal").dataset.id);
+$("#mbrsc").onclick = ()=> backup($("#modal").dataset.id, false);
+$("#mbfull").onclick = ()=> backup($("#modal").dataset.id, true);
 loadInfo(); tick(); pollStatus();
 setInterval(tick, 4000); setInterval(pollStatus, 1200);
 </script>

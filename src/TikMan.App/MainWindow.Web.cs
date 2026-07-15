@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using TikMan.App.Web;
 using TikMan.Core.Discovery;
@@ -159,6 +160,44 @@ public partial class MainWindow : IWebBackend
         var ok = WakeOnLan.Send(d.Model.MacAddress);
         return new ActionResult(ok, ok ? T("Wol_Sent", d.Model.MacAddress) : T("Wol_Failed", d.Host));
     });
+
+    /// <summary>Produces a config export (.rsc) or full binary backup (.backup) for the device and
+    /// returns its bytes to stream to the browser. Runs the backup on the UI thread (via the dispatcher,
+    /// so its awaits don't freeze the GUI) exactly like the GUI's own backup buttons. The bytes are the
+    /// file content – never logged. Server calls this over HTTPS only.</summary>
+    async Task<BackupResult> IWebBackend.MakeBackupAsync(string id, bool full)
+    {
+        var vm = await Dispatcher.InvokeAsync(() => FindByWebId(id));
+        if (vm is null) return BackupResult.Fail(T("Web_DeviceGone"));
+        if (!vm.HasCredentials) return BackupResult.Fail(T("Web_BackupNoLogin"));
+
+        var host = vm.Ipv4Address.Length > 0 ? vm.Ipv4Address : vm.Host;
+        try
+        {
+            if (!full)
+            {
+                var res = await await Dispatcher.InvokeAsync(() => vm.DownloadConfigAsync());
+                if (res is not { } r) return BackupResult.Fail(T("Web_BackupFailed"));
+                var name = BackupNaming.SuggestFileName(r.Identity, vm.Board, host, DateTime.Now);
+                return new BackupResult(true, "", name, "text/plain; charset=utf-8",
+                    System.Text.Encoding.UTF8.GetBytes(r.Config));
+            }
+
+            var method = _appData.BackupMethod;
+            var sshPort = vm.Model.SshPort;
+            var tempPath = Path.Combine(Path.GetTempPath(), "tikman-" + Guid.NewGuid().ToString("N") + ".backup");
+            try
+            {
+                var ok = await await Dispatcher.InvokeAsync(() => vm.DownloadFullBackupAsync(method, sshPort, tempPath));
+                if (!ok || !File.Exists(tempPath)) return BackupResult.Fail(T("Web_BackupFailed"));
+                var bytes = await File.ReadAllBytesAsync(tempPath);
+                var name = BackupNaming.SuggestFileName(vm.Name, vm.Board, host, DateTime.Now).Replace(".rsc", ".backup");
+                return new BackupResult(true, "", name, "application/octet-stream", bytes);
+            }
+            finally { try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { } }
+        }
+        catch (Exception) { return BackupResult.Fail(T("Web_BackupFailed")); }
+    }
 
     private DeviceDto ToDto(DeviceViewModel d) => new(
         Id: WebId(d),

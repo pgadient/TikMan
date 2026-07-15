@@ -247,6 +247,24 @@ public sealed class WebServer : IDisposable
                 await WriteJsonAsync(stream, _backend.SetLogin(
                     Value(form, "id"), Value(form, "user"), Value(form, "password")));
                 break;
+            case "/api/backup":
+                if (!IsPost(req.Method)) { await MethodNotAllowed(stream); break; }
+                // A backup can contain device secrets – HTTPS only.
+                if (!IsHttps)
+                {
+                    await WriteAsync(stream, 403, "application/json; charset=utf-8",
+                        Encoding.UTF8.GetBytes("{\"ok\":false,\"message\":\"HTTPS is required to download a backup.\"}"));
+                    break;
+                }
+                var backup = await _backend.MakeBackupAsync(
+                    QueryValue(req.Query, "id") ?? "", QueryValue(req.Query, "full") == "true");
+                if (!backup.Ok)
+                    await WriteAsync(stream, 502, "application/json; charset=utf-8",
+                        Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { ok = false, message = backup.Message }, JsonOpts)));
+                else
+                    await WriteAsync(stream, 200, backup.ContentType, backup.Bytes,
+                        $"Content-Disposition: attachment; filename=\"{backup.FileName}\"");
+                break;
             case "/api/scan":
                 if (!IsPost(req.Method)) { await MethodNotAllowed(stream); break; }
                 _backend.StartScan();
@@ -289,7 +307,7 @@ public sealed class WebServer : IDisposable
     private static string ReasonPhrase(int status) => status switch
     {
         200 => "OK", 202 => "Accepted", 401 => "Unauthorized", 404 => "Not Found",
-        405 => "Method Not Allowed", 403 => "Forbidden", _ => "OK",
+        405 => "Method Not Allowed", 403 => "Forbidden", 502 => "Bad Gateway", _ => "OK",
     };
 
     // ---- auth ----
