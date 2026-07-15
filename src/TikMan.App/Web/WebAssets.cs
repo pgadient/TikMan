@@ -58,6 +58,12 @@ internal static class WebAssets
   .mfoot { padding:14px 18px; display:flex; align-items:center; gap:12px; border-top:1px solid var(--line);
            position:sticky; bottom:0; background:var(--card); }
   .mfoot button { background:var(--gw); }
+  .mlogin { padding:10px 18px 4px; border-top:1px solid var(--line); }
+  .mlogin h3 { margin:0 0 8px; font-size:12px; color:var(--muted); font-weight:600;
+               text-transform:uppercase; letter-spacing:.03em; }
+  #mloginform { display:flex; gap:8px; flex-wrap:wrap; }
+  #mloginform input { flex:1; min-width:120px; padding:7px 10px; border:1px solid var(--line);
+                      border-radius:7px; background:var(--card); color:var(--fg); font-size:14px; }
   .wrap { overflow-x:auto; padding:0 18px 24px; }
   table { border-collapse:collapse; width:100%; min-width:640px; background:var(--card); border-radius:10px;
           overflow:hidden; box-shadow:0 1px 2px rgba(0,0,0,.06); }
@@ -104,12 +110,22 @@ internal static class WebAssets
   <div class="sheet">
     <div class="mhead"><h2 id="mname"></h2><button class="x" id="mclose">✕</button></div>
     <div id="mbody"></div>
+    <div class="mlogin">
+      <h3>Login</h3>
+      <div class="muted" id="mloginhttp" hidden>🔒 HTTPS required to set a login — enable it in the desktop app's settings.</div>
+      <div id="mloginform">
+        <input id="mluser" placeholder="User" autocomplete="off">
+        <input id="mlpass" type="password" placeholder="Password" autocomplete="new-password">
+        <button id="mlsave">Save login</button>
+      </div>
+    </div>
     <div class="mfoot"><button id="mwake" hidden>⏻ Wake</button><span class="muted" id="mtoast"></span></div>
   </div>
 </div>
 <footer>TikMan web · live · tap a row for details</footer>
 <script>
 let devices = [], sortKey = "ip", sortDir = 1;
+const secure = location.protocol === "https:";
 const $ = s => document.querySelector(s);
 
 async function j(url){ const r = await fetch(url,{cache:"no-store"}); if(!r.ok) throw new Error(r.status); return r.json(); }
@@ -179,8 +195,22 @@ async function openDetail(id){
     $("#mbody").innerHTML = rows.filter(r=>r[1]!=null && r[1]!=="").map(r=>
       `<div class="kv"><b>${esc(r[0])}</b><span>${esc(r[1]).replace(/\n/g,"<br>")}</span></div>`).join("");
     const w=$("#mwake"); w.hidden=!d.canWake; w.dataset.id=d.id;
+    $("#modal").dataset.id = d.id;
+    $("#mluser").value = d.user || ""; $("#mlpass").value = "";
+    $("#mloginhttp").hidden = secure; $("#mloginform").style.display = secure ? "flex" : "none";
     $("#mtoast").textContent=""; $("#modal").hidden=false;
   } catch(e){}
+}
+async function saveLogin(id){
+  if(!id) return;
+  $("#mtoast").textContent="…";
+  const body = new URLSearchParams({ id, user:$("#mluser").value, password:$("#mlpass").value });
+  try {
+    const r = await (await fetch("/api/login",{method:"POST",
+      headers:{"Content-Type":"application/x-www-form-urlencoded"}, body})).json();
+    $("#mtoast").textContent = r.message || (r.ok?"saved":"failed");
+    if(r.ok){ $("#mlpass").value=""; tick(); }
+  } catch { $("#mtoast").textContent="failed"; }
 }
 async function wake(id){
   $("#mtoast").textContent="…";
@@ -198,6 +228,7 @@ $("#rows").addEventListener("click", e=>{ const tr=e.target.closest("tr[data-id]
 $("#mclose").onclick = ()=>{ $("#modal").hidden=true; };
 $("#modal").onclick = e=>{ if(e.target.id==="modal") $("#modal").hidden=true; };
 $("#mwake").onclick = ()=> wake($("#mwake").dataset.id);
+$("#mlsave").onclick = ()=> saveLogin($("#modal").dataset.id);
 loadInfo(); tick(); pollStatus();
 setInterval(tick, 4000); setInterval(pollStatus, 1200);
 </script>

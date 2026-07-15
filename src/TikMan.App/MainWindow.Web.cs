@@ -131,8 +131,24 @@ public partial class MainWindow : IWebBackend
         return new DeviceDetail(
             Id: WebId(d), Name: d.Name, Ip: d.Ipv4Address.Length > 0 ? d.Ipv4Address : d.Host,
             Mac: d.Model.MacAddress, Vendor: d.IdentifiedVendor, Type: d.DeviceType, Model: d.ModelDisplay,
-            Status: d.StatusText, HasLogin: d.HasCredentials, CanWake: d.Model.MacAddress.Length > 0,
-            Ipv6: d.Ipv6List, Info: info);
+            Status: d.StatusText, HasLogin: d.HasCredentials, User: d.Model.Username,
+            CanWake: d.Model.MacAddress.Length > 0, Ipv6: d.Ipv6List, Info: info);
+    });
+
+    /// <summary>Applies a login to the device, mirroring the GUI's "set credentials": the password is
+    /// only used transiently to DPAPI-encrypt it into the device (persisted to devices.json only when the
+    /// user keeps the list), never logged. Called by the server exclusively over HTTPS.</summary>
+    ActionResult IWebBackend.SetLogin(string id, string user, string password) => Dispatcher.Invoke(() =>
+    {
+        var d = FindByWebId(id);
+        if (d is null) return new ActionResult(false, T("Web_DeviceGone"));
+        d.Model.Username = (user ?? "").Trim();
+        d.Model.EncryptedPassword = CredentialProtector.Protect(password ?? "");
+        d.ResetClient();
+        MarkGateways();
+        SaveAppData();
+        _ = AfterCredentialsChangedAsync(new[] { d });
+        return new ActionResult(true, T("Web_LoginSet", d.Name.Length > 0 ? d.Name : d.Host));
     });
 
     ActionResult IWebBackend.Wake(string id) => Dispatcher.Invoke(() =>

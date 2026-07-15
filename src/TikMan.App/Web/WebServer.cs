@@ -182,6 +182,25 @@ public sealed class WebServer : IDisposable
         return null;
     }
 
+    /// <summary>Parses an application/x-www-form-urlencoded body – credentials come in the POST body
+    /// (not the query string, which tends to end up in logs). '+' means space, then percent-decode.</summary>
+    private static Dictionary<string, string> ParseForm(byte[] body)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        var text = Encoding.UTF8.GetString(body);
+        foreach (var pair in text.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eq = pair.IndexOf('=');
+            var k = Uri.UnescapeDataString((eq < 0 ? pair : pair[..eq]).Replace('+', ' '));
+            var v = eq < 0 ? "" : Uri.UnescapeDataString(pair[(eq + 1)..].Replace('+', ' '));
+            result[k] = v;
+        }
+        return result;
+    }
+
+    private static string Value(Dictionary<string, string> form, string key) =>
+        form.TryGetValue(key, out var v) ? v : "";
+
     // ---- routing ----
 
     private async Task RespondAsync(Stream stream, Request req)
@@ -214,6 +233,19 @@ public sealed class WebServer : IDisposable
             case "/api/wake":
                 if (!IsPost(req.Method)) { await MethodNotAllowed(stream); break; }
                 await WriteJsonAsync(stream, _backend.Wake(QueryValue(req.Query, "id") ?? ""));
+                break;
+            case "/api/login":
+                if (!IsPost(req.Method)) { await MethodNotAllowed(stream); break; }
+                // A password must never travel over plain HTTP – this endpoint is HTTPS-only.
+                if (!IsHttps)
+                {
+                    await WriteAsync(stream, 403, "application/json; charset=utf-8",
+                        Encoding.UTF8.GetBytes("{\"ok\":false,\"message\":\"HTTPS is required to set a login.\"}"));
+                    break;
+                }
+                var form = ParseForm(req.Body);
+                await WriteJsonAsync(stream, _backend.SetLogin(
+                    Value(form, "id"), Value(form, "user"), Value(form, "password")));
                 break;
             case "/api/scan":
                 if (!IsPost(req.Method)) { await MethodNotAllowed(stream); break; }

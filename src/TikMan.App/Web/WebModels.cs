@@ -22,7 +22,7 @@ public sealed record KeyVal(string Key, string Value);
 /// and the free-form info rows. Carries whether a Wake-on-LAN is possible, never a password.</summary>
 public sealed record DeviceDetail(
     string Id, string Name, string Ip, string Mac, string Vendor, string Type, string Model,
-    string Status, bool HasLogin, bool CanWake, IReadOnlyList<string> Ipv6, IReadOnlyList<KeyVal> Info);
+    string Status, bool HasLogin, string User, bool CanWake, IReadOnlyList<string> Ipv6, IReadOnlyList<KeyVal> Info);
 
 /// <summary>Result of a web-triggered action (Wake …), for a small toast in the browser.</summary>
 public sealed record ActionResult(bool Ok, string Message);
@@ -44,6 +44,11 @@ public interface IWebBackend
 
     /// <summary>Sends a Wake-on-LAN magic packet to the device with this id.</summary>
     ActionResult Wake(string id);
+
+    /// <summary>Sets (or clears) the device's login, exactly like the GUI's "set credentials". The
+    /// password is used only to DPAPI-encrypt it into the device; it is never logged. The web server
+    /// only ever calls this over HTTPS.</summary>
+    ActionResult SetLogin(string id, string user, string password);
 
     /// <summary>Current scan state (running? how far? which phase? how many devices).</summary>
     WebStatus GetStatus();
