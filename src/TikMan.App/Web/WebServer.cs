@@ -43,13 +43,15 @@ public sealed class WebServer : IDisposable
         _cts = new CancellationTokenSource();
 
         // Prefer "http://+:{port}/" – reachable across the LAN. That prefix needs a one-time netsh
-        // urlacl on Windows; without it HttpListener.Start throws access-denied, so we drop to localhost.
+        // urlacl on Windows; without it HttpListener.Start throws access-denied, so we drop to loopback.
         if (TryListen($"http://+:{_port}/"))
         {
             BoundUrl = $"http://{PreferredLocalAddress()}:{_port}/";
             LocalOnly = false;
         }
-        else if (TryListen($"http://localhost:{_port}/"))
+        // Loopback fallback: register BOTH the "localhost" host token and the 127.0.0.1 literal, else
+        // http.sys answers requests to the other form with "400 Invalid Hostname". Both bind without admin.
+        else if (TryListen($"http://localhost:{_port}/", $"http://127.0.0.1:{_port}/"))
         {
             BoundUrl = $"http://localhost:{_port}/";
             LocalOnly = true;
@@ -62,12 +64,12 @@ public sealed class WebServer : IDisposable
         _ = Task.Run(() => AcceptLoopAsync(_cts.Token));
     }
 
-    private bool TryListen(string prefix)
+    private bool TryListen(params string[] prefixes)
     {
         try
         {
             var listener = new HttpListener();
-            listener.Prefixes.Add(prefix);
+            foreach (var prefix in prefixes) listener.Prefixes.Add(prefix);
             listener.Start();
             _listener = listener;
             return true;
