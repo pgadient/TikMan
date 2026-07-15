@@ -66,6 +66,24 @@ public sealed class RouterOsClient : IDisposable
         return S(doc.RootElement, "name");
     }
 
+    /// <summary>The bridge host (forwarding) table: which MAC is reachable behind which bridge port.
+    /// This is the one thing that can *prove* which switch port a device hangs off – switching is
+    /// layer 2 and therefore invisible to traceroute. Local entries (the bridge's own MACs) are
+    /// skipped.</summary>
+    public async Task<List<(string Mac, string Port)>> GetBridgeHostsAsync(CancellationToken ct = default)
+    {
+        using var doc = await GetAsync("interface/bridge/host", TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+        var list = new List<(string, string)>();
+        foreach (var e in doc.RootElement.EnumerateArray())
+        {
+            if (S(e, "local") == "true") continue;                      // the bridge itself
+            var mac = S(e, "mac-address");
+            var port = S(e, "on-interface") is { Length: > 0 } p ? p : S(e, "interface");
+            if (mac.Length > 0 && port.Length > 0) list.Add((mac, port));
+        }
+        return list;
+    }
+
     /// <summary>Reads the device log; when maxEntries &gt; 0 only the last N entries.</summary>
     public async Task<List<LogEntry>> GetLogAsync(int maxEntries = 0, CancellationToken ct = default)
     {

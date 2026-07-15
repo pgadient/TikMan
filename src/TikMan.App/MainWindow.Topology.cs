@@ -28,6 +28,7 @@ public partial class MainWindow
 
     private bool _topoPhysical;                       // which of the two views the canvas is showing
     private Dictionary<string, List<string>>? _traceResults;   // device ip → router hops (physical view)
+    private Dictionary<DeviceViewModel, Dictionary<string, string>>? _fdb; // bridge → (MAC → port)
     private bool _tracing;
 
     private TopoNode? _dragNode;
@@ -65,7 +66,10 @@ public partial class MainWindow
             await RunTracesAsync();
 
         BuildTopology();
-        Topology_Fit_Click(this, new RoutedEventArgs());
+        // Fit only after the layout pass: the host was collapsed a moment ago, so its ActualWidth is
+        // still 0 right now – fitting against that pins the graph into the top-left corner.
+        await Dispatcher.InvokeAsync(() => Topology_Fit_Click(this, new RoutedEventArgs()),
+            System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     private void HideTopology()
@@ -93,8 +97,10 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>Traceroutes every device once, in parallel, for the physical view. Re-run via
-    /// "Re-arrange" after a rescan.</summary>
+    /// <summary>Collects the physical evidence, in parallel: a traceroute to every device (the L3
+    /// paths), and the bridge forwarding tables of every RouterOS device with credentials – the FDB is
+    /// what proves which switch port a device hangs off, since switching is invisible to traceroute.
+    /// Re-run via "Re-arrange" after a rescan.</summary>
     private async Task RunTracesAsync()
     {
         _tracing = true;
@@ -103,12 +109,24 @@ public partial class MainWindow
         {
             var targets = _devices.Where(d => d.HasIpv4).Select(d => d.Ipv4Address).Distinct().ToList();
             var results = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-            await Task.WhenAll(targets.Select(async ip =>
+            var tracesTask = Task.WhenAll(targets.Select(async ip =>
             {
                 var hops = await TraceRoute.TraceAsync(ip);
                 if (hops is not null) lock (results) results[ip] = hops;
             }));
+
+            var bridges = _devices.Where(d => d.HasIpv4 &&
+                (d.Board.Length > 0 || d.IdentifiedVendor == "MikroTik")).ToList();
+            var fdb = new Dictionary<DeviceViewModel, Dictionary<string, string>>();
+            var fdbTask = Task.WhenAll(bridges.Select(async d =>
+            {
+                var table = await d.GetBridgeHostsAsync();
+                if (table is not null) lock (fdb) fdb[d] = table;
+            }));
+
+            await Task.WhenAll(tracesTask, fdbTask);
             _traceResults = results;
+            _fdb = fdb;
             SetStatus(T("Topo_TraceDone", results.Count));
         }
         finally { _tracing = false; }
@@ -172,75 +190,142 @@ public partial class MainWindow
         Place(internet, Math.Max(0, x / 2 - NodeWidth / 2), 20);
     }
 
-    /// <summary>Gateway on top, then every device attached along its traced path: a device whose trace
-    /// passes another router hangs behind that router. Devices without a provable path (offline, or
-    /// ICMP-silent) gather under an "unknown path" node rather than being placed somewhere invented.</summary>
+    /// <summary>Gateway on top, then the wiring as far as it can be *proven*: the bridge forwarding
+    /// tables of the RouterOS switches/APs say which port every MAC hangs off (switching is invisible
+    /// to traceroute, the FDB is the only witness), and traceroute contributes the routed hops. A
+    /// device attaches to the bridge that sees its MAC on the emptiest non-uplink port – an uplink
+    /// port "sees" the whole rest of the network, the true edge port sees almost nothing else. Devices
+    /// with no evidence at all gather under an "unknown path" node rather than being placed somewhere
+    /// invented.</summary>
     private void BuildPhysical(List<DeviceViewModel> devices)
     {
         var byIp = devices.ToDictionary(d => d.Ipv4Address, d => d, StringComparer.OrdinalIgnoreCase);
         var traces = _traceResults ?? new Dictionary<string, List<string>>();
+        var fdb = _fdb ?? new Dictionary<DeviceViewModel, Dictionary<string, string>>();
 
         var gwIp = TraceRoute.DefaultGateway();
-        var root = byIp.TryGetValue(gwIp, out var gwDev)
+        byIp.TryGetValue(gwIp, out var gwDev);
+        var root = gwDev is not null
             ? AddDeviceNode(gwDev, Role.Gateway)
             : AddNode("::gw", null, gwIp.Length > 0 ? gwIp : T("Topo_Gateway"), gwIp, "", Role.Gateway);
-        var nodes = new Dictionary<string, TopoNode>(StringComparer.OrdinalIgnoreCase);
-        if (gwIp.Length > 0) nodes[gwIp] = root;
+        var gwMac = gwDev is not null ? DeviceViewModel.NormalizeMac(gwDev.Model.MacAddress) : "";
 
-        // Depth-tiered layout: children[level] tracks the next free x per row.
+        // Each bridge's uplink: the port on which it sees the gateway. Everything on that port lives
+        // *beyond* it – towards the root – so an uplink port never counts as where a device hangs.
+        var uplink = new Dictionary<DeviceViewModel, string>();
+        foreach (var (sw, table) in fdb)
+            uplink[sw] = sw == gwDev ? ""
+                : gwMac.Length > 0 && table.TryGetValue(gwMac, out var up) ? up : "";
+
+        // Where does a MAC hang? The bridge that sees it on the *emptiest* non-uplink port wins: the
+        // switch one hop away sees it on a port with half the network behind it, the edge switch sees
+        // it on a port with (almost) only that device.
+        (DeviceViewModel Bridge, string Port)? AttachOf(string macRaw, DeviceViewModel? self)
+        {
+            var mac = DeviceViewModel.NormalizeMac(macRaw);
+            if (mac.Length == 0) return null;
+            (DeviceViewModel Bridge, string Port)? best = null;
+            int bestCount = int.MaxValue;
+            foreach (var (sw, table) in fdb)
+            {
+                if (sw == self || !table.TryGetValue(mac, out var port)) continue;
+                if (sw != gwDev && port == uplink[sw]) continue;   // points at the root, not at the MAC
+                int count = table.Values.Count(v => v == port);
+                if (count < bestCount) { best = (sw, port); bestCount = count; }
+            }
+            return best;
+        }
+
+        // Layout plumbing: one lane per depth level.
         var nextX = new Dictionary<int, double>();
-        double PlaceAt(int level, TopoNode n)
+        void PlaceAt(int level, TopoNode n)
         {
             double x = nextX.TryGetValue(level, out var v) ? v : 0;
             Place(n, x, 40 + level * (NodeHeight + 70));
             nextX[level] = x + NodeWidth + ColGap;
-            return x;
         }
+        var levels = new Dictionary<TopoNode, int> { [root] = 0 };
         PlaceAt(0, root);
 
+        var nodes = new Dictionary<DeviceViewModel, TopoNode> ();
+        if (gwDev is not null) nodes[gwDev] = root;
+
+        // 1) The bridges themselves, each under its proven parent (recursively, cycles guarded).
+        TopoNode EnsureBridge(DeviceViewModel sw, HashSet<DeviceViewModel> path)
+        {
+            if (nodes.TryGetValue(sw, out var existing)) return existing;
+            TopoNode parent = root;
+            string port = "";
+            if (path.Add(sw) && AttachOf(sw.Model.MacAddress, sw) is { } at)
+            {
+                parent = at.Bridge == sw ? root : EnsureBridge(at.Bridge, path);
+                port = at.Port;
+            }
+            var node = AddDeviceNode(sw, Role.Infrastructure, port);
+            nodes[sw] = node;
+            int level = levels[parent] + 1;
+            levels[node] = level;
+            PlaceAt(level, node);
+            Connect(parent, node);
+            return node;
+        }
+        foreach (var sw in fdb.Keys.Where(s => s != gwDev)) EnsureBridge(sw, new HashSet<DeviceViewModel>());
+
+        // 2) Every other device: FDB proof first, then the traced router path, then "unknown".
         TopoNode? unknown = null;
+        var hopNodes = new Dictionary<string, TopoNode>(StringComparer.OrdinalIgnoreCase);
         foreach (var d in devices.OrderBy(d => d.Ipv4SortKey))
         {
-            if (d.Ipv4Address == gwIp) continue;
+            if (d == gwDev || nodes.ContainsKey(d)) continue;
 
-            if (!traces.TryGetValue(d.Ipv4Address, out var hops))
+            if (AttachOf(d.Model.MacAddress, d) is { } at && nodes.TryGetValue(at.Bridge, out var bridgeNode))
             {
-                // No provable path. Group these honestly instead of inventing a position.
-                if (unknown is null)
-                {
-                    unknown = AddNode("::unknown", null, T("Topo_NoPath"), "", "", Role.Internet);
-                    PlaceAt(1, unknown);
-                    Connect(root, unknown);
-                }
-                var orphan = AddDeviceNode(d, Role.Client);
-                PlaceAt(2, orphan);
-                Connect(unknown, orphan);
+                var leaf = AddDeviceNode(d, Role.Client, at.Port);
+                nodes[d] = leaf;
+                levels[leaf] = levels[bridgeNode] + 1;
+                PlaceAt(levels[leaf], leaf);
+                Connect(bridgeNode, leaf);
                 continue;
             }
 
-            // Walk the traced routers, creating a chain of hop nodes under the root.
-            var parent = root;
-            int level = 0;
-            foreach (var hop in hops.Where(h => h != gwIp))
+            if (traces.TryGetValue(d.Ipv4Address, out var hops))
             {
-                level++;
-                if (!nodes.TryGetValue(hop, out var hopNode))
+                // Routed segments: chain the traced routers under the root.
+                var parent = root;
+                int level = 0;
+                foreach (var hop in hops.Where(h => h != gwIp))
                 {
-                    hopNode = byIp.TryGetValue(hop, out var hopDev)
-                        ? AddDeviceNode(hopDev, Role.Infrastructure)
-                        : AddNode("::hop:" + hop, null, hop, hop, "", Role.Infrastructure);
-                    nodes[hop] = hopNode;
-                    PlaceAt(level, hopNode);
-                    Connect(parent, hopNode);
+                    level++;
+                    if (!hopNodes.TryGetValue(hop, out var hopNode))
+                    {
+                        hopNode = byIp.TryGetValue(hop, out var hopDev) && !nodes.ContainsKey(hopDev)
+                            ? AddDeviceNode(hopDev, Role.Infrastructure)
+                            : AddNode("::hop:" + hop, null, hop, hop, "", Role.Infrastructure);
+                        hopNodes[hop] = hopNode;
+                        levels[hopNode] = level;
+                        PlaceAt(level, hopNode);
+                        Connect(parent, hopNode);
+                    }
+                    parent = hopNode;
                 }
-                parent = hopNode;
+                var leaf = AddDeviceNode(d, Role.Client);
+                nodes[d] = leaf;
+                PlaceAt(levels.TryGetValue(parent, out var pl) ? pl + 1 : 1, leaf);
+                Connect(parent, leaf);
+                continue;
             }
 
-            if (nodes.ContainsKey(d.Ipv4Address)) continue; // already drawn as a router on some path
-            var leaf = AddDeviceNode(d, Role.Client);
-            nodes[d.Ipv4Address] = leaf;
-            PlaceAt(level + 1, leaf);
-            Connect(parent, leaf);
+            // No FDB sighting, no traced path: grouped honestly instead of placed somewhere invented.
+            if (unknown is null)
+            {
+                unknown = AddNode("::unknown", null, T("Topo_NoPath"), "", "", Role.Internet);
+                levels[unknown] = 1;
+                PlaceAt(1, unknown);
+                Connect(root, unknown);
+            }
+            var orphan = AddDeviceNode(d, Role.Client);
+            PlaceAt(2, orphan);
+            Connect(unknown, orphan);
         }
     }
 
@@ -270,11 +355,15 @@ public partial class MainWindow
         _ => ("#EEF1F3", "#B8C4CB", "#546E7A"),
     };
 
-    private TopoNode AddDeviceNode(DeviceViewModel d, Role role)
+    private TopoNode AddDeviceNode(DeviceViewModel d, Role role, string port = "")
     {
         var key = d.Model.MacAddress.Length > 0 ? d.Model.MacAddress : d.Ipv4Address;
         var title = d.Name.Length > 0 ? d.Name : d.Ipv4Address;
-        return AddNode(key, d, title, d.Ipv4Address, d.Model.MacAddress, role, d.DeviceType);
+        // The port is the physical fact this view exists for – "ether5" says which cable it is.
+        var kind = port.Length > 0
+            ? (d.DeviceType.Length > 0 ? $"{d.DeviceType} · {port}" : port)
+            : d.DeviceType;
+        return AddNode(key, d, title, d.Ipv4Address, d.Model.MacAddress, role, kind);
     }
 
     private TopoNode AddNode(string key, DeviceViewModel? device, string title, string ip, string mac,
@@ -452,10 +541,10 @@ public partial class MainWindow
         Topology_Fit_Click(this, new RoutedEventArgs());
     }
 
-    /// <summary>Zooms out until everything fits, and pans the whole graph back into view.</summary>
+    /// <summary>Scales the graph until it fills the view (up to a sane maximum) and centres it.</summary>
     private void Topology_Fit_Click(object sender, RoutedEventArgs e)
     {
-        if (_topoNodes.Count == 0) return;
+        if (_topoNodes.Count == 0 || TopologyHost.ActualWidth < 50) return;
         double maxX = _topoNodes.Max(n => n.Position.X) + NodeWidth;
         double maxY = _topoNodes.Max(n => n.Position.Y) + NodeHeight;
         double minX = _topoNodes.Min(n => n.Position.X);
@@ -463,9 +552,10 @@ public partial class MainWindow
 
         double w = Math.Max(1, maxX - minX), h = Math.Max(1, maxY - minY);
         double scale = Math.Clamp(Math.Min((TopologyHost.ActualWidth - 40) / w,
-                                           (TopologyHost.ActualHeight - 60) / h), 0.2, 1.5);
+                                           (TopologyHost.ActualHeight - 60) / h), 0.2, 1.6);
         TopologyScale.ScaleX = TopologyScale.ScaleY = scale;
-        TopologyPan.X = 20 - minX * scale;
-        TopologyPan.Y = 20 - minY * scale;
+        // Centre the scaled graph in both axes – no more hugging the left edge.
+        TopologyPan.X = (TopologyHost.ActualWidth - w * scale) / 2 - minX * scale;
+        TopologyPan.Y = (TopologyHost.ActualHeight - h * scale) / 2 - minY * scale;
     }
 }

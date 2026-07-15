@@ -924,6 +924,33 @@ public class DeviceViewModel : INotifyPropertyChanged
     private RouterOsClient Client =>
         _client ??= RouterOsClient.For(Model, CredentialProtector.Unprotect(Model.EncryptedPassword));
 
+    /// <summary>This device's bridge forwarding table (MAC → port name), read over REST; null when it
+    /// has no credentials, isn't RouterOS, or didn't answer. The physical topology view uses it to
+    /// prove which port every neighbour hangs off.</summary>
+    public async Task<Dictionary<string, string>?> GetBridgeHostsAsync(CancellationToken ct = default)
+    {
+        if (Model.EncryptedPassword.Length == 0) return null;
+        try
+        {
+            var entries = await Client.GetBridgeHostsAsync(ct);
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (mac, port) in entries)
+            {
+                var key = NormalizeMac(mac);
+                if (key.Length == 12 && !map.ContainsKey(key)) map[key] = port;
+            }
+            return map.Count > 0 ? map : null;
+        }
+        catch (Exception) { return null; } // not RouterOS / no rest policy / unreachable – no table then
+    }
+
+    /// <summary>A MAC as twelve bare hex digits, whatever the separators; "" when it isn't one.</summary>
+    public static string NormalizeMac(string mac)
+    {
+        var hex = string.Concat(mac.Where(Uri.IsHexDigit)).ToUpperInvariant();
+        return hex.Length == 12 ? hex : "";
+    }
+
     /// <summary>True if the last refresh failed with a TLS/HTTPS handshake problem.</summary>
     public bool HadTlsError { get; private set; }
 
