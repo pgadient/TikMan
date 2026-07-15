@@ -378,6 +378,19 @@ public partial class MainWindow : Window
         try { await EnrichDetailsAsync(vm); } catch { /* best effort */ }
     }
 
+    /// <summary>Fresh credentials unlock information everywhere, so nobody should have to remember to
+    /// rescan by hand: the devices are re-probed, the discovery runs again on its own, and the
+    /// topology evidence (forwarding tables, neighbours, SSIDs) is collected anew – a map that is
+    /// already open rebuilds right away with whatever the new login reveals.</summary>
+    private async Task AfterCredentialsChangedAsync(IReadOnlyList<DeviceViewModel> vms)
+    {
+        await Task.WhenAll(vms.Select(RefreshAndProbeAsync));
+        InvalidateTopologyEvidence();
+        if (!_scanning) _ = RunDiscoveryAsync(auto: true);
+        if (AddressTabs.SelectedIndex is 2 or 3)
+            ShowTopology(physical: AddressTabs.SelectedIndex == 3);
+    }
+
     /// <summary>Refreshes a freshly added device, then checks it for updates automatically.
     /// If the HTTPS handshake failed, offers the HTTP fallback and retries the update check.</summary>
     private async Task RefreshAndCheckAsync(DeviceViewModel vm)
@@ -430,7 +443,7 @@ public partial class MainWindow : Window
             targets[0].ResetClient();
             MarkGateways();
             SaveAppData();
-            _ = RefreshAndProbeAsync(targets[0]);
+            _ = AfterCredentialsChangedAsync(new[] { targets[0] });
         }
         else EditMultiple(targets);
     }
@@ -480,7 +493,7 @@ public partial class MainWindow : Window
         foreach (var vm in vms) vm.ResetClient();
         MarkGateways();
         SaveAppData();
-        foreach (var vm in vms) _ = RefreshAndProbeAsync(vm);
+        _ = AfterCredentialsChangedAsync(vms);
         SetStatus(T("Msg_DevicesUpdated", vms.Count));
     }
 

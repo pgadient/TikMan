@@ -54,8 +54,18 @@ public partial class MainWindow
 
     // ---- entry points ---------------------------------------------------------------------------
 
+    /// <summary>Drops the cached physical-topology evidence so the next open (or an immediate rebuild)
+    /// re-reads the forwarding tables – called when something changed that could yield more, such as a
+    /// device gaining credentials.</summary>
+    private void InvalidateTopologyEvidence()
+    {
+        _traceResults = null;
+        _fdb = null;
+        _ssids = null;
+    }
+
     /// <summary>Shows one of the topology views: fills the whole window (the details pane folds away),
-    /// builds the graph, and – for the physical view – starts the traceroute sweep on first open.</summary>
+    /// builds the graph, and – for the physical view – collects the topology evidence on first open.</summary>
     private async void ShowTopology(bool physical)
     {
         _topoPhysical = physical;
@@ -98,7 +108,8 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>Collects the physical evidence, in parallel: a traceroute to every device (the L3
+    /// <summary>Drops the collected topology evidence, so the next look at a map gathers it afresh –
+    /// called when credentials change, since a login un a traceroute to every device (the L3
     /// paths), and the bridge forwarding tables of every RouterOS device with credentials – the FDB is
     /// what proves which switch port a device hangs off, since switching is invisible to traceroute.
     /// Re-run via "Re-arrange" after a rescan.</summary>
