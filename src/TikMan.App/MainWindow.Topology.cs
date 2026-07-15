@@ -104,18 +104,25 @@ public partial class MainWindow
         SetTopologyFullscreen(true);
         UpdateTopoScanBanner();
 
-        // Gather the forwarding-table evidence the physical map needs. We do this even while a scan is
-        // running IF we have no evidence yet – otherwise opening the map right after a config restore (when
-        // the devices are already there but the auto-scan is still going) would draw a flat map with every
-        // switch/router demoted to a leaf ("meta forgotten"). The post-scan refresh re-gathers for freshness.
-        if (physical && _traceResults is null && !_tracing)
-            await RunTracesAsync();
+        // "Building…" overlay while we gather evidence + lay out, so the canvas isn't just blank white
+        // for the few seconds the forwarding-table reads take.
+        TopoLoadingOverlay.Visibility = Visibility.Visible;
+        try
+        {
+            // Gather the forwarding-table evidence the physical map needs. We do this even while a scan is
+            // running IF we have no evidence yet – otherwise opening the map right after a config restore
+            // (devices already there, auto-scan still going) would draw a flat map with every switch/router
+            // demoted to a leaf ("meta forgotten"). The post-scan refresh re-gathers for freshness.
+            if (physical && _traceResults is null && !_tracing)
+                await RunTracesAsync();
 
-        BuildTopology();
-        // Fit only after the layout pass: the host was collapsed a moment ago, so its ActualWidth is
-        // still 0 right now – fitting against that pins the graph into the top-left corner.
-        await Dispatcher.InvokeAsync(() => Topology_Fit_Click(this, new RoutedEventArgs()),
-            System.Windows.Threading.DispatcherPriority.Loaded);
+            BuildTopology();
+            // Fit only after the layout pass: the host was collapsed a moment ago, so its ActualWidth is
+            // still 0 right now – fitting against that pins the graph into the top-left corner.
+            await Dispatcher.InvokeAsync(() => Topology_Fit_Click(this, new RoutedEventArgs()),
+                System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+        finally { TopoLoadingOverlay.Visibility = Visibility.Collapsed; }
     }
 
     private void HideTopology()

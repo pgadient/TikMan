@@ -1292,7 +1292,17 @@ public class DeviceViewModel : INotifyPropertyChanged
         }
     }
 
-    public Task InstallUpdateAsync(CancellationToken ct = default) => Client.InstallUpdateAsync(ct);
+    /// <summary>Installs the pending RouterOS update. Secure only: SSH is the reliable trigger (works
+    /// even when the device's HTTPS is broken), REST HTTPS is the fallback – no HTTP. Reboots the device.</summary>
+    public async Task InstallUpdateAsync(CancellationToken ct = default)
+    {
+        if (Model.EncryptedPassword.Length > 0)
+        {
+            var pw = CredentialProtector.Unprotect(Model.EncryptedPassword);
+            if (await RouterOsSsh.InstallUpdateAsync(Model.Host, Model.SshPort, Model.Username, pw, ct)) return;
+        }
+        await Client.InstallUpdateAsync(ct);
+    }
 
     /// <summary>Fetches the release date of the latest version of the current channel
     /// from the MikroTik upgrade server (optional – simply empty when offline).</summary>

@@ -85,6 +85,34 @@ public static class RouterOsSsh
         return list.Count > 0 ? list : null;
     }
 
+    /// <summary>Triggers the RouterOS update install over SSH (<c>/system package update install</c>) –
+    /// which downloads/installs and reboots. Returns true when the command was sent (the reboot cuts the
+    /// connection, which is expected), false only when SSH itself couldn't be reached (so the caller can
+    /// fall back to REST). Never touches HTTP.</summary>
+    public static async Task<bool> InstallUpdateAsync(string host, int port, string user, string password,
+        CancellationToken ct = default)
+    {
+        return await Task.Run(() =>
+        {
+            SshClient ssh;
+            try
+            {
+                ssh = new SshClient(Info(host, port, user, password));
+                ssh.Connect();
+            }
+            catch (Exception) { return false; } // SSH unreachable / bad creds → let the caller try REST
+            try
+            {
+                using var cmd = ssh.CreateCommand("/system package update install");
+                cmd.CommandTimeout = TimeSpan.FromSeconds(20);
+                try { cmd.Execute(); } catch { /* the reboot cuts the connection – expected */ }
+            }
+            catch { /* channel died as the device rebooted – still triggered */ }
+            finally { try { if (ssh.IsConnected) ssh.Disconnect(); } catch { } ssh.Dispose(); }
+            return true;
+        }, ct).ConfigureAwait(false);
+    }
+
     // ---- parsers (pure, tested) ----
 
     /// <summary>Parses a "key: value" block (/system resource, routerboard, identity) – the keys are

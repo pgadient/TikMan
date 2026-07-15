@@ -553,6 +553,19 @@
                                        Foreground="#7A5C10"/>
                         </StackPanel>
                     </Border>
+
+                    <!-- Shown while the map is being built (gathering forwarding tables can take a few
+                         seconds) so the user isn't left staring at a blank canvas. -->
+                    <Border x:Name="TopoLoadingOverlay" Visibility="Collapsed" VerticalAlignment="Center"
+                            HorizontalAlignment="Center" Background="#F5F7FA" BorderBrush="#DDDDDD"
+                            BorderThickness="1" CornerRadius="8" Padding="26,18">
+                        <StackPanel>
+                            <TextBlock Text="{loc:Loc Topo_Building}" FontSize="14" FontWeight="SemiBold"
+                                       HorizontalAlignment="Center" Foreground="#444444"/>
+                            <TextBlock Text="{loc:Loc Topo_BuildingSub}" FontSize="11" HorizontalAlignment="Center"
+                                       Foreground="#888888" Margin="0,5,0,0"/>
+                        </StackPanel>
+                    </Border>
                 </Grid>
             </Border>
 
