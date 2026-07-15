@@ -104,7 +104,11 @@ public partial class MainWindow
         SetTopologyFullscreen(true);
         UpdateTopoScanBanner();
 
-        if (physical && _traceResults is null && !_tracing && !_scanning)
+        // Gather the forwarding-table evidence the physical map needs. We do this even while a scan is
+        // running IF we have no evidence yet – otherwise opening the map right after a config restore (when
+        // the devices are already there but the auto-scan is still going) would draw a flat map with every
+        // switch/router demoted to a leaf ("meta forgotten"). The post-scan refresh re-gathers for freshness.
+        if (physical && _traceResults is null && !_tracing)
             await RunTracesAsync();
 
         BuildTopology();
