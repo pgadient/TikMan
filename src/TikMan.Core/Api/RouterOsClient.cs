@@ -16,6 +16,11 @@ public sealed class RouterOsClient : IDisposable
     /// (default on – MikroTik ships a self-signed cert on a LAN). Set from the app's settings.</summary>
     public static bool AllowInsecureCertificates { get; set; } = true;
 
+    /// <summary>Global switch: may credentials/data travel over plain HTTP when no secure transport
+    /// (HTTPS/SSH) works? Off by default – TikMan never sends anything sensitive over HTTP unless the
+    /// user turns this on in the settings. Set from the app's settings.</summary>
+    public static bool AllowHttpFallback { get; set; }
+
     public RouterOsClient(string host, int port, bool useHttps, string username, string password, bool ignoreCertErrors)
     {
         var handler = new HttpClientHandler();

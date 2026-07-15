@@ -4,18 +4,14 @@ using Renci.SshNet.Common;
 
 namespace TikMan.Core.Api;
 
-/// <summary>Fetches a binary full backup (.backup) from the device. Flow: have the backup
-/// created via REST, download the file using the selected transport, clean up the device file.
-///
-/// Transports:
-/// - SSH/SCP: via the encrypted SSH service that is enabled out of the box (port 22). Reliable.
-/// - Web/WebFig: would reimplement MikroTik's proprietary, encrypted /jsproxy protocol
-///   (like the browser). Not yet implemented – see <see cref="WebNotAvailable"/>.</summary>
+/// <summary>Fetches a binary full backup (.backup) from the device – entirely over the encrypted SSH
+/// service (port 22, enabled out of the box): create the backup with <c>/system backup save</c>,
+/// download the file over SCP, then remove it again. No REST/HTTP involved, so it stays secure and
+/// works even when the device's HTTPS is broken. The password is used only to authenticate; never logged.</summary>
 public static class BackupService
 {
     public const string WebNotAvailable =
-        "The web/WebFig download is not available yet (MikroTik's encrypted jsproxy " +
-        "protocol still has to be developed against a real device). Please use SSH.";
+        "The web/WebFig download is not available (MikroTik's encrypted jsproxy protocol). Please use SSH.";
 
     private const string BaseName = "mtmonitor-backup";
     private const string RemoteFile = BaseName + ".backup";
@@ -24,94 +20,71 @@ public static class BackupService
         Device device, string password, BackupMethod method, int sshPort,
         string localPath, IProgress<string>? log = null, CancellationToken ct = default)
     {
-        // 1) Create the backup on the device (via REST/HTTP)
-        log?.Report("Creating backup on the device…");
-        string fileId;
-        using (var client = RouterOsClient.For(device, password))
-        {
-            await client.CreateBinaryBackupAsync(BaseName, ct).ConfigureAwait(false);
-            fileId = await client.WaitForFileIdAsync(RemoteFile, attempts: 12, delay: TimeSpan.FromMilliseconds(700), ct)
-                .ConfigureAwait(false);
-            if (fileId.Length == 0)
-                throw new RouterOsApiException(0, "The backup was created but did not appear in the file list.");
-        }
+        if (method == BackupMethod.Web) throw new NotSupportedException(WebNotAvailable);
 
-        // 2) Download
-        try
-        {
-            switch (method)
-            {
-                case BackupMethod.Ssh:
-                    await DownloadViaScpAsync(device.Host, sshPort, device.Username, password, localPath, log, ct)
-                        .ConfigureAwait(false);
-                    break;
+        var port = sshPort is > 0 and <= 65535 ? sshPort : 22;
+        ConnectionInfo Info() => new ConnectionInfo(device.Host, port, device.Username,
+            new PasswordAuthenticationMethod(device.Username, password))
+        { Timeout = TimeSpan.FromSeconds(12) }.WithCompatibleMacs();
 
-                case BackupMethod.Web:
-                    throw new NotSupportedException(WebNotAvailable);
-
-                case BackupMethod.Auto:
-                    // Web preferred, but not yet available → automatically fall back to SSH
-                    log?.Report("Web download not available – falling back to SSH/SCP…");
-                    await DownloadViaScpAsync(device.Host, sshPort, device.Username, password, localPath, log, ct)
-                        .ConfigureAwait(false);
-                    break;
-            }
-        }
-        finally
-        {
-            // 3) Remove the device file again (best effort, own client/timeout)
-            try
-            {
-                using var cleanup = RouterOsClient.For(device, password);
-                await cleanup.DeleteFileAsync(fileId, CancellationToken.None).ConfigureAwait(false);
-            }
-            catch { /* cleanup is optional */ }
-        }
-    }
-
-    private static async Task DownloadViaScpAsync(
-        string host, int port, string username, string password,
-        string localPath, IProgress<string>? log, CancellationToken ct)
-    {
-        log?.Report($"Downloading {RemoteFile} via SSH/SCP from {host}:{port}…");
         var work = Task.Run(() =>
         {
-            var info = new ConnectionInfo(host, port, username,
-                new PasswordAuthenticationMethod(username, password))
+            // 1) Create the backup on the device (over SSH).
+            log?.Report("Creating backup on the device (SSH)…");
+            using (var ssh = new SshClient(Info()))
             {
-                Timeout = TimeSpan.FromSeconds(12),
-            }.WithCompatibleMacs();
-            using var scp = new ScpClient(info);
+                ConnectSsh(ssh, device.Host, port);
+                try
+                {
+                    using var create = ssh.CreateCommand($"/system backup save name={BaseName}");
+                    create.CommandTimeout = TimeSpan.FromSeconds(40);
+                    create.Execute();
+                }
+                finally { if (ssh.IsConnected) ssh.Disconnect(); }
+            }
+
+            Thread.Sleep(1500); // let RouterOS finish writing the file
+
+            // 2) Download over SCP.
+            log?.Report($"Downloading {RemoteFile} via SSH/SCP from {device.Host}:{port}…");
+            using (var scp = new ScpClient(Info()))
+            {
+                ConnectSsh(scp, device.Host, port);
+                try
+                {
+                    using var file = File.Create(localPath);
+                    scp.Download(RemoteFile, file);
+                }
+                finally { if (scp.IsConnected) scp.Disconnect(); }
+            }
+
+            // 3) Remove the device file again (best effort).
             try
             {
-                scp.Connect();
-                using var file = File.Create(localPath);
-                scp.Download(RemoteFile, file);
+                using var ssh = new SshClient(Info());
+                ssh.Connect();
+                using var rm = ssh.CreateCommand($"/file remove {RemoteFile}");
+                rm.Execute();
+                if (ssh.IsConnected) ssh.Disconnect();
             }
-            catch (SshAuthenticationException ex)
-            {
-                throw new RouterOsApiException(401,
-                    $"SSH login failed: {ex.Message}. The user needs the ssh policy.");
-            }
-            catch (SshConnectionException ex)
-            {
-                throw new RouterOsApiException(0,
-                    $"SSH connection failed: {ex.Message}. Is the SSH service enabled (port {port})?");
-            }
-            finally
-            {
-                if (scp.IsConnected) scp.Disconnect();
-            }
+            catch { /* cleanup is optional */ }
         }, ct);
 
-        // Hard backstop so a stalled SSH handshake can't hang the app on "connecting".
-        try
+        // Hard backstop so a stalled SSH handshake can't hang the app.
+        try { await work.WaitAsync(TimeSpan.FromSeconds(90), ct).ConfigureAwait(false); }
+        catch (TimeoutException) { throw new RouterOsApiException(0, $"SSH backup of {device.Host}:{port} timed out."); }
+    }
+
+    private static void ConnectSsh(BaseClient client, string host, int port)
+    {
+        try { client.Connect(); }
+        catch (SshAuthenticationException ex)
         {
-            await work.WaitAsync(TimeSpan.FromSeconds(45), ct).ConfigureAwait(false);
+            throw new RouterOsApiException(401, $"SSH login failed: {ex.Message}. The user needs the ssh (and ftp) policy.");
         }
-        catch (TimeoutException)
+        catch (SshConnectionException ex)
         {
-            throw new RouterOsApiException(0, $"SSH connection to {host}:{port} timed out.");
+            throw new RouterOsApiException(0, $"SSH connection failed: {ex.Message}. Is the SSH service enabled (port {port})?");
         }
     }
 }

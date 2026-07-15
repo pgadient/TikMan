@@ -38,6 +38,7 @@ public partial class MainWindow : Window
         var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         if (v is not null) Title = $"TikMan {v.Major}.{v.Minor}.{v.Build}";
         RouterOsClient.AllowInsecureCertificates = appData.DefaultIgnoreCertErrors;
+        RouterOsClient.AllowHttpFallback = appData.AllowHttpFallback;
         DeviceGrid.ItemsSource = _devices;
         if (Ipv6GroupBrush.CanFreeze) Ipv6GroupBrush.Freeze();
         // The v4 view hides IPv6-only devices live (HasIpv4 flips when a MAC-match adds an IPv4).
@@ -299,6 +300,7 @@ public partial class MainWindow : Window
         else
         {
             RouterOsClient.AllowInsecureCertificates = _appData.DefaultIgnoreCertErrors;
+            RouterOsClient.AllowHttpFallback = _appData.AllowHttpFallback;
             ApplyCoffeeButton();
             ApplyContactButtons();   // the view toggles live in the settings dialog now
             ApplyListInfo();
@@ -1189,9 +1191,11 @@ public partial class MainWindow : Window
         SetStatus(T("Msg_BackupAllDone", ok, failures.Count, folder));
         if (failures.Count > 0)
         {
-            MessageBox.Show(this,
-                T("Msg_BackupAllReport", ok, targets.Count, folder, string.Join("\n• ", failures)),
-                T("Msg_BackupAllReportTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
+            var body = T("Msg_BackupAllReport", ok, targets.Count, folder, string.Join("\n• ", failures));
+            // If secure paths failed and the user hasn't allowed plain HTTP, point them at the setting –
+            // TikMan never sends credentials over HTTP unless it's explicitly enabled.
+            if (!_appData.AllowHttpFallback) body += "\n\n" + T("Msg_BackupHttpHint");
+            MessageBox.Show(this, body, T("Msg_BackupAllReportTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
         }
     }
 

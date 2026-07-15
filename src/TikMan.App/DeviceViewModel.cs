@@ -927,28 +927,36 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// <summary>This device's bridge forwarding table (MAC → port name), read over REST; null when it
     /// has no credentials, isn't RouterOS, or didn't answer. The physical topology view uses it to
     /// prove which port every neighbour hangs off.</summary>
-    /// <summary>Runs a read-only REST call over plain HTTP first, then the device's configured client.
-    /// RouterOS commonly ships an HTTPS service whose TLS handshake .NET/curl reject ("handshake
-    /// failure") – trying HTTP:80 first (which these devices answer fine, proven on a live network)
-    /// keeps the topology reads fast and reliable instead of stalling on a broken HTTPS handshake, and
-    /// still falls back to the configured transport for a device that only speaks HTTPS. Read-only
-    /// endpoints only; nothing here writes. The password is used transiently to build the client,
-    /// exactly as monitoring does; it is never stored or logged.</summary>
+    /// <summary>Runs a read-only REST call SECURELY FIRST: the configured client (HTTPS by default).
+    /// Plain HTTP:80 is only tried when the user has explicitly allowed the insecure fallback in the
+    /// settings – otherwise credentials never travel over HTTP. Read-only endpoints only; nothing here
+    /// writes. The password is used transiently to build the client, never stored or logged.</summary>
     private async Task<T?> RestReadAsync<T>(Func<RouterOsClient, CancellationToken, Task<T>> read,
         CancellationToken ct) where T : class
     {
         if (Model.EncryptedPassword.Length == 0) return null;
+
+        // 1) Secure transport: the configured client (HTTPS unless the user switched the device to HTTP).
         try
         {
-            var password = CredentialProtector.Unprotect(Model.EncryptedPassword);
-            using var http = new RouterOsClient(Model.Host, 80, useHttps: false, Model.Username, password,
-                ignoreCertErrors: true);
-            var r = await read(http, ct);
+            var r = await read(Client, ct);
             if (r is not null) return r;
         }
-        catch (Exception) { /* HTTP off on this device – fall through to the configured client */ }
-        try { return await read(Client, ct); }
-        catch (Exception) { return null; } // not RouterOS / no rest policy / unreachable
+        catch (Exception) { /* HTTPS handshake broken / unreachable – maybe fall back to HTTP below */ }
+
+        // 2) Plain HTTP:80 ONLY with explicit consent (Settings → "allow HTTP"). Off by default.
+        if (RouterOsClient.AllowHttpFallback && Model.UseHttps)
+        {
+            try
+            {
+                var password = CredentialProtector.Unprotect(Model.EncryptedPassword);
+                using var http = new RouterOsClient(Model.Host, 80, useHttps: false, Model.Username, password,
+                    ignoreCertErrors: true);
+                return await read(http, ct);
+            }
+            catch (Exception) { /* HTTP off on this device too */ }
+        }
+        return null;
     }
 
     public async Task<Dictionary<string, string>?> GetBridgeHostsAsync(CancellationToken ct = default)
@@ -1175,12 +1183,15 @@ public class DeviceViewModel : INotifyPropertyChanged
         }
     }
 
-    /// <summary>Downloads the config export and returns (Config, Identity); null on error.
-    /// Like the topology reads, this tries plain HTTP:80 first – most RouterOS devices refuse or break
-    /// the HTTPS handshake on 443 while answering the same REST call fine on 80 (proven on a live
-    /// network) – and falls back to the configured transport for a device that only speaks HTTPS.</summary>
+    /// <summary>Downloads the config export and returns (Config, Identity); null on error. Secure by
+    /// default: HTTPS REST first, then <c>/export</c> over SSH (encrypted – the reliable path when a
+    /// device's HTTPS handshake is broken), and only then plain HTTP:80 – and that last step ONLY when the
+    /// user has allowed the insecure fallback in the settings. The password is never logged.</summary>
     public async Task<(string Config, string Identity)?> DownloadConfigAsync(CancellationToken ct = default)
     {
+        if (Model.EncryptedPassword.Length == 0) { LastError = "no credentials"; return null; }
+        var password = CredentialProtector.Unprotect(Model.EncryptedPassword);
+
         async Task<(string Config, string Identity)> Export(RouterOsClient c)
         {
             var identity = await c.GetIdentityAsync(ct);
@@ -1188,33 +1199,37 @@ public class DeviceViewModel : INotifyPropertyChanged
             return (config, identity);
         }
 
-        if (Model.EncryptedPassword.Length > 0)
+        // 1) Secure: HTTPS REST (the configured client).
+        try { var r = await Export(Client); LastError = ""; return r; }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) { LastError = Shorten(ex); }
+
+        // 2) Secure: /export over SSH – works even when the device's HTTPS is broken.
+        var viaSsh = await SshConfigExport.GetAsync(Model.Host, Model.SshPort, Model.Username, password, ct);
+        if (viaSsh is not null) { LastError = ""; return (viaSsh, IdentityFromExport(viaSsh)); }
+
+        // 3) Insecure: plain HTTP:80 REST – ONLY with explicit consent (Settings → "allow HTTP").
+        if (RouterOsClient.AllowHttpFallback && Model.UseHttps)
         {
             try
             {
-                var password = CredentialProtector.Unprotect(Model.EncryptedPassword);
                 using var http = new RouterOsClient(Model.Host, 80, useHttps: false, Model.Username, password,
                     ignoreCertErrors: true);
-                var r = await Export(http);
-                LastError = "";
-                return r;
+                var r = await Export(http); LastError = ""; return r;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch (Exception) { /* HTTP off / not reachable on 80 – fall through to the configured client */ }
+            catch (Exception ex) { LastError = Shorten(ex); }
         }
+        return null;
+    }
 
-        try
-        {
-            var r = await Export(Client);
-            LastError = "";
-            return r;
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (Exception ex)
-        {
-            LastError = Shorten(ex);
-            return null;
-        }
+    /// <summary>Best-effort device identity for the backup filename, read from a RouterOS export's
+    /// "/system identity set name=…" line; falls back to the name TikMan already knows.</summary>
+    private string IdentityFromExport(string export)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(export,
+            @"/system identity[\s\S]*?set name=(""?)(?<n>[^""\r\n]+)\1");
+        return m.Success ? m.Groups["n"].Value.Trim() : Model.Name;
     }
 
     /// <summary>Downloads a binary full backup (.backup) via the selected method. false on error.</summary>
