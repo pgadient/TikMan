@@ -183,6 +183,7 @@ public partial class MainWindow
         ApplyProgressBarMode();
         StartMndpProgressTimer();
         StartIpv6ProgressTimer();
+        UpdateTopoScanBanner(); // if a map is open, show "updating when the scan finishes"
         SetStatus(T("Msg_Discovering"));
 
         var found = new Progress<DiscoveredDevice>(AddDiscovered);
@@ -280,6 +281,7 @@ public partial class MainWindow
             ApplyDeviceFilter(); // re-evaluate tab membership after v4/v6 merges
             UpdateDeviceCount();
             SaveAppData();
+            RefreshTopologyAfterScan(); // the maps rebuild only between scans, never mid-scan
         }
 
         // Continuous mode: chain another pass unless it was switched off or the scan was stopped.

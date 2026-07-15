@@ -67,16 +67,39 @@ public partial class MainWindow
         _ssids = null;
     }
 
+    /// <summary>True while either map tab (IP distribution / topology) is the active view.</summary>
+    private bool TopologyTabActive => AddressTabs.SelectedIndex is 2 or 3;
+
+    /// <summary>The banner across a map that says it will refresh once the running scan is done –
+    /// the maps are only rebuilt between scans, so a scan in progress means "what you see is a moment
+    /// out of date". Shown while a scan runs and a map is open; hidden otherwise.</summary>
+    private void UpdateTopoScanBanner() =>
+        TopoScanBanner.Visibility = _scanning && TopologyTabActive ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>Rebuilds the open map after a scan finishes (and only then): fresh devices for the
+    /// distribution view, freshly gathered forwarding tables for the physical one. Does nothing when a
+    /// map isn't the active view. This is the single point that keeps the maps current – for every
+    /// scan, initial, manual, continuous or the one kicked off after credentials change.</summary>
+    private void RefreshTopologyAfterScan()
+    {
+        UpdateTopoScanBanner(); // the scan is over → the banner goes
+        if (AddressTabs.SelectedIndex == 2) ShowTopology(physical: false);
+        else if (AddressTabs.SelectedIndex == 3) { InvalidateTopologyEvidence(); ShowTopology(physical: true); }
+    }
+
     /// <summary>Shows one of the topology views: fills the whole window (the details pane folds away),
-    /// builds the graph, and – for the physical view – collects the topology evidence on first open.</summary>
+    /// builds the graph, and – for the physical view – collects the topology evidence on first open.
+    /// While a scan is running it draws what it has and shows the "updating when done" banner instead
+    /// of gathering fresh evidence – the post-scan refresh will do that.</summary>
     private async void ShowTopology(bool physical)
     {
         _topoPhysical = physical;
         TopologyHost.Visibility = Visibility.Visible;
         DeviceGrid.Visibility = Visibility.Collapsed;
         SetTopologyFullscreen(true);
+        UpdateTopoScanBanner();
 
-        if (physical && _traceResults is null && !_tracing)
+        if (physical && _traceResults is null && !_tracing && !_scanning)
             await RunTracesAsync();
 
         BuildTopology();

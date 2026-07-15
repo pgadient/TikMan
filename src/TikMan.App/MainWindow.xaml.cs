@@ -403,17 +403,18 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Fresh credentials unlock information everywhere, so nobody should have to remember to
-    /// rescan by hand: the devices are re-probed, the discovery runs again on its own, and the
-    /// topology evidence (forwarding tables, neighbours, SSIDs) is collected anew – a map that is
-    /// already open rebuilds right away with whatever the new login reveals.</summary>
+    /// rescan by hand: the devices are re-probed and a fresh discovery runs. The topology evidence is
+    /// dropped so the pass that finishes rebuilds the maps with what the new login reveals – the maps
+    /// are only ever refreshed between scans, so this doesn't touch them mid-scan.</summary>
     private async Task AfterCredentialsChangedAsync(IReadOnlyList<DeviceViewModel> vms)
     {
         UpdateNoLoginBanner();   // a login was just added – the banner can go
         await Task.WhenAll(vms.Select(RefreshAndProbeAsync));
-        InvalidateTopologyEvidence();
+        InvalidateTopologyEvidence();          // force a fresh forwarding-table read on the next build
+        UpdateTopoScanBanner();
+        // Either way the map refreshes only when a scan finishes: start one if none is running,
+        // otherwise the already-running pass rebuilds it in its own completion handler.
         if (!_scanning) _ = RunDiscoveryAsync(auto: true);
-        if (AddressTabs.SelectedIndex is 2 or 3)
-            ShowTopology(physical: AddressTabs.SelectedIndex == 3);
     }
 
     /// <summary>Refreshes a freshly added device, then checks it for updates automatically.
