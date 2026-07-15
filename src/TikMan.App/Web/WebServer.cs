@@ -289,6 +289,9 @@ public sealed class WebServer : IDisposable
             case "/xterm.css":
                 await ServeAssetAsync(stream, "xterm.css", "text/css; charset=utf-8");
                 break;
+            case "/novnc.js":
+                await ServeAssetAsync(stream, "novnc.js", "application/javascript; charset=utf-8");
+                break;
             default:
                 await WriteAsync(stream, 404, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("404 Not Found"));
                 break;
@@ -366,8 +369,9 @@ public sealed class WebServer : IDisposable
         up.Contains("websocket", StringComparison.OrdinalIgnoreCase) &&
         req.Headers.ContainsKey("Sec-WebSocket-Key");
 
-    /// <summary>Upgrades to a WebSocket and bridges it to an SSH shell. Auth + HTTPS are mandatory:
-    /// a terminal carries keystrokes and shell output, so it never runs over plain HTTP.</summary>
+    /// <summary>Upgrades to a WebSocket and bridges it – to an SSH shell (/ws/ssh) or a raw VNC/RFB TCP
+    /// connection (/ws/vnc). Auth + HTTPS are mandatory: both carry sensitive data (keystrokes, shell
+    /// output, the screen and the VNC password), so neither ever runs over plain HTTP.</summary>
     private async Task HandleWebSocketAsync(Stream stream, Request req, CancellationToken ct)
     {
         if (!Authorised(req))
@@ -381,7 +385,8 @@ public sealed class WebServer : IDisposable
             await WriteAsync(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("HTTPS required"));
             return;
         }
-        if (req.Path != "/ws/ssh" || !req.Headers.TryGetValue("Sec-WebSocket-Key", out var wsKey))
+        if ((req.Path != "/ws/ssh" && req.Path != "/ws/vnc") ||
+            !req.Headers.TryGetValue("Sec-WebSocket-Key", out var wsKey))
         {
             await WriteAsync(stream, 404, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("404 Not Found"));
             return;
@@ -399,6 +404,8 @@ public sealed class WebServer : IDisposable
             new WebSocketCreationOptions { IsServer = true, KeepAliveInterval = TimeSpan.FromSeconds(30) });
 
         var id = QueryValue(req.Query, "id") ?? "";
+        if (req.Path == "/ws/vnc") { await ServeVncAsync(ws, id, ct); return; }
+
         var cols = ParseDim(QueryValue(req.Query, "cols"), 120);
         var rows = ParseDim(QueryValue(req.Query, "rows"), 32);
 
@@ -421,6 +428,73 @@ public sealed class WebServer : IDisposable
 
     private static uint ParseDim(string? s, uint fallback) =>
         uint.TryParse(s, out var v) && v is > 0 and <= 500 ? v : fallback;
+
+    /// <summary>Transparently relays RFB bytes between the browser's noVNC (over the WebSocket) and the
+    /// device's VNC TCP port – the server understands nothing of RFB, it only shuffles bytes. The target
+    /// host+port is resolved from the device id server-side, so a client can't point the proxy elsewhere.</summary>
+    private async Task ServeVncAsync(WebSocket ws, string id, CancellationToken ct)
+    {
+        NetEndpoint? target = null;
+        try { target = _backend.GetVncTarget(id); } catch { }
+        if (target is null || target.Port is <= 0 or > 65535)
+        {
+            try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "no vnc", ct); } catch { }
+            return;
+        }
+
+        using var tcp = new TcpClient();
+        try { await tcp.ConnectAsync(target.Host, target.Port, ct).ConfigureAwait(false); }
+        catch
+        {
+            try { await ws.CloseAsync(WebSocketCloseStatus.EndpointUnavailable, "connect failed", ct); } catch { }
+            return;
+        }
+        tcp.NoDelay = true;
+        using var tcpStream = tcp.GetStream();
+        await BridgeTcpAsync(ws, tcpStream, ct);
+    }
+
+    /// <summary>Pumps bytes both ways between a WebSocket and a raw TCP stream until either side closes.</summary>
+    private static async Task BridgeTcpAsync(WebSocket ws, Stream tcp, CancellationToken ct)
+    {
+        var tcpToWs = Task.Run(async () =>
+        {
+            var buf = new byte[16384];
+            try
+            {
+                int n;
+                while ((n = await tcp.ReadAsync(buf, ct).ConfigureAwait(false)) > 0)
+                    await ws.SendAsync(new ArraySegment<byte>(buf, 0, n), WebSocketMessageType.Binary, true, ct)
+                        .ConfigureAwait(false);
+            }
+            catch { }
+        }, ct);
+
+        var buf2 = new byte[16384];
+        try
+        {
+            while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
+            {
+                WebSocketReceiveResult res;
+                try { res = await ws.ReceiveAsync(new ArraySegment<byte>(buf2), ct).ConfigureAwait(false); }
+                catch { break; }
+                if (res.MessageType == WebSocketMessageType.Close) break;
+                if (res.Count > 0) await tcp.WriteAsync(buf2.AsMemory(0, res.Count), ct).ConfigureAwait(false);
+            }
+        }
+        catch { }
+        finally
+        {
+            try { tcp.Dispose(); } catch { } // unblocks the tcp→ws read
+            try { await tcpToWs.ConfigureAwait(false); } catch { }
+            try
+            {
+                if (ws.State == WebSocketState.Open)
+                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None).ConfigureAwait(false);
+            }
+            catch { }
+        }
+    }
 
     /// <summary>Pumps bytes both ways: shell output → WebSocket (through a queue, so SSH.NET's callback
     /// thread never touches the socket), WebSocket input → shell.</summary>

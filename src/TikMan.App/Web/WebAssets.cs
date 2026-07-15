@@ -102,6 +102,9 @@ internal static class WebAssets
   .termhead span { flex:1; font-size:13px; font-weight:600; }
   .termhead .x { color:#ddd; }
   #termbox { flex:1; min-height:0; padding:6px 8px; overflow:hidden; }
+  #vnc { position:fixed; inset:0; z-index:20; background:#000; flex-direction:column; }
+  #vnc:not([hidden]) { display:flex; }
+  #vncbox { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }
 </style>
 </head>
 <body>
@@ -166,6 +169,7 @@ internal static class WebAssets
     </div>
     <div class="mfoot">
       <button id="mterm" hidden>⌨ Terminal</button>
+      <button id="mvnc" hidden>🖥 VNC</button>
       <button id="mwake" hidden>⏻ Wake</button>
       <span class="muted" id="mtoast"></span>
     </div>
@@ -174,6 +178,10 @@ internal static class WebAssets
 <div id="term" hidden>
   <div class="termhead"><span id="termtitle">SSH</span><button class="x" id="termclose">✕</button></div>
   <div id="termbox"></div>
+</div>
+<div id="vnc" hidden>
+  <div class="termhead"><span id="vnctitle">VNC</span><button class="x" id="vncclose">✕</button></div>
+  <div id="vncbox"></div>
 </div>
 <footer>TikMan web · live · tap a row for details</footer>
 <script>
@@ -254,6 +262,7 @@ async function openDetail(id){
     $("#mloginhttp").hidden = secure; $("#mloginform").style.display = secure ? "flex" : "none";
     $("#mbackup").hidden = !(secure && d.hasLogin);
     $("#mterm").hidden = !(secure && d.hasLogin);
+    $("#mvnc").hidden = !(secure && d.vncPort > 0);
     $("#mtoast").textContent=""; $("#modal").hidden=false;
   } catch(e){}
 }
@@ -328,6 +337,28 @@ function closeTerminal(){
   try{ currentTerm.ws.close(); }catch{}
   try{ currentTerm.term.dispose(); }catch{}
   currentTerm=null; $("#term").hidden=true;
+}
+
+// ---- VNC (noVNC, dynamically imported) ----
+let currentVnc = null;
+async function openVnc(id){
+  if(!id || !secure) return;
+  let RFB;
+  try { RFB = (await import("/novnc.js")).default; }
+  catch { $("#mtoast").textContent="failed to load VNC"; return; }
+  $("#modal").hidden = true;
+  $("#vnctitle").textContent = "VNC · " + ($("#mname").textContent || id);
+  $("#vnc").hidden = false;
+  const box = $("#vncbox"); box.innerHTML = "";
+  const rfb = new RFB(box, `wss://${location.host}/ws/vnc?id=${encodeURIComponent(id)}`);
+  rfb.scaleViewport = true; rfb.background = "#000";
+  rfb.addEventListener("credentialsrequired", ()=>{ rfb.sendCredentials({ password: prompt("VNC password:") || "" }); });
+  currentVnc = { rfb };
+}
+function closeVnc(){
+  if(!currentVnc) return;
+  try{ currentVnc.rfb.disconnect(); }catch{}
+  currentVnc=null; $("#vnc").hidden=true; $("#vncbox").innerHTML="";
 }
 
 // ---- topology map ----
@@ -406,6 +437,8 @@ $("#mbrsc").onclick = ()=> backup($("#modal").dataset.id, false);
 $("#mbfull").onclick = ()=> backup($("#modal").dataset.id, true);
 $("#mterm").onclick = ()=> openTerminal($("#modal").dataset.id);
 $("#termclose").onclick = closeTerminal;
+$("#mvnc").onclick = ()=> openVnc($("#modal").dataset.id);
+$("#vncclose").onclick = closeVnc;
 loadInfo(); tick(); pollStatus();
 setInterval(tick, 4000); setInterval(pollStatus, 1200);
 </script>

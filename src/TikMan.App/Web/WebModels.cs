@@ -22,7 +22,11 @@ public sealed record KeyVal(string Key, string Value);
 /// and the free-form info rows. Carries whether a Wake-on-LAN is possible, never a password.</summary>
 public sealed record DeviceDetail(
     string Id, string Name, string Ip, string Mac, string Vendor, string Type, string Model,
-    string Status, bool HasLogin, string User, bool CanWake, IReadOnlyList<string> Ipv6, IReadOnlyList<KeyVal> Info);
+    string Status, bool HasLogin, string User, bool CanWake, int VncPort,
+    IReadOnlyList<string> Ipv6, IReadOnlyList<KeyVal> Info);
+
+/// <summary>A host:port the web server may proxy a WebSocket to (the device's VNC endpoint).</summary>
+public sealed record NetEndpoint(string Host, int Port);
 
 /// <summary>Result of a web-triggered action (Wake …), for a small toast in the browser.</summary>
 public sealed record ActionResult(bool Ok, string Message);
@@ -88,6 +92,11 @@ public interface IWebBackend
     /// terminal size. Returns null if the device is unknown, has no login, or the connection fails.
     /// The web server only ever calls this over HTTPS. The password is never logged.</summary>
     Task<TikMan.Core.Api.ITerminalSession?> OpenSshShellAsync(string id, uint cols, uint rows);
+
+    /// <summary>The device's VNC endpoint (its host + detected VNC port), or null if it has none. The
+    /// host is resolved from the device id server-side so the WebSocket proxy can only reach a known
+    /// device's VNC port, never an arbitrary address the client names.</summary>
+    NetEndpoint? GetVncTarget(string id);
 
     /// <summary>Product name + version for the page header.</summary>
     string AppTitle { get; }

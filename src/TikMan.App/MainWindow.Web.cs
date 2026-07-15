@@ -169,7 +169,21 @@ public partial class MainWindow : IWebBackend
             Id: WebId(d), Name: d.Name, Ip: d.Ipv4Address.Length > 0 ? d.Ipv4Address : d.Host,
             Mac: d.Model.MacAddress, Vendor: d.IdentifiedVendor, Type: d.DeviceType, Model: d.ModelDisplay,
             Status: d.StatusText, HasLogin: d.HasCredentials, User: d.Model.Username,
-            CanWake: d.Model.MacAddress.Length > 0, Ipv6: d.Ipv6List, Info: info);
+            CanWake: d.Model.MacAddress.Length > 0, VncPort: VncPortOf(d), Ipv6: d.Ipv6List, Info: info);
+    });
+
+    /// <summary>The device's VNC port from its open ports (5900/5901/…), or 0 if it isn't running VNC.</summary>
+    private static int VncPortOf(DeviceViewModel d) =>
+        d.Model.OpenPorts.FirstOrDefault(p => SubnetScanner.ServiceName(p) == "vnc");
+
+    NetEndpoint? IWebBackend.GetVncTarget(string id) => Dispatcher.Invoke(() =>
+    {
+        var d = FindByWebId(id);
+        if (d is null) return null;
+        var port = VncPortOf(d);
+        if (port == 0) return null;
+        var host = d.Ipv4Address.Length > 0 ? d.Ipv4Address : d.Host;
+        return host.Length > 0 ? new NetEndpoint(host, port) : null;
     });
 
     /// <summary>Applies a login to the device, mirroring the GUI's "set credentials": the password is

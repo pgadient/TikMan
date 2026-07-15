@@ -10,7 +10,7 @@
     <RootNamespace>TikMan.App</RootNamespace>
     <ApplicationIcon>tikman.ico</ApplicationIcon>
     <!-- Build number auto-increments: 1.1.<days since 2026-01-01> (recomputed on every build). -->
-    <Version>1.10.36</Version>
+    <Version>1.10.37</Version>
     <Product>TikMan</Product>
     <Company>Pascal Montico-Gadient</Company>
   </PropertyGroup>
@@ -25,6 +25,8 @@
     <EmbeddedResource Include="Web\assets\xterm.js" />
     <EmbeddedResource Include="Web\assets\xterm.css" />
     <EmbeddedResource Include="Web\assets\xterm-addon-fit.js" />
+    <!-- Browser VNC client (noVNC, MPL-2.0) as a self-contained ES-module bundle. -->
+    <EmbeddedResource Include="Web\assets\novnc.js" />
   </ItemGroup>
 
   <ItemGroup>
