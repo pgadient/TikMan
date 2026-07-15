@@ -121,6 +121,42 @@ public partial class MainWindow : IWebBackend
         if (!_scanning) _ = RunDiscoveryAsync(auto: false);
     });
 
+    /// <summary>Builds the requested map on the UI thread and returns its laid-out nodes/edges. If the
+    /// user happens to be looking at the other map on screen, we rebuild their view afterwards so the
+    /// web request doesn't switch it under them.</summary>
+    async Task<TopoGraph> IWebBackend.GetTopologyAsync(bool physical) =>
+        await await Dispatcher.InvokeAsync(async () =>
+        {
+            var restore = _topoPhysical;
+            var onTopoTab = TopologyTabActive;
+
+            if (physical && _traceResults is null && !_tracing && !_scanning)
+                await RunTracesAsync(); // gather forwarding tables (slow, once) so the physical view has evidence
+
+            _topoPhysical = physical;
+            BuildTopology();
+            var graph = ExtractTopoGraph();
+
+            if (_topoPhysical != restore) // put the on-screen view back the way the local user had it
+            {
+                _topoPhysical = restore;
+                if (onTopoTab) BuildTopology();
+            }
+            return graph;
+        });
+
+    private TopoGraph ExtractTopoGraph()
+    {
+        var nodes = _topoNodes.Select(n => new TopoNodeDto(
+            Key: n.Key,
+            DeviceId: n.Device is { } dev ? WebId(dev) : "",
+            Title: n.Title, Detail: n.Detail, Mac: n.Mac,
+            X: n.Position.X, Y: n.Position.Y, W: NodeWidth, H: NodeHeight,
+            Fill: n.Fill, Line: n.Line, Text: n.TextColour)).ToList();
+        var edges = _topoEdges.Select(e => new TopoEdgeDto(e.From.Key, e.To.Key)).ToList();
+        return new TopoGraph(nodes, edges);
+    }
+
     IReadOnlyList<DeviceDto> IWebBackend.GetDevices() =>
         Dispatcher.Invoke(() => _devices.Select(ToDto).ToList());
 

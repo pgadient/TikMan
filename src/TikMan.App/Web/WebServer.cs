@@ -224,6 +224,9 @@ public sealed class WebServer : IDisposable
             case "/api/status":
                 await WriteJsonAsync(stream, _backend.GetStatus());
                 break;
+            case "/api/topology":
+                await WriteJsonAsync(stream, await _backend.GetTopologyAsync(QueryValue(req.Query, "view") == "physical"));
+                break;
             case "/api/device":
                 var detail = _backend.GetDevice(QueryValue(req.Query, "id") ?? "");
                 if (detail is null)

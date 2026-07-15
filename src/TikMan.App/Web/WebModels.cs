@@ -27,6 +27,17 @@ public sealed record DeviceDetail(
 /// <summary>Result of a web-triggered action (Wake …), for a small toast in the browser.</summary>
 public sealed record ActionResult(bool Ok, string Message);
 
+/// <summary>One box in the topology map: its laid-out position/size and the same colours + text the
+/// GUI draws. <see cref="DeviceId"/> is set for real devices (empty for the "Internet"/range pseudo-
+/// nodes), so a click can open the device's detail panel. Colours are CSS-ready hex strings.</summary>
+public sealed record TopoNodeDto(string Key, string DeviceId, string Title, string Detail, string Mac,
+    double X, double Y, double W, double H, string Fill, string Line, string Text);
+
+public sealed record TopoEdgeDto(string From, string To);
+
+/// <summary>The laid-out topology graph (logical or physical) for the browser to render as SVG.</summary>
+public sealed record TopoGraph(IReadOnlyList<TopoNodeDto> Nodes, IReadOnlyList<TopoEdgeDto> Edges);
+
 /// <summary>A backup ready to stream to the browser as a download, or a failure with a reason.
 /// The bytes are the file content; they are never logged.</summary>
 public sealed record BackupResult(bool Ok, string Message, string FileName, string ContentType, byte[] Bytes)
@@ -61,6 +72,11 @@ public interface IWebBackend
     /// backup (.backup) when <paramref name="full"/>. Needs the device's stored login. The web server
     /// only ever calls this over HTTPS (the backup can contain secrets).</summary>
     Task<BackupResult> MakeBackupAsync(string id, bool full);
+
+    /// <summary>Builds and returns the topology map (physical = forwarding-table based, else the logical
+    /// address-distribution view) as laid-out nodes + edges. Slow the first time a physical view gathers
+    /// forwarding tables.</summary>
+    Task<TopoGraph> GetTopologyAsync(bool physical);
 
     /// <summary>Current scan state (running? how far? which phase? how many devices).</summary>
     WebStatus GetStatus();

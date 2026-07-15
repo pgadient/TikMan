@@ -83,6 +83,19 @@ internal static class WebAssets
   .muted { color:var(--muted); }
   .empty { padding:40px; text-align:center; color:var(--muted); }
   footer { padding:14px 18px; color:var(--muted); font-size:12px; }
+  .tabs { display:flex; gap:4px; padding:8px 18px 0; }
+  .tab { background:transparent; color:var(--muted); border:none; border-bottom:2px solid transparent;
+         border-radius:0; padding:7px 12px; font-weight:600; cursor:pointer; }
+  .tab.on { color:var(--fg); border-bottom-color:var(--accent); }
+  .mapbar { display:flex; gap:6px; align-items:center; padding:10px 18px; flex-wrap:wrap; }
+  .seg { background:var(--card); color:var(--fg); border:1px solid var(--line); padding:6px 12px; font-size:13px; }
+  .seg.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  #mapRefresh { background:var(--card); color:var(--fg); border:1px solid var(--line); padding:6px 11px; }
+  #mapsvg { display:block; width:100%; height:calc(100vh - 190px); background:var(--bg);
+            touch-action:none; user-select:none; cursor:grab; }
+  #mapsvg.grabbing { cursor:grabbing; }
+  #mapsvg text { pointer-events:none; }
+  #mapsvg .node { cursor:pointer; }
 </style>
 </head>
 <body>
@@ -90,6 +103,11 @@ internal static class WebAssets
   <h1 id="title">TikMan</h1><span class="ver" id="ver"></span>
   <span class="count" id="count"></span>
 </header>
+<div class="tabs">
+  <button id="tabDevices" class="tab on">Devices</button>
+  <button id="tabMap" class="tab">Map</button>
+</div>
+<div id="devicesView">
 <div class="bar">
   <button id="scan">⟳ Scan</button>
   <input type="search" id="filter" placeholder="Filter… (name, IP, MAC, vendor, type)" autocomplete="off">
@@ -109,6 +127,16 @@ internal static class WebAssets
     <tbody id="rows"></tbody>
   </table>
   <div class="empty" id="empty" hidden>No devices yet — start a scan in the desktop app.</div>
+</div>
+</div>
+<div id="mapView" hidden>
+  <div class="mapbar">
+    <button id="mapLogical" class="seg on">Logical</button>
+    <button id="mapPhysical" class="seg">Physical</button>
+    <button id="mapRefresh">⟳</button>
+    <span class="muted" id="mapstatus"></span>
+  </div>
+  <svg id="mapsvg" xmlns="http://www.w3.org/2000/svg"></svg>
 </div>
 <div class="modal" id="modal" hidden>
   <div class="sheet">
@@ -136,6 +164,7 @@ internal static class WebAssets
 <footer>TikMan web · live · tap a row for details</footer>
 <script>
 let devices = [], sortKey = "ip", sortDir = 1;
+let mapPhysical = false, mapLoaded = false, vb = { x:0, y:0, w:100, h:100 };
 const secure = location.protocol === "https:";
 const $ = s => document.querySelector(s);
 
@@ -246,6 +275,68 @@ async function wake(id){
         $("#mtoast").textContent = r.message || (r.ok?"sent":"failed"); }
   catch { $("#mtoast").textContent="failed"; }
 }
+
+// ---- topology map ----
+function clip(s,n){ s=s||""; return s.length>n ? s.slice(0,n-1)+"…" : s; }
+function applyVB(){ $("#mapsvg").setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`); }
+function renderMap(g){
+  const svg = $("#mapsvg");
+  if(!g.nodes || !g.nodes.length){ svg.innerHTML=""; $("#mapstatus").textContent="empty — run a scan first"; return; }
+  const pad=40;
+  const minX=Math.min(...g.nodes.map(n=>n.x))-pad, minY=Math.min(...g.nodes.map(n=>n.y))-pad;
+  const maxX=Math.max(...g.nodes.map(n=>n.x+n.w))+pad, maxY=Math.max(...g.nodes.map(n=>n.y+n.h))+pad;
+  const byKey={}; g.nodes.forEach(n=>byKey[n.key]=n);
+  const edges = (g.edges||[]).map(e=>{
+    const a=byKey[e.from], b=byKey[e.to]; if(!a||!b) return "";
+    return `<line x1="${a.x+a.w/2}" y1="${a.y+a.h/2}" x2="${b.x+b.w/2}" y2="${b.y+b.h/2}" stroke="#888" stroke-opacity="0.5" stroke-width="1.5"/>`;
+  }).join("");
+  const nodes = g.nodes.map(n=>{
+    const tx=n.x+11;
+    return `<g class="node" data-id="${esc(n.deviceId)}">`
+      + `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="7" fill="${esc(n.fill)}" stroke="${esc(n.line)}"/>`
+      + `<text x="${tx}" y="${n.y+21}" fill="${esc(n.text)}" font-size="12" font-weight="600">${esc(clip(n.title,22))}</text>`
+      + (n.detail?`<text x="${tx}" y="${n.y+37}" fill="${esc(n.text)}" font-size="10" opacity="0.85">${esc(clip(n.detail,28))}</text>`:"")
+      + (n.mac?`<text x="${tx}" y="${n.y+50}" fill="${esc(n.text)}" font-size="9" opacity="0.55">${esc(n.mac)}</text>`:"")
+      + `</g>`;
+  }).join("");
+  svg.innerHTML = edges + nodes;
+  vb = { x:minX, y:minY, w:maxX-minX, h:maxY-minY };
+  applyVB();
+  $("#mapstatus").textContent = g.nodes.length + " nodes";
+}
+async function loadMap(){
+  $("#mapstatus").textContent = "loading…";
+  try { renderMap(await j("/api/topology?view="+(mapPhysical?"physical":"logical"))); mapLoaded=true; }
+  catch(e){ $("#mapstatus").textContent = "failed"; }
+}
+function showView(map){
+  $("#devicesView").hidden = map; $("#mapView").hidden = !map;
+  $("#tabDevices").classList.toggle("on", !map); $("#tabMap").classList.toggle("on", map);
+  if(map && !mapLoaded) loadMap();
+}
+(function(){
+  const svg = $("#mapsvg"); let drag=null, moved=false;
+  svg.addEventListener("wheel", e=>{
+    e.preventDefault(); const r=svg.getBoundingClientRect();
+    const mx=vb.x+(e.clientX-r.left)/r.width*vb.w, my=vb.y+(e.clientY-r.top)/r.height*vb.h;
+    const f = e.deltaY<0 ? 0.85 : 1.18; vb.w*=f; vb.h*=f;
+    vb.x = mx-(e.clientX-r.left)/r.width*vb.w; vb.y = my-(e.clientY-r.top)/r.height*vb.h; applyVB();
+  }, {passive:false});
+  svg.addEventListener("pointerdown", e=>{ drag={x:e.clientX,y:e.clientY,vx:vb.x,vy:vb.y}; moved=false;
+    svg.classList.add("grabbing"); svg.setPointerCapture(e.pointerId); });
+  svg.addEventListener("pointermove", e=>{ if(!drag) return; const r=svg.getBoundingClientRect();
+    if(Math.abs(e.clientX-drag.x)+Math.abs(e.clientY-drag.y)>3) moved=true;
+    vb.x = drag.vx-(e.clientX-drag.x)/r.width*vb.w; vb.y = drag.vy-(e.clientY-drag.y)/r.height*vb.h; applyVB(); });
+  const end=()=>{ drag=null; svg.classList.remove("grabbing"); };
+  svg.addEventListener("pointerup", end); svg.addEventListener("pointercancel", end);
+  svg.addEventListener("click", e=>{ if(moved){ moved=false; return; }
+    const g=e.target.closest(".node"); if(g && g.dataset.id) openDetail(g.dataset.id); });
+})();
+$("#tabDevices").onclick = ()=> showView(false);
+$("#tabMap").onclick = ()=> showView(true);
+$("#mapRefresh").onclick = loadMap;
+$("#mapLogical").onclick = ()=>{ mapPhysical=false; $("#mapLogical").classList.add("on"); $("#mapPhysical").classList.remove("on"); loadMap(); };
+$("#mapPhysical").onclick = ()=>{ mapPhysical=true; $("#mapPhysical").classList.add("on"); $("#mapLogical").classList.remove("on"); loadMap(); };
 
 document.querySelectorAll("th[data-k]").forEach(th=>th.onclick=()=>{
   const k=th.dataset.k; if(sortKey===k) sortDir*=-1; else {sortKey=k; sortDir=1;} render();
