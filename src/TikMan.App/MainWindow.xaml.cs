@@ -98,6 +98,46 @@ public partial class MainWindow : Window
         // turned that off in the settings.
         if (!_appData.NoInitialScan) await RunDiscoveryAsync(auto: true);
         else { UpdateNoLoginBanner(); SetStatus(T("Status_Ready")); }
+
+        if (_appData.CheckForUpdates) _ = CheckForUpdateAsync();
+    }
+
+    /// <summary>On startup: if GitHub has a newer release for this build's variant, offer to update.
+    /// On yes, download it next to the current exe, launch it (telling it to delete this one once we
+    /// exit), and quit. Entirely best-effort – any failure just leaves the running version in place.</summary>
+    private async Task CheckForUpdateAsync()
+    {
+        string exePath;
+        try { exePath = Environment.ProcessPath ?? ""; } catch { return; }
+        if (exePath.Length == 0) return;
+        var current = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        if (current is null) return;
+        current = new Version(current.Major, current.Minor, current.Build); // drop the .0 revision
+
+        var update = await AppUpdater.CheckAsync(current, Path.GetFileName(exePath));
+        if (update is null) return;
+
+        var answer = MessageBox.Show(this, T("Upd_AvailableBody", update.Version.ToString(), current.ToString()),
+            T("Upd_AvailableTitle"), MessageBoxButton.YesNo, MessageBoxImage.Information);
+        if (answer != MessageBoxResult.Yes) return;
+
+        SetStatus(T("Upd_Downloading", update.Version.ToString()));
+        var dir = Path.GetDirectoryName(exePath) ?? "";
+        var newExe = await AppUpdater.DownloadAsync(update, dir);
+        if (newExe is null) { SetStatus(T("Upd_Failed")); return; }
+        if (string.Equals(newExe, exePath, StringComparison.OrdinalIgnoreCase))
+        { SetStatus(T("Upd_Failed")); return; } // same filename – can't swap in place, don't self-delete
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(newExe)
+            {
+                UseShellExecute = true,
+                Arguments = $"--replaced \"{exePath}\"",
+            });
+            Application.Current.Shutdown(); // the new instance deletes this exe once we've exited
+        }
+        catch (Exception) { SetStatus(T("Upd_Failed")); }
     }
 
     private void Window_Closing(object sender, CancelEventArgs e) => SaveAppData();

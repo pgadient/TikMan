@@ -42,6 +42,7 @@ public partial class SettingsWindow : Window
         ListInfoCheck.IsChecked = data.ShowListInfo;
         SingleProgressCheck.IsChecked = data.SingleProgressBar;
         NoInitialScanCheck.IsChecked = data.NoInitialScan;
+        CheckUpdatesCheck.IsChecked = data.CheckForUpdates;
         SnmpCommunityBox.Text = data.SnmpCommunity;
         VncNoticeCheck.IsChecked = data.ShowVncNotice;
         PingTimeoutBox.Text = data.PingTimeoutMs.ToString();
@@ -153,6 +154,7 @@ public partial class SettingsWindow : Window
         _data.ShowListInfo = ListInfoCheck.IsChecked == true;
         _data.SingleProgressBar = SingleProgressCheck.IsChecked == true;
         _data.NoInitialScan = NoInitialScanCheck.IsChecked == true;
+        _data.CheckForUpdates = CheckUpdatesCheck.IsChecked == true;
         _data.SnmpCommunity = SnmpCommunityBox.Text.Trim() is { Length: > 0 } comm ? comm : "public";
         _data.ShowVncNotice = VncNoticeCheck.IsChecked == true;
         // Ping tuning – clamp to sane bounds so a typo can't hang or disable the scan.

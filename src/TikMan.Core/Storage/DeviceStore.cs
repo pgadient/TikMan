@@ -56,6 +56,8 @@ public class AppData
     public bool SimpleScanMode { get; set; }
     /// <summary>Skip the automatic discovery scan on startup (off by default – normally we scan at once).</summary>
     public bool NoInitialScan { get; set; }
+    /// <summary>Check GitHub for a newer release on startup and offer to update (on by default).</summary>
+    public bool CheckForUpdates { get; set; } = true;
     /// <summary>Read-only SNMP community for the probes and the FDB reads on the physical topology.
     /// "public" is what most gear ships with; a site that changed it enters its own here.</summary>
     public string SnmpCommunity { get; set; } = "public";

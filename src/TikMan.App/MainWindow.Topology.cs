@@ -1,7 +1,9 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using TikMan.Core.Discovery;
 using static TikMan.App.Localization.LocalizationManager;
@@ -766,6 +768,57 @@ public partial class MainWindow
         TopologyPan.X += (after.X - before.X) * next;
         TopologyPan.Y += (after.Y - before.Y) * next;
         e.Handled = true;
+    }
+
+    /// <summary>Exports the whole graph – not just the visible viewport – as a PNG. It is rendered
+    /// fresh at its natural bounds (independent of the current zoom/pan) at 2× for crispness: the
+    /// connecting lines, then each node reflected through a VisualBrush so it looks exactly as on
+    /// screen. PNG only – a real vector PDF would need a PDF library, and a raster-in-PDF is worse
+    /// than a clean PNG.</summary>
+    private void Topology_ExportPng_Click(object sender, RoutedEventArgs e)
+    {
+        if (_topoNodes.Count == 0) { SetStatus(T("Topo_ExportEmpty")); return; }
+
+        const double pad = 24, scale = 2.0;
+        double minX = _topoNodes.Min(n => n.Position.X);
+        double minY = _topoNodes.Min(n => n.Position.Y);
+        double maxX = _topoNodes.Max(n => n.Position.X + n.Visual.ActualWidth);
+        double maxY = _topoNodes.Max(n => n.Position.Y + n.Visual.ActualHeight);
+        double w = maxX - minX + 2 * pad, h = maxY - minY + 2 * pad;
+        var off = new Vector(pad - minX, pad - minY);
+
+        var dv = new DrawingVisual();
+        using (var dc = dv.RenderOpen())
+        {
+            dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, w, h));
+            var pen = new Pen(new SolidColorBrush(Color.FromRgb(0xC4, 0xCC, 0xD2)), 1.4);
+            foreach (var edge in _topoEdges)
+                dc.DrawLine(pen, Centre(edge.From) + off, Centre(edge.To) + off);
+            foreach (var n in _topoNodes)
+                dc.DrawRectangle(new VisualBrush(n.Visual) { Stretch = Stretch.None }, null,
+                    new Rect(n.Position.X + off.X, n.Position.Y + off.Y, n.Visual.ActualWidth, n.Visual.ActualHeight));
+        }
+
+        var rtb = new RenderTargetBitmap(Math.Max(1, (int)(w * scale)), Math.Max(1, (int)(h * scale)),
+            96 * scale, 96 * scale, PixelFormats.Pbgra32);
+        rtb.Render(dv);
+
+        var kind = _topoPhysical ? "topology" : "ip-distribution";
+        var dlg = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = "PNG (*.png)|*.png",
+            FileName = $"tikman-{kind}-{DateTime.Now:yyyyMMdd-HHmmss}.png",
+        };
+        if (dlg.ShowDialog(this) != true) return;
+        try
+        {
+            var enc = new PngBitmapEncoder();
+            enc.Frames.Add(BitmapFrame.Create(rtb));
+            using var fs = File.Create(dlg.FileName);
+            enc.Save(fs);
+            SetStatus(T("Topo_ExportSaved", dlg.FileName));
+        }
+        catch (IOException ex) { SetStatus(T("Sc_ScanError", ex.Message)); }
     }
 
     private async void Topology_Relayout_Click(object sender, RoutedEventArgs e)
