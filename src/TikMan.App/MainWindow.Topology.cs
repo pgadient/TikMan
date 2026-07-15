@@ -334,22 +334,56 @@ public partial class MainWindow
         }
         foreach (var sw in fdb.Keys.Where(s => s != gwDev)) EnsureBridge(sw, new HashSet<DeviceViewModel>());
 
-        // 2) Every other device: FDB proof first, then the traced router path, then "unknown".
+        // 2) Every other device: FDB proof first, then the traced router path, then "unknown". When
+        //    many devices sit on the *same* bridge port, an unseen switch hangs off that port – so they
+        //    are grouped under one port node instead of fanning out as a wide flat row on the bridge.
+        //    (This is what happens at the gateway's uplink: dozens of devices behind the rest of the
+        //    network that we hold no forwarding table for.)
+        const int PortGroupThreshold = 3;
+        var attachGroups = new Dictionary<(DeviceViewModel, string), List<DeviceViewModel>>();
+        foreach (var d in devices)
+            if (d != gwDev && !nodes.ContainsKey(d) &&
+                AttachOf(d.Model.MacAddress, d) is { } at && nodes.ContainsKey(at.Bridge))
+            {
+                var key = (at.Bridge, at.Port);
+                if (!attachGroups.TryGetValue(key, out var list)) attachGroups[key] = list = new();
+                list.Add(d);
+            }
+
+        var attachedViaFdb = new HashSet<DeviceViewModel>();
+        foreach (var ((bridge, port), members) in attachGroups)
+        {
+            var bridgeNode = nodes[bridge];
+            // Enough devices on one port ⇒ an unseen switch; give them a shared port node.
+            TopoNode parentForLeaves = bridgeNode;
+            int leafLevel = levels[bridgeNode] + 1;
+            if (members.Count >= PortGroupThreshold)
+            {
+                var portNode = AddNode($"::port:{bridge.Model.MacAddress}:{port}", null,
+                    PortLabel(bridge, port), "", "", Role.Infrastructure);
+                levels[portNode] = leafLevel;
+                PlaceAt(leafLevel, portNode);
+                Connect(bridgeNode, portNode);
+                parentForLeaves = portNode;
+                leafLevel += 1;
+            }
+            foreach (var d in members.OrderBy(x => x.Ipv4SortKey))
+            {
+                var leaf = AddDeviceNode(d, Role.Client, members.Count >= PortGroupThreshold ? "" : PortLabel(bridge, port));
+                nodes[d] = leaf;
+                levels[leaf] = leafLevel;
+                PlaceAt(leafLevel, leaf);
+                Connect(parentForLeaves, leaf);
+                attachedViaFdb.Add(d);
+            }
+        }
+
+        // 3) Whatever the FDB couldn't place: a traced router path, else "unknown".
         TopoNode? unknown = null;
         var hopNodes = new Dictionary<string, TopoNode>(StringComparer.OrdinalIgnoreCase);
         foreach (var d in devices.OrderBy(d => d.Ipv4SortKey))
         {
-            if (d == gwDev || nodes.ContainsKey(d)) continue;
-
-            if (AttachOf(d.Model.MacAddress, d) is { } at && nodes.TryGetValue(at.Bridge, out var bridgeNode))
-            {
-                var leaf = AddDeviceNode(d, Role.Client, PortLabel(at.Bridge, at.Port));
-                nodes[d] = leaf;
-                levels[leaf] = levels[bridgeNode] + 1;
-                PlaceAt(levels[leaf], leaf);
-                Connect(bridgeNode, leaf);
-                continue;
-            }
+            if (d == gwDev || nodes.ContainsKey(d) || attachedViaFdb.Contains(d)) continue;
 
             if (traces.TryGetValue(d.Ipv4Address, out var hops))
             {

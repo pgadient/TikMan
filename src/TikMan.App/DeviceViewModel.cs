@@ -927,23 +927,27 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// <summary>This device's bridge forwarding table (MAC → port name), read over REST; null when it
     /// has no credentials, isn't RouterOS, or didn't answer. The physical topology view uses it to
     /// prove which port every neighbour hangs off.</summary>
-    /// <summary>Runs a read-only REST call, falling back to plain HTTP when the HTTPS attempt fails.
+    /// <summary>Runs a read-only REST call over plain HTTP first, then the device's configured client.
     /// RouterOS commonly ships an HTTPS service whose TLS handshake .NET/curl reject ("handshake
-    /// failure"), while the same endpoint answers fine on HTTP – so the topology reads that used to
-    /// return nothing now succeed. Read-only endpoints only; nothing here writes. The password is used
-    /// transiently to build the client, exactly as monitoring does; it is never stored or logged.</summary>
+    /// failure") – trying HTTP:80 first (which these devices answer fine, proven on a live network)
+    /// keeps the topology reads fast and reliable instead of stalling on a broken HTTPS handshake, and
+    /// still falls back to the configured transport for a device that only speaks HTTPS. Read-only
+    /// endpoints only; nothing here writes. The password is used transiently to build the client,
+    /// exactly as monitoring does; it is never stored or logged.</summary>
     private async Task<T?> RestReadAsync<T>(Func<RouterOsClient, CancellationToken, Task<T>> read,
         CancellationToken ct) where T : class
     {
         if (Model.EncryptedPassword.Length == 0) return null;
-        try { return await read(Client, ct); } catch (Exception) { /* try HTTP below */ }
         try
         {
             var password = CredentialProtector.Unprotect(Model.EncryptedPassword);
             using var http = new RouterOsClient(Model.Host, 80, useHttps: false, Model.Username, password,
                 ignoreCertErrors: true);
-            return await read(http, ct);
+            var r = await read(http, ct);
+            if (r is not null) return r;
         }
+        catch (Exception) { /* HTTP off on this device – fall through to the configured client */ }
+        try { return await read(Client, ct); }
         catch (Exception) { return null; } // not RouterOS / no rest policy / unreachable
     }
 
