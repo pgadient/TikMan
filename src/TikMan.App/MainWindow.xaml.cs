@@ -76,9 +76,7 @@ public partial class MainWindow : Window
         foreach (var vm in _devices) ApplyDefaultExpansion(vm); // persisted devices
 
         if (_appData.ShowIpv6View) AddressTabs.SelectedIndex = 1; // restore the last address view
-        ContactButtonsMenuItem.IsChecked = _appData.ShowContactButtons;
         ApplyContactButtons();
-        ListInfoMenuItem.IsChecked = _appData.ShowListInfo;
         ApplyListInfo();
         // A quiet bottom-bar hint when Npcap is missing, so ZON discovery's absence is explained.
         NpcapWarnText.Visibility = ZdpScanner.IsAvailable() ? Visibility.Collapsed : Visibility.Visible;
@@ -220,6 +218,8 @@ public partial class MainWindow : Window
         {
             RouterOsClient.AllowInsecureCertificates = _appData.DefaultIgnoreCertErrors;
             ApplyCoffeeButton();
+            ApplyContactButtons();   // the view toggles live in the settings dialog now
+            ApplyListInfo();
             if (_appData.PersistDeviceList && !oldPersist)
                 MessageBox.Show(this, T("Set_PersistWarn"), T("Set_Title"), MessageBoxButton.OK, MessageBoxImage.Warning);
             if (_appData.ExpandRowsByDefault != oldExpand)
@@ -322,13 +322,6 @@ public partial class MainWindow : Window
         catch { /* no browser */ }
     }
 
-    private void ListInfo_Toggled(object sender, RoutedEventArgs e)
-    {
-        _appData.ShowListInfo = ListInfoMenuItem.IsChecked;
-        ApplyListInfo();
-        SaveAppData();
-    }
-
     private void ApplyListInfo() =>
         ListInfoIcon.Visibility = _appData.ShowListInfo ? Visibility.Visible : Visibility.Collapsed;
 
@@ -414,13 +407,6 @@ public partial class MainWindow : Window
     }
 
     /// <summary>View menu: show or hide the coloured contact buttons (report / request feature).</summary>
-    private void ContactButtons_Toggled(object sender, RoutedEventArgs e)
-    {
-        _appData.ShowContactButtons = ContactButtonsMenuItem.IsChecked;
-        ApplyContactButtons();
-        SaveAppData();
-    }
-
     private void ApplyContactButtons()
     {
         // Only the report/feature buttons – the coffee button has its own setting.
@@ -515,6 +501,11 @@ public partial class MainWindow : Window
     private void ExportIpv4Html_Click(object sender, RoutedEventArgs e) => ExportDevices(ipv6: false, html: true);
     private void ExportIpv6Csv_Click(object sender, RoutedEventArgs e) => ExportDevices(ipv6: true, html: false);
     private void ExportIpv6Html_Click(object sender, RoutedEventArgs e) => ExportDevices(ipv6: true, html: true);
+
+    // Context menu on the list itself: export whatever list is currently in front of the user – the
+    // IPv4 view exports IPv4, the IPv6 view IPv6, with no family picker in between.
+    private void ExportListCsv_Click(object sender, RoutedEventArgs e) => ExportDevices(_v6Mode, html: false);
+    private void ExportListHtml_Click(object sender, RoutedEventArgs e) => ExportDevices(_v6Mode, html: true);
 
     /// <summary>Saves the IPv4 or IPv6 device list as CSV or a self-contained HTML table.</summary>
     private void ExportDevices(bool ipv6, bool html)
@@ -1219,16 +1210,17 @@ public partial class MainWindow : Window
     {
         if (!ReferenceEquals(e.OriginalSource, AddressTabs) || Ipv6Column is null || !IsLoaded) return;
 
-        // Tabs 3/4 swap the grid for a map (IP distribution / topology), tab 5 for the backup panel.
-        bool backup = AddressTabs.SelectedIndex == 4;
-        BackupHost.Visibility = backup ? Visibility.Visible : Visibility.Collapsed;
-        if (AddressTabs.SelectedIndex is 2 or 3)
+        // Tabs 3/4 swap the grid for a map (IP distribution / topology), 5/6 for a panel.
+        int tab = AddressTabs.SelectedIndex;
+        BackupHost.Visibility = tab == 4 ? Visibility.Visible : Visibility.Collapsed;
+        UpdatesHost.Visibility = tab == 5 ? Visibility.Visible : Visibility.Collapsed;
+        if (tab is 2 or 3)
         {
-            ShowTopology(physical: AddressTabs.SelectedIndex == 3);
+            ShowTopology(physical: tab == 3);
             return;
         }
         HideTopology();
-        if (backup)
+        if (tab >= 4)
         {
             DeviceGrid.Visibility = Visibility.Collapsed;
             return;

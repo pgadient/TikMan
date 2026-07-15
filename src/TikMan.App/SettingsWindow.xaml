@@ -52,6 +52,10 @@
 
                 <CheckBox x:Name="ExpandRowsCheck" Margin="0,12,0,0" Content="{loc:Loc Set_ExpandRows}"/>
 
+                <CheckBox x:Name="ContactButtonsCheck" Margin="0,12,0,0" Content="{loc:Loc Menu_ContactButtons}"/>
+
+                <CheckBox x:Name="ListInfoCheck" Margin="0,12,0,0" Content="{loc:Loc Menu_ListInfo}"/>
+
                 <CheckBox x:Name="SingleProgressCheck" Margin="0,12,0,0" Content="{loc:Loc Set_SingleProgress}"/>
                 <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_SingleProgressHint}"/>
 

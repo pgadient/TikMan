@@ -10,8 +10,6 @@
     <DockPanel>
         <Menu DockPanel.Dock="Top" Background="#F9F9F9" BorderBrush="#DDDDDD" BorderThickness="0,0,0,1" Padding="2,1">
             <MenuItem Header="{loc:Loc Menu_File}">
-                <MenuItem Header="{loc:Loc Tb_Settings}" Click="Settings_Click"/>
-                <Separator/>
                 <MenuItem Header="{loc:Loc Menu_Export}">
                     <MenuItem Header="{loc:Loc Exp_Ipv4Csv}" Click="ExportIpv4Csv_Click"/>
                     <MenuItem Header="{loc:Loc Exp_Ipv4Html}" Click="ExportIpv4Html_Click"/>
@@ -19,15 +17,8 @@
                     <MenuItem Header="{loc:Loc Exp_Ipv6Csv}" Click="ExportIpv6Csv_Click"/>
                     <MenuItem Header="{loc:Loc Exp_Ipv6Html}" Click="ExportIpv6Html_Click"/>
                 </MenuItem>
-            </MenuItem>
-            <MenuItem Header="{loc:Loc Menu_Actions}">
-                <MenuItem Header="{loc:Loc Tb_InstallUpdates}" Click="InstallUpdates_Click"/>
-            </MenuItem>
-            <MenuItem Header="{loc:Loc Menu_View}">
-                <MenuItem x:Name="ContactButtonsMenuItem" Header="{loc:Loc Menu_ContactButtons}"
-                          IsCheckable="True" IsChecked="True" Click="ContactButtons_Toggled"/>
-                <MenuItem x:Name="ListInfoMenuItem" Header="{loc:Loc Menu_ListInfo}"
-                          IsCheckable="True" IsChecked="True" Click="ListInfo_Toggled"/>
+                <Separator/>
+                <MenuItem Header="{loc:Loc Tb_Settings}" Click="Settings_Click"/>
             </MenuItem>
         </Menu>
         <Border DockPanel.Dock="Top" Background="#F3F3F3" BorderBrush="#DDDDDD" BorderThickness="0,0,0,1" Padding="6,5">
@@ -190,6 +181,7 @@
                         <TabItem Header="{loc:Loc Tab_Topology}"/>
                         <TabItem Header="{loc:Loc Tab_TopoPhys}"/>
                         <TabItem Header="{loc:Loc Tab_Backup}"/>
+                        <TabItem Header="{loc:Loc Tab_Updates}"/>
                     </TabControl>
                 </DockPanel>
                 <TextBlock x:Name="DeviceCountText" DockPanel.Dock="Bottom" Foreground="#666666" FontSize="11"
@@ -222,6 +214,11 @@
                         <MenuItem Header="{loc:Loc Ctx_SshTerminal}" Click="ContextSsh_Click"/>
                         <MenuItem Header="{loc:Loc Ctx_OpenWinScp}" Click="OpenWinScp_Click"/>
                         <MenuItem Header="{loc:Loc Ctx_WakeOnLan}" Click="WakeDevice_Click"/>
+                        <Separator/>
+                        <!-- Export of the list currently shown – the handlers route to the IPv4 or
+                             IPv6 exporter depending on which view is active. -->
+                        <MenuItem Header="{loc:Loc Ctx_ExportCsv}" Click="ExportListCsv_Click"/>
+                        <MenuItem Header="{loc:Loc Ctx_ExportHtml}" Click="ExportListHtml_Click"/>
                         <Separator/>
                         <MenuItem Header="{loc:Loc Tb_Remove}" Click="RemoveDevice_Click"/>
                     </ContextMenu>
@@ -497,6 +494,20 @@
                     </StackPanel>
                     <TextBlock Margin="0,10,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11"
                                Text="{loc:Loc Bak_SingleHint}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Updates tab: the update wizard that used to live in the title menu. -->
+            <Border x:Name="UpdatesHost" Visibility="Collapsed" Background="#FBFCFD"
+                    BorderBrush="#DDDDDD" BorderThickness="1" Padding="18">
+                <StackPanel MaxWidth="640" HorizontalAlignment="Left">
+                    <TextBlock FontWeight="SemiBold" FontSize="15" Text="{loc:Loc Tab_Updates}"/>
+                    <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#555555"
+                               Text="{loc:Loc Upd_Note}"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                        <Button Style="{StaticResource ToolButton}" Click="InstallUpdates_Click"
+                                Content="{loc:Loc Tb_InstallUpdates}"/>
+                    </StackPanel>
                 </StackPanel>
             </Border>
             </Grid>

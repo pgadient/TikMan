@@ -38,6 +38,8 @@ public partial class SettingsWindow : Window
         CoffeeButtonCombo.SelectedValue = data.CoffeeButton;
         if (CoffeeButtonCombo.SelectedValue is null) CoffeeButtonCombo.SelectedIndex = 0;
         ExpandRowsCheck.IsChecked = data.ExpandRowsByDefault;
+        ContactButtonsCheck.IsChecked = data.ShowContactButtons;
+        ListInfoCheck.IsChecked = data.ShowListInfo;
         SingleProgressCheck.IsChecked = data.SingleProgressBar;
         SnmpCommunityBox.Text = data.SnmpCommunity;
         VncNoticeCheck.IsChecked = data.ShowVncNotice;
@@ -146,6 +148,8 @@ public partial class SettingsWindow : Window
         _data.ForceMailFallback = ForceMailtoCheck.IsChecked == true;
         if (CoffeeButtonCombo.SelectedValue is string coffee) _data.CoffeeButton = coffee;
         _data.ExpandRowsByDefault = ExpandRowsCheck.IsChecked == true;
+        _data.ShowContactButtons = ContactButtonsCheck.IsChecked == true;
+        _data.ShowListInfo = ListInfoCheck.IsChecked == true;
         _data.SingleProgressBar = SingleProgressCheck.IsChecked == true;
         _data.SnmpCommunity = SnmpCommunityBox.Text.Trim() is { Length: > 0 } comm ? comm : "public";
         _data.ShowVncNotice = VncNoticeCheck.IsChecked == true;
