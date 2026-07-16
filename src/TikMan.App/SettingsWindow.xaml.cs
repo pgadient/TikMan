@@ -55,6 +55,16 @@ public partial class SettingsWindow : Window
         WebHttpsCheck.IsChecked = data.WebServerUseHttps;
         WebCertPathBox.Text = data.WebServerCertPath;
         WebCertPasswordBox.Password = CredentialProtector.Unprotect(data.WebServerCertPassword);
+        AutoCheckEnabledCheck.IsChecked = data.AutoCheckEnabled;
+        AutoCheckTimeBox.Text = data.AutoCheckTime;
+        NotifyLevelCombo.SelectedIndex = data.NotifyLevel == NotifyLevel.ErrorsOnly ? 1 : 0;
+        MailToBox.Text = data.MailTo;
+        MailFromBox.Text = data.MailFrom;
+        SmtpHostBox.Text = data.SmtpHost;
+        SmtpPortBox.Text = data.SmtpPort.ToString();
+        SmtpTlsCheck.IsChecked = data.SmtpUseTls;
+        SmtpUserBox.Text = data.SmtpUser;
+        SmtpPasswordBox.Password = CredentialProtector.Unprotect(data.SmtpEncryptedPassword);
         SnmpCommunityBox.Text = data.SnmpCommunity;
         VncNoticeCheck.IsChecked = data.ShowVncNotice;
         PingTimeoutBox.Text = data.PingTimeoutMs.ToString();
@@ -144,6 +154,52 @@ public partial class SettingsWindow : Window
         if (dialog.ShowDialog(this) == true) WebCertPathBox.Text = dialog.FileName;
     }
 
+    /// <summary>"HH:mm" or null. Kept strict on purpose: a schedule is only useful if the time in the box
+    /// is the time it runs, and a half-parsed "3" that quietly becomes 03:00 (or 00:00) is worse than a
+    /// box that refuses.</summary>
+    public static string? ParseTimeOfDay(string text) =>
+        TimeSpan.TryParseExact(text?.Trim(), new[] { @"h\:mm", @"hh\:mm" },
+            System.Globalization.CultureInfo.InvariantCulture, out var t) && t < TimeSpan.FromDays(1)
+            ? $"{t.Hours:00}:{t.Minutes:00}" : null;
+
+    /// <summary>Sends one mail with the settings as they are on screen – not as they were saved. The
+    /// whole point is to find the typo now rather than at 03:00, in a mail that never arrives and can't
+    /// report its own absence.</summary>
+    private async void TestMail_Click(object sender, RoutedEventArgs e)
+    {
+        TestMailButton.IsEnabled = false;
+        MailTestStatus.Foreground = System.Windows.Media.Brushes.Gray;
+        MailTestStatus.Text = LocalizationManager.T("Set_MailTesting");
+        try
+        {
+            int.TryParse(SmtpPortBox.Text.Trim(), out var port);
+            var settings = new MailSettings(SmtpHostBox.Text.Trim(), port, SmtpTlsCheck.IsChecked == true,
+                SmtpUserBox.Text.Trim(), SmtpPasswordBox.Password, MailFromBox.Text.Trim(), MailToBox.Text.Trim());
+
+            var problem = MailSender.Validate(settings);
+            if (problem.Length > 0)
+            {
+                MailTestStatus.Foreground = System.Windows.Media.Brushes.DarkOrange;
+                MailTestStatus.Text = LocalizationManager.T("Set_MailTestFailed", problem);
+                return;
+            }
+            await MailSender.SendAsync(settings, LocalizationManager.T("Mail_TestSubject"),
+                LocalizationManager.T("Mail_TestBody"));
+            MailTestStatus.Foreground = System.Windows.Media.Brushes.ForestGreen;
+            MailTestStatus.Text = LocalizationManager.T("Set_MailTestOk",
+                string.Join(", ", MailSender.Recipients(MailToBox.Text)));
+        }
+        catch (Exception ex)
+        {
+            MailTestStatus.Foreground = System.Windows.Media.Brushes.DarkOrange;
+            // Innermost message: SmtpException wraps the useful part ("authentication failed") in a
+            // generic "failure sending mail".
+            var msg = ex; while (msg.InnerException is { } inner) msg = inner;
+            MailTestStatus.Text = LocalizationManager.T("Set_MailTestFailed", msg.Message);
+        }
+        finally { TestMailButton.IsEnabled = true; }
+    }
+
     private async void CheckNow_Click(object sender, RoutedEventArgs e)
     {
         CheckNowButton.IsEnabled = false;
@@ -226,6 +282,17 @@ public partial class SettingsWindow : Window
         _data.WebServerUseHttps = WebHttpsCheck.IsChecked == true;
         _data.WebServerCertPath = WebCertPathBox.Text.Trim();
         _data.WebServerCertPassword = CredentialProtector.Protect(WebCertPasswordBox.Password);
+        _data.AutoCheckEnabled = AutoCheckEnabledCheck.IsChecked == true;
+        _data.AutoCheckTime = ParseTimeOfDay(AutoCheckTimeBox.Text) ?? _data.AutoCheckTime;
+        _data.NotifyLevel = NotifyLevelCombo.SelectedIndex == 1 ? NotifyLevel.ErrorsOnly : NotifyLevel.Info;
+        _data.MailTo = MailToBox.Text.Trim();
+        _data.MailFrom = MailFromBox.Text.Trim();
+        _data.SmtpHost = SmtpHostBox.Text.Trim();
+        if (int.TryParse(SmtpPortBox.Text.Trim(), out var smtpPort))
+            _data.SmtpPort = Math.Clamp(smtpPort, 1, 65535);
+        _data.SmtpUseTls = SmtpTlsCheck.IsChecked == true;
+        _data.SmtpUser = SmtpUserBox.Text.Trim();
+        _data.SmtpEncryptedPassword = CredentialProtector.Protect(SmtpPasswordBox.Password);
         _data.SnmpCommunity = SnmpCommunityBox.Text.Trim() is { Length: > 0 } comm ? comm : "public";
         _data.ShowVncNotice = VncNoticeCheck.IsChecked == true;
         // Ping tuning – clamp to sane bounds so a typo can't hang or disable the scan.

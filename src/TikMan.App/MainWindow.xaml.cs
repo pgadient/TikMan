@@ -59,6 +59,7 @@ public partial class MainWindow : Window
         _logTimer.Tick += (_, _) => { if (SelectedDevice is { } vm) _ = LoadLogsAsync(vm, quiet: true); };
         _filterDebounce.Tick += FilterDebounce_Tick;
         UpdatesView.RunningChanged += UpdatesView_RunningChanged;
+        InitAutoCheck();
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
@@ -332,6 +333,7 @@ public partial class MainWindow : Window
             ApplyCoffeeButton();
             ApplyContactButtons();   // the view toggles live in the settings dialog now
             ApplyListInfo();
+            ApplyAutoCheckSettings();
             if (_appData.PersistDeviceList && !oldPersist)
                 MessageBox.Show(this, T("Set_PersistWarn"), T("Set_Title"), MessageBoxButton.OK, MessageBoxImage.Warning);
             if (_appData.ExpandRowsByDefault != oldExpand)

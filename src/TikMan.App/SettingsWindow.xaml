@@ -218,6 +218,72 @@
         </ScrollViewer>
         </TabItem>
 
+        <TabItem Header="{loc:Loc SetTab_AutoCheck}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,8,12,0">
+            <StackPanel>
+                <TextBlock TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_AutoCheckIntro}"/>
+
+                <CheckBox x:Name="AutoCheckEnabledCheck" Margin="0,14,0,0" Content="{loc:Loc Set_AutoCheckEnabled}"/>
+
+                <StackPanel Orientation="Horizontal" Margin="20,8,0,0">
+                    <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="{loc:Loc Set_AutoCheckTime}"/>
+                    <TextBox x:Name="AutoCheckTimeBox" Width="70" Height="24" Margin="10,0,0,0"
+                             VerticalContentAlignment="Center"/>
+                </StackPanel>
+                <TextBlock Margin="20,4,0,0" TextWrapping="Wrap" Foreground="#B36B00" FontSize="11"
+                           Text="{loc:Loc Set_AutoCheckTimeHint}"/>
+
+                <Separator Margin="0,16,0,0"/>
+                <TextBlock FontWeight="SemiBold" FontSize="13" Margin="0,12,0,0" Text="{loc:Loc Set_MailHeader}"/>
+
+                <TextBlock FontWeight="SemiBold" Margin="0,12,0,0" Text="{loc:Loc Set_MailWhen}"/>
+                <ComboBox x:Name="NotifyLevelCombo" Width="300" HorizontalAlignment="Left" Margin="0,3,0,0"
+                          SelectedIndex="0">
+                    <ComboBoxItem Content="{loc:Loc Set_MailWhenInfo}"/>
+                    <ComboBoxItem Content="{loc:Loc Set_MailWhenErrors}"/>
+                </ComboBox>
+
+                <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_MailTo}"/>
+                <TextBox x:Name="MailToBox" Height="24" Margin="0,3,0,0" VerticalContentAlignment="Center"/>
+                <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_MailToHint}"/>
+
+                <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_MailFrom}"/>
+                <TextBox x:Name="MailFromBox" Width="300" HorizontalAlignment="Left" Height="24" Margin="0,3,0,0"
+                         VerticalContentAlignment="Center"/>
+
+                <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                    <StackPanel>
+                        <TextBlock FontWeight="SemiBold" Text="{loc:Loc Set_SmtpHost}"/>
+                        <TextBox x:Name="SmtpHostBox" Width="240" Height="24" Margin="0,3,0,0"
+                                 VerticalContentAlignment="Center"/>
+                    </StackPanel>
+                    <StackPanel Margin="12,0,0,0">
+                        <TextBlock FontWeight="SemiBold" Text="{loc:Loc Set_SmtpPort}"/>
+                        <TextBox x:Name="SmtpPortBox" Width="70" Height="24" Margin="0,3,0,0"
+                                 VerticalContentAlignment="Center"/>
+                    </StackPanel>
+                </StackPanel>
+                <CheckBox x:Name="SmtpTlsCheck" Margin="0,10,0,0" Content="{loc:Loc Set_SmtpTls}"/>
+                <TextBlock Margin="20,2,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_SmtpTlsHint}"/>
+
+                <TextBlock FontWeight="SemiBold" Margin="0,14,0,0" Text="{loc:Loc Set_SmtpUser}"/>
+                <TextBox x:Name="SmtpUserBox" Width="240" HorizontalAlignment="Left" Height="24" Margin="0,3,0,0"
+                         VerticalContentAlignment="Center"/>
+
+                <TextBlock FontWeight="SemiBold" Margin="0,10,0,0" Text="{loc:Loc Set_SmtpPassword}"/>
+                <PasswordBox x:Name="SmtpPasswordBox" Width="240" HorizontalAlignment="Left" Height="24" Margin="0,3,0,0"
+                             VerticalContentAlignment="Center"/>
+                <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Foreground="#777777" FontSize="11" Text="{loc:Loc Set_SmtpUserHint}"/>
+
+                <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                    <Button x:Name="TestMailButton" Content="{loc:Loc Set_MailTest}" Padding="12,4" Click="TestMail_Click"/>
+                    <TextBlock x:Name="MailTestStatus" VerticalAlignment="Center" Margin="12,0,0,0"
+                               TextWrapping="Wrap" MaxWidth="360"/>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+        </TabItem>
+
         <TabItem Header="{loc:Loc SetTab_Files}">
         <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,8,12,0">
             <StackPanel>

@@ -5,9 +5,48 @@ using TikMan.Core.Models;
 namespace TikMan.Core.Storage;
 
 /// <summary>Persisted app data (device list + settings).</summary>
+/// <summary>How much of a scheduled check is worth an e-mail.</summary>
+public enum NotifyLevel
+{
+    /// <summary>Only when something went wrong – a device that couldn't be reached or checked.</summary>
+    ErrorsOnly,
+    /// <summary>Every run, including "nothing to do" – proof the schedule is alive.</summary>
+    Info,
+}
+
 public class AppData
 {
     public int Version { get; set; } = 1;
+
+    // ---- Scheduled update check + e-mail notification -------------------------------------------
+    // Deliberately a *check*, not an install: it only reads, so a run at 03:00 can't leave a device
+    // half-updated or a router rebooting with nobody watching. Installing on a schedule is a separate
+    // decision with separate safeguards.
+
+    /// <summary>Run the update check on a schedule (off by default).</summary>
+    public bool AutoCheckEnabled { get; set; }
+
+    /// <summary>Time of day for the check, "HH:mm". ⚠️ TikMan is a desktop app: the schedule only fires
+    /// while it is running. Missing the slot isn't fatal – <see cref="LastAutoCheck"/> makes the next
+    /// start catch up on a slot that has passed today.</summary>
+    public string AutoCheckTime { get; set; } = "03:00";
+
+    /// <summary>When the scheduled check last ran, so a slot is caught up rather than run twice.</summary>
+    public DateTime? LastAutoCheck { get; set; }
+
+    /// <summary>Whether a clean run ("nothing to do") is worth an e-mail too, or only failures.</summary>
+    public NotifyLevel NotifyLevel { get; set; } = NotifyLevel.Info;
+
+    public string SmtpHost { get; set; } = "";
+    /// <summary>587 = STARTTLS, the usual submission port. 465 (implicit TLS) also works.</summary>
+    public int SmtpPort { get; set; } = 587;
+    public bool SmtpUseTls { get; set; } = true;
+    public string SmtpUser { get; set; } = "";
+    /// <summary>SMTP password, DPAPI-encrypted – never in clear text, like every other password here.</summary>
+    public string SmtpEncryptedPassword { get; set; } = "";
+    public string MailFrom { get; set; } = "";
+    /// <summary>Recipients, comma-separated.</summary>
+    public string MailTo { get; set; } = "";
     public int PollIntervalSeconds { get; set; } = 30;
     public bool AutoRefreshEnabled { get; set; }
     public bool LogAutoRefresh { get; set; } = true;
