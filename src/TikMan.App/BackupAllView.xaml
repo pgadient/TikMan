@@ -7,19 +7,16 @@
             <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Foreground="#555555" Text="{loc:Loc Ba_Hint}"/>
 
             <Border DockPanel.Dock="Top" Padding="0,8,0,0">
-                <StackPanel Orientation="Horizontal">
-                    <CheckBox x:Name="AlsoBinaryCheck" VerticalAlignment="Center" Content="{loc:Loc Ba_AlsoBinary}"/>
-                    <TextBlock VerticalAlignment="Center" Margin="12,0,0,0" Foreground="#777777" Text="{loc:Loc Ba_AlsoBinaryHint}"/>
-                </StackPanel>
+                <CheckBox x:Name="AlsoBinaryCheck" VerticalAlignment="Center" Content="{loc:Loc Ba_AlsoBinary}"/>
             </Border>
 
             <Border DockPanel.Dock="Bottom" Padding="0,8,0,0">
                 <DockPanel>
-                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
-                        <Button x:Name="FolderButton" Padding="12,5" Click="ChooseFolder_Click" Content="{loc:Loc Ba_ChooseFolder}"/>
-                        <TextBlock x:Name="FolderText" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="#777777"
-                                   TextTrimming="CharacterEllipsis" MaxWidth="300"/>
-                    </StackPanel>
+                    <!-- No "choose folder" button and no folder to remember: Start asks every time. For
+                         a tool that writes files, confirming where they go beats silently reusing the
+                         folder you picked an hour ago. The path shows here while the run goes. -->
+                    <TextBlock x:Name="FolderText" DockPanel.Dock="Left" VerticalAlignment="Center"
+                               Foreground="#777777" TextTrimming="CharacterEllipsis" MaxWidth="460"/>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                         <Button x:Name="StartButton" Padding="16,6" FontWeight="SemiBold" Click="Start_Click" Content="{loc:Loc Ua_Start}"/>
                         <Button x:Name="StopButton" Padding="16,6" Margin="8,0,0,0" IsEnabled="False" Click="Stop_Click" Content="{loc:Loc Ua_Stop}"/>

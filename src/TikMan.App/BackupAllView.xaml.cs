@@ -74,12 +74,19 @@ public partial class BackupAllView : UserControl
         EmptyHint.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void ChooseFolder_Click(object sender, RoutedEventArgs e)
+    /// <summary>Asks where the backups go. Called on every Start – this writes files, so confirming the
+    /// destination each time beats silently reusing the folder from an hour ago. The last one seeds the
+    /// dialog, so saying yes twice is two clicks, not two navigations. False when the user cancels.</summary>
+    private bool ChooseFolder()
     {
         var dialog = new OpenFolderDialog { Title = T("Dlg_FolderTitle") };
+        if (_folder.Length > 0) dialog.InitialDirectory = _folder;
         var owner = Window.GetWindow(this);
         var ok = owner is null ? dialog.ShowDialog() : dialog.ShowDialog(owner);
-        if (ok == true) { _folder = dialog.FolderName; FolderText.Text = _folder; }
+        if (ok != true) return false;
+        _folder = dialog.FolderName;
+        FolderText.Text = _folder;
+        return true;
     }
 
     private void MoveUp_Click(object sender, RoutedEventArgs e) => MoveSelected(-1);
@@ -102,7 +109,7 @@ public partial class BackupAllView : UserControl
     {
         var selected = _items.Where(i => i.IsSelected).ToList();
         if (selected.Count == 0) { Log(T("Ua_NoneSelected")); return; }
-        if (_folder.Length == 0) { Log(T("Ba_NoFolder")); ChooseFolder_Click(sender, e); if (_folder.Length == 0) return; }
+        if (!ChooseFolder()) return; // cancelled the folder dialog – they know why nothing happened
 
         bool alsoBinary = AlsoBinaryCheck.IsChecked == true;
         _running = true;
@@ -177,7 +184,6 @@ public partial class BackupAllView : UserControl
         StopButton.IsEnabled = running;
         UpButton.IsEnabled = !running;
         DownButton.IsEnabled = !running;
-        FolderButton.IsEnabled = !running;
         AlsoBinaryCheck.IsEnabled = !running;
         foreach (var item in _items) item.CanSelect = !running;
     }
