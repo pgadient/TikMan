@@ -41,7 +41,6 @@ public class BackupItemViewModel : INotifyPropertyChanged
     {
         Device = device;
         _isSelected = true;
-        _stateText = "";
     }
 
     private bool _isSelected;
@@ -50,8 +49,10 @@ public class BackupItemViewModel : INotifyPropertyChanged
     private bool _canSelect = true;
     public bool CanSelect { get => _canSelect; set { _canSelect = value; Notify(nameof(CanSelect)); } }
 
-    private string _stateText;
-    public string StateText { get => _stateText; set { _stateText = value; Notify(nameof(StateText)); } }
+    // No StateText: the free-text column is gone, and what it carried during a run is in the log, which
+    // scrolls, keeps its history and can be read afterwards. What it also carried was "no backup
+    // available" – a standing fact about a row, not run output, so it has nothing to say to a log. That
+    // now reads off the greyed-out tick and the vendor column instead.
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Notify(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
@@ -93,14 +94,9 @@ public partial class BackupAllView : UserControl
         foreach (var device in candidates)
         {
             var item = previous.TryGetValue(device, out var kept) ? kept : new BackupItemViewModel(device);
-            // A device TikMan can't back up says so up front and sits the run out, rather than being
-            // tried and failing once the run is under way.
-            if (!item.IsSupported)
-            {
-                item.IsSelected = false;
-                item.CanSelect = false;
-                item.StateText = T("Ba_StateUnsupported");
-            }
+            // A device TikMan can't back up sits the run out rather than being tried and failing once
+            // it's under way: unticked, and its tick greyed so it can't be put back.
+            if (!item.IsSupported) { item.IsSelected = false; item.CanSelect = false; }
             item.PropertyChanged += Item_PropertyChanged;
             _items.Add(item);
         }
@@ -213,12 +209,11 @@ public partial class BackupAllView : UserControl
 
         if (doConfig)
         {
-            item.StateText = T("Ba_StateConfig");
+            Log(T("Ba_StateConfig"));
             var result = await device.DownloadConfigAsync(ct);
             if (result is not { } data)
             {
-                item.StateText = T("Ba_StateFailed", device.LastError);
-                Log(item.StateText);
+                Log(T("Ba_StateFailed", device.LastError));
                 if (!doBinary) return false;
                 configFailed = true;   // still try the binary – it travels a different path
             }
@@ -231,8 +226,7 @@ public partial class BackupAllView : UserControl
                 }
                 catch (Exception ex)
                 {
-                    item.StateText = T("Ba_StateFailed", ex.Message);
-                    Log(item.StateText);
+                    Log(T("Ba_StateFailed", ex.Message));
                     if (!doBinary) return false;
                     rscName = null;
                     configFailed = true;
@@ -242,8 +236,7 @@ public partial class BackupAllView : UserControl
 
         if (doBinary)
         {
-            item.StateText = T("Ba_StateBinary");
-            Log(item.StateText);
+            Log(T("Ba_StateBinary"));
             // Name it after the config when we have one, so the pair sits together in the folder.
             var name = rscName is { } r
                 ? (r.EndsWith(".rsc") ? r[..^4] : r) + ".backup"
@@ -254,17 +247,15 @@ public partial class BackupAllView : UserControl
             if (ok) binName = name;
             else
             {
-                item.StateText = rscName is null
-                    ? T("Ba_StateFailed", device.LastError)
-                    : T("Ba_StateConfigOnly", device.LastError);
-                Log(item.StateText);
+                Log(rscName is null ? T("Ba_StateFailed", device.LastError)
+                                    : T("Ba_StateConfigOnly", device.LastError));
                 return rscName is not null; // the config landed – count it as a partial success
             }
         }
 
         var files = string.Join(" + ", new[] { rscName, binName }.Where(n => n is not null));
-        item.StateText = configFailed ? T("Ba_StateBinaryOnly", device.LastError) : T("Ba_StateDone");
-        Log(item.StateText + (files.Length > 0 ? " – " + files : ""));
+        var done = configFailed ? T("Ba_StateBinaryOnly", device.LastError) : T("Ba_StateDone");
+        Log(done + (files.Length > 0 ? " – " + files : ""));
         return !configFailed;
     }
 

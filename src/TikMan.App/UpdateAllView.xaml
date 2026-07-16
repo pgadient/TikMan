@@ -62,15 +62,15 @@
                             <!-- Type first: it is what you order the run by. Edge devices (APs, switches)
                                  before the uplink router is a decision you can only make if the list
                                  says which is which. -->
-                            <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding Device.DeviceType}" Width="110"/>
-                            <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding Device.IdentifiedVendor}" Width="110"/>
-                            <DataGridTextColumn Header="{loc:Loc Col_Device}" Binding="{Binding Device.Name}" Width="170"/>
-                            <DataGridTextColumn Header="{loc:Loc Col_Address}" Binding="{Binding Device.Host}" Width="120"/>
-                            <DataGridTextColumn Header="{loc:Loc Col_Installed}" Binding="{Binding Device.Version}" Width="100"/>
+                            <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding Device.DeviceType}" Width="1.2*" MinWidth="90"/>
+                            <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding Device.IdentifiedVendor}" Width="1.2*" MinWidth="90"/>
+                            <DataGridTextColumn Header="{loc:Loc Col_Device}" Binding="{Binding Device.Name}" Width="2*" MinWidth="120"/>
+                            <DataGridTextColumn Header="{loc:Loc Col_Address}" Binding="{Binding Device.Host}" Width="1.3*" MinWidth="110"/>
+                            <DataGridTextColumn Header="{loc:Loc Col_Installed}" Binding="{Binding Device.Version}" Width="1.1*" MinWidth="90"/>
                             <!-- No separate "Latest" column: each entry in this dropdown already carries
                                  the version and its release date, so the channel you pick shows what you
                                  would get. Wide enough for "2026-06-02  7.23.1  (long-term)". -->
-                            <DataGridTemplateColumn Header="{loc:Loc Upd_ChannelLabel}" Width="260">
+                            <DataGridTemplateColumn Header="{loc:Loc Upd_ChannelLabel}" Width="2.6*" MinWidth="250">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <ComboBox SelectedValue="{Binding Channel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"

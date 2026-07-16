@@ -47,6 +47,19 @@
                     </Grid.ColumnDefinitions>
 
                     <DataGrid x:Name="ItemGrid" Grid.Column="0" AutoGenerateColumns="False" CanUserAddRows="False">
+                        <!-- "No backup available" was a standing fact about a row, not run output, so it
+                             had nothing to say to the log when its column went. It lives here instead:
+                             the row greys out, and hovering says why its tick can't be set. -->
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSupported}" Value="False">
+                                        <Setter Property="Foreground" Value="#9A9A9A"/>
+                                        <Setter Property="ToolTip" Value="{loc:Loc Ba_StateUnsupported}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
                         <DataGrid.Columns>
                             <DataGridTemplateColumn Header="" Width="34">
                                 <DataGridTemplateColumn.CellTemplate>
@@ -57,11 +70,13 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding Device.DeviceType}" Width="110"/>
-                            <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding Device.IdentifiedVendor}" Width="110"/>
-                            <DataGridTextColumn Header="{loc:Loc Col_Device}" Binding="{Binding Device.Name}" Width="180"/>
-                            <DataGridTextColumn Header="{loc:Loc Col_Address}" Binding="{Binding Device.Host}" Width="130"/>
-                            <DataGridTextColumn Header="{loc:Loc Col_State}" Binding="{Binding StateText}" Width="*"/>
+                            <!-- Star widths, not fixed ones: the pane is far wider than the old fixed
+                                 columns needed, so names were clipped while the right half sat empty.
+                                 Each column now takes a share of whatever width there is. -->
+                            <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding Device.DeviceType}" Width="1.2*" MinWidth="90"/>
+                            <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding Device.IdentifiedVendor}" Width="1.4*" MinWidth="90"/>
+                            <DataGridTextColumn Header="{loc:Loc Col_Device}" Binding="{Binding Device.Name}" Width="2*" MinWidth="120"/>
+                            <DataGridTextColumn Header="{loc:Loc Col_Address}" Binding="{Binding Device.Host}" Width="1.3*" MinWidth="110"/>
                         </DataGrid.Columns>
                     </DataGrid>
 
