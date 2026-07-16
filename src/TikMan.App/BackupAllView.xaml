@@ -57,9 +57,10 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding Device.DeviceType}" Width="110"/>
+                            <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding Device.IdentifiedVendor}" Width="110"/>
                             <DataGridTextColumn Header="{loc:Loc Col_Device}" Binding="{Binding Device.Name}" Width="180"/>
                             <DataGridTextColumn Header="{loc:Loc Col_Address}" Binding="{Binding Device.Host}" Width="130"/>
-                            <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding Device.DeviceType}" Width="110"/>
                             <DataGridTextColumn Header="{loc:Loc Col_State}" Binding="{Binding StateText}" Width="*"/>
                         </DataGrid.Columns>
                     </DataGrid>

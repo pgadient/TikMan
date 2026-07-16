@@ -59,6 +59,11 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
+                            <!-- Type first: it is what you order the run by. Edge devices (APs, switches)
+                                 before the uplink router is a decision you can only make if the list
+                                 says which is which. -->
+                            <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding Device.DeviceType}" Width="110"/>
+                            <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding Device.IdentifiedVendor}" Width="110"/>
                             <DataGridTextColumn Header="{loc:Loc Col_Device}" Binding="{Binding Device.Name}" Width="170"/>
                             <DataGridTextColumn Header="{loc:Loc Col_Address}" Binding="{Binding Device.Host}" Width="120"/>
                             <DataGridTextColumn Header="{loc:Loc Col_Installed}" Binding="{Binding Device.Version}" Width="100"/>
