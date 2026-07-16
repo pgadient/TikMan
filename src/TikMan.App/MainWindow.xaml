@@ -184,20 +184,27 @@
             </StackPanel>
         </Border>
 
-        <StatusBar DockPanel.Dock="Bottom">
-            <StatusBarItem HorizontalContentAlignment="Stretch">
-                <DockPanel LastChildFill="True">
-                    <ProgressBar x:Name="MainProgress" DockPanel.Dock="Right" Width="200" Height="12" Margin="8,0,0,0" Visibility="Collapsed"/>
-                    <TextBlock x:Name="PublicIpText" DockPanel.Dock="Right" Cursor="Hand" Foreground="#555555" VerticalAlignment="Center"
-                               Margin="8,0,0,0" ToolTip="{loc:Loc Pub_Tooltip}" MouseLeftButtonUp="PublicIp_Click"/>
-                    <!-- Shown only when Npcap is missing: some features (Zyxel ZON) then can't run. -->
-                    <TextBlock x:Name="NpcapWarnText" DockPanel.Dock="Right" Cursor="Hand" Foreground="#B36B00" FontSize="11"
-                               VerticalAlignment="Center" Margin="8,0,0,0" Visibility="Collapsed"
-                               ToolTip="{loc:Loc Npcap_WarnTip}" Text="{loc:Loc Npcap_Warn}" MouseLeftButtonUp="NpcapWarn_Click"/>
-                    <TextBlock x:Name="StatusText" VerticalAlignment="Center" Text="{loc:Loc Status_Ready}"/>
-                </DockPanel>
-            </StatusBarItem>
-        </StatusBar>
+        <!-- Status banner. A one-line StatusBar clipped most of what we have to say – a scan hint or an
+             error is a sentence, not a word – so this is a banner that wraps and grows with its text
+             instead. Same x:Name, so SetStatus() is unchanged. Two lines are the ceiling; beyond that
+             it would push the list around, and the full text stays in the tooltip. -->
+        <Border DockPanel.Dock="Bottom" Background="#F4F6F8" BorderBrush="#DDDDDD" BorderThickness="0,1,0,0"
+                Padding="10,6">
+            <DockPanel LastChildFill="True">
+                <ProgressBar x:Name="MainProgress" DockPanel.Dock="Right" Width="200" Height="12"
+                             VerticalAlignment="Center" Margin="10,0,0,0" Visibility="Collapsed"/>
+                <TextBlock x:Name="PublicIpText" DockPanel.Dock="Right" Cursor="Hand" Foreground="#555555"
+                           VerticalAlignment="Center" Margin="10,0,0,0"
+                           ToolTip="{loc:Loc Pub_Tooltip}" MouseLeftButtonUp="PublicIp_Click"/>
+                <!-- Shown only when Npcap is missing: some features (Zyxel ZON) then can't run. -->
+                <TextBlock x:Name="NpcapWarnText" DockPanel.Dock="Right" Cursor="Hand" Foreground="#B36B00" FontSize="11"
+                           VerticalAlignment="Center" Margin="10,0,0,0" Visibility="Collapsed"
+                           ToolTip="{loc:Loc Npcap_WarnTip}" Text="{loc:Loc Npcap_Warn}" MouseLeftButtonUp="NpcapWarn_Click"/>
+                <TextBlock x:Name="StatusText" VerticalAlignment="Center" Text="{loc:Loc Status_Ready}"
+                           TextWrapping="Wrap" MaxHeight="34" TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+            </DockPanel>
+        </Border>
 
         <Grid Margin="6">
             <Grid.RowDefinitions>

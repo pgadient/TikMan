@@ -1,0 +1,19 @@
+<Window x:Class="TikMan.App.UpdateProgressWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:TikMan.App.Localization"
+        Title="{loc:Loc Upd_ProgressTitle}" Height="220" Width="520"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
+        WindowStyle="ToolWindow" Background="#FFFFFF">
+    <StackPanel Margin="24,20">
+        <TextBlock Text="{loc:Loc Upd_ProgressHeader}" FontSize="17" FontWeight="SemiBold"/>
+        <TextBlock x:Name="SubText" Foreground="#555555" Margin="0,6,0,0" TextWrapping="Wrap"/>
+        <!-- Deliberately big: this is the only thing happening, and it replaces a wait that used to
+             look like a frozen window. -->
+        <ProgressBar x:Name="Bar" Height="26" Minimum="0" Maximum="1" Margin="0,18,0,0"/>
+        <TextBlock x:Name="PercentText" HorizontalAlignment="Center" Margin="0,8,0,0"
+                   FontSize="13" Foreground="#333333"/>
+        <TextBlock Text="{loc:Loc Upd_ProgressFoot}" Foreground="#777777" FontSize="11"
+                   Margin="0,10,0,0" TextWrapping="Wrap"/>
+    </StackPanel>
+</Window>

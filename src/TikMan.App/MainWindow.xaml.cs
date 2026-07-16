@@ -89,18 +89,26 @@ public partial class MainWindow : Window
         _logTimer.IsEnabled = _appData.LogAutoRefresh;
         ApplyTimerSettings();
 
-        if (_devices.Count > 0)
+        // The app's own update check runs *first*, before we touch the network. It is one small HTTPS
+        // call, and everything after it is work we'd throw away: an update restarts the app, so a scan
+        // started underneath it is time the user waits for nothing.
+        if (_appData.CheckForUpdates && await CheckForUpdateAsync()) return; // updating → we're restarting
+
+        // Startup scan off + a stored device list means exactly that: touch nothing, show the list as
+        // it was saved. Refreshing "just the monitoring" here still queried every device, rewrote their
+        // state and re-ran the map behind the user's back – the very thing the setting turns off. The
+        // devices stay grey (never checked this session) until a scan or a refresh says otherwise.
+        if (!_appData.NoInitialScan)
         {
-            await RefreshAllAsync(quiet: false);
-            _ = CheckUpdatesAsync(_devices.ToList());
+            if (_devices.Count > 0)
+            {
+                await RefreshAllAsync(quiet: false);
+                _ = CheckUpdatesAsync(_devices.ToList());
+            }
+            // Discovery runs automatically on startup, adding every host found.
+            await RunDiscoveryAsync(auto: true);
         }
-
-        // Discovery normally runs automatically on startup, adding every host found – unless the user
-        // turned that off in the settings.
-        if (!_appData.NoInitialScan) await RunDiscoveryAsync(auto: true);
-        else { UpdateNoLoginBanner(); SetStatus(T("Status_Ready")); }
-
-        if (_appData.CheckForUpdates) _ = CheckForUpdateAsync();
+        else { UpdateNoLoginBanner(); SetStatus(_devices.Count > 0 ? T("Status_RestoredUnchecked") : T("Status_Ready")); }
 
         if (_appData.WebServerAutoStart) StartWebServer(announce: false);
     }
@@ -115,33 +123,50 @@ public partial class MainWindow : Window
         return (new Version(v.Major, v.Minor, v.Build), exe);
     }
 
-    /// <summary>On startup: if GitHub has a newer release for this build's variant, offer to update.</summary>
-    private async Task CheckForUpdateAsync()
+    /// <summary>On startup: if GitHub has a newer release for this build's variant, offer to update.
+    /// True when we are updating and the app is on its way out – the caller must then start nothing
+    /// else.</summary>
+    private async Task<bool> CheckForUpdateAsync()
     {
         var (current, exeName) = CurrentBuild();
-        if (exeName.Length == 0) return;
+        if (exeName.Length == 0) return false;
+        SetStatus(T("Upd_Checking"));
         var update = await AppUpdater.CheckAsync(current, exeName);
-        if (update is null) return;
+        SetStatus(T("Status_Ready"));
+        if (update is null) return false;
 
         var answer = MessageBox.Show(this,
             T("Upd_AvailableBody", $"{update.Version} „{update.ReleaseName}“", current.ToString()),
             T("Upd_AvailableTitle"), MessageBoxButton.YesNo, MessageBoxImage.Information);
-        if (answer == MessageBoxResult.Yes) await PerformUpdateAsync(update);
+        return answer == MessageBoxResult.Yes && await PerformUpdateAsync(update);
     }
 
     /// <summary>Downloads the update next to the current exe, launches it (telling it to delete this
-    /// one once we exit) and quits. Best-effort – any failure leaves the running version in place.</summary>
-    internal async Task PerformUpdateAsync(AppUpdater.Available update)
+    /// one once we exit) and quits. Best-effort – any failure leaves the running version in place and
+    /// returns false, so the caller carries on as normal.</summary>
+    internal async Task<bool> PerformUpdateAsync(AppUpdater.Available update)
     {
         string exePath;
-        try { exePath = Environment.ProcessPath ?? ""; } catch { return; }
-        if (exePath.Length == 0) return;
+        try { exePath = Environment.ProcessPath ?? ""; } catch { return false; }
+        if (exePath.Length == 0) return false;
 
+        // A modal window for the download: the app is being replaced under the user's feet, so letting
+        // them click around the list meanwhile promises an interactivity we're about to take away – and
+        // a 65 MB download behind a one-line status just looks like a hang.
+        var dlg = new UpdateProgressWindow(update.Version.ToString(), update.ReleaseName) { Owner = this };
+        var progress = new Progress<double>(dlg.SetProgress);
         SetStatus(T("Upd_Downloading", update.Version.ToString()));
+
         var dir = Path.GetDirectoryName(exePath) ?? "";
-        var newExe = await AppUpdater.DownloadAsync(update, dir);
+        var download = AppUpdater.DownloadAsync(update, dir, progress);
+        // Close the dialog when the download ends, whichever way it ends – ShowDialog() below only
+        // returns then, and the window refuses a manual close.
+        _ = download.ContinueWith(_ => dlg.CloseWhenReady(), TaskScheduler.FromCurrentSynchronizationContext());
+        dlg.ShowDialog();
+
+        var newExe = await download;
         if (newExe is null || string.Equals(newExe, exePath, StringComparison.OrdinalIgnoreCase))
-        { SetStatus(T("Upd_Failed")); return; } // failed, or same filename (can't swap in place)
+        { SetStatus(T("Upd_Failed")); return false; } // failed, or same filename (can't swap in place)
 
         try
         {
@@ -151,8 +176,9 @@ public partial class MainWindow : Window
                 Arguments = $"--replaced \"{exePath}\"",
             });
             Application.Current.Shutdown(); // the new instance deletes this exe once we've exited
+            return true;
         }
-        catch (Exception) { SetStatus(T("Upd_Failed")); }
+        catch (Exception) { SetStatus(T("Upd_Failed")); return false; }
     }
 
     private void Window_Closing(object sender, CancelEventArgs e) { StopWebServer(); SaveAppData(); }
