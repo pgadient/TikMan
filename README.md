@@ -8,7 +8,7 @@ protocols or ports: TikMan probes the services itself and figures out what each 
 
 It doesn't reimplement RouterOS; it's a fast, convenient front-end over the REST API **and**
 SSH for managing many devices at once — with a strong bias towards doing the secure thing by
-default. Open source (MIT): **github.com/pgadient/TikMan**.
+default. Free and open source ([MIT](LICENSE)).
 
 ![TikMan's physical topology map: a router at the top, switches below it, and every device drawn under the switch port it is plugged into](screenshots/topo.png)
 
