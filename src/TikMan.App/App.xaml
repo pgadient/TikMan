@@ -16,7 +16,18 @@
             <Setter Property="Margin" Value="2,0"/>
         </Style>
 
+        <!-- Selection is per row everywhere in TikMan, but clicking still drew a focus rectangle around
+             the single cell you hit – faint, and marking something no action here works on. BasedOn
+             keeps the theme's template: dropping it is what makes a DataGridCell style disturb row
+             heights. Applied via the DataGrid style below, so every grid gets it. -->
+        <Style x:Key="NoCellFocus" TargetType="DataGridCell" BasedOn="{StaticResource {x:Type DataGridCell}}">
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+
         <Style TargetType="DataGrid">
+            <Setter Property="CellStyle" Value="{StaticResource NoCellFocus}"/>
+            <Setter Property="SelectionUnit" Value="FullRow"/>
             <Setter Property="AutoGenerateColumns" Value="False"/>
             <Setter Property="IsReadOnly" Value="True"/>
             <Setter Property="CanUserAddRows" Value="False"/>

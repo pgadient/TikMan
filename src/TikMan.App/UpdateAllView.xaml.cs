@@ -2,9 +2,33 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using TikMan.Core.Api;
 using static TikMan.App.Localization.LocalizationManager;
 
 namespace TikMan.App;
+
+/// <summary>One entry of the channel dropdown: "2026-06-02  7.23.1  (stable)" – the date and version
+/// you would get, next to the channel that offers it. Everything the old separate "Latest" column
+/// said, in the place where you choose.</summary>
+public class ChannelChoice : INotifyPropertyChanged
+{
+    public string Channel { get; }
+
+    public ChannelChoice(string channel)
+    {
+        Channel = channel;
+        _display = channel;   // until the release info lands (or if we're offline)
+    }
+
+    private string _display;
+    public string Display { get => _display; private set { _display = value; Notify(nameof(Display)); } }
+
+    public void Describe(string version, string releaseDate) =>
+        Display = $"{releaseDate}  {version}  ({Channel})";
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    private void Notify(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
 
 /// <summary>Row in the update assistant.</summary>
 public class UpdateItemViewModel : INotifyPropertyChanged
@@ -79,6 +103,32 @@ public partial class UpdateAllView : UserControl
     {
         InitializeComponent();
         ItemGrid.ItemsSource = _items;
+        foreach (var c in AllChannels) Channels.Add(new ChannelChoice(c));
+        _ = LoadChannelVersionsAsync();
+    }
+
+    private static readonly string[] AllChannels = { "stable", "long-term", "testing", "development" };
+
+    /// <summary>The channel dropdown's entries. Bound by both the per-device column and the "same channel
+    /// for all" box, so the version and date only have to be fetched once – they come from MikroTik's
+    /// public upgrade server and are the same for every device.</summary>
+    public ObservableCollection<ChannelChoice> Channels { get; } = new();
+
+    /// <summary>Fills in each channel's version and release date. Read-only, and off the public server –
+    /// it touches no device and changes nothing. That matters: a device's channel is only ever written
+    /// when you actually install (see <see cref="UpdateDeviceAsync"/>), so merely reading this list must
+    /// not be what commits you to one.</summary>
+    private async Task LoadChannelVersionsAsync()
+    {
+        foreach (var choice in Channels)
+        {
+            try
+            {
+                var info = await ReleaseInfoClient.GetLatestAsync(choice.Channel);
+                if (info is { } r) choice.Describe(r.Version, r.ReleaseDate.ToString("yyyy-MM-dd"));
+            }
+            catch (Exception) { /* offline: the entry keeps the bare channel name */ }
+        }
     }
 
     /// <summary>Raised when a run starts (true) and ends (false). The host pauses its poll timer for the
@@ -202,10 +252,13 @@ public partial class UpdateAllView : UserControl
         var device = item.Device;
         Log(T("Ua_DeviceHeader", device.Name, device.Host));
 
-        // Apply the chosen channel (one default for all, or the device's own) and check for updates.
+        // The channel is only ever written here, at install time – picking one in the dropdown reads
+        // from MikroTik's public server and leaves the device alone. Say which way it went: a run that
+        // silently re-points a device at another channel is a change worth seeing in the log.
         var channel = _useDefaultChannel ? _defaultChannel : item.Channel;
+        var already = string.Equals(device.UpdateChannel, channel, StringComparison.OrdinalIgnoreCase);
         item.StateText = T("Ua_StateCheck");
-        Log(T("Ua_SettingChannel", channel));
+        Log(already ? T("Ua_ChannelAlready", channel) : T("Ua_ChannelSwitched", device.UpdateChannel, channel));
         if (!await device.SetChannelAsync(channel, ct))
         {
             item.StateText = T("Ua_StateCheckFailed", device.LastError);
