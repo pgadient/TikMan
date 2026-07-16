@@ -38,8 +38,7 @@ public class UpdateItemViewModel : INotifyPropertyChanged
     public UpdateItemViewModel(DeviceViewModel device)
     {
         Device = device;
-        _isSelected = device.UpdateAvailable;
-        _stateText = device.UpdateAvailable ? T("Ua_StateUpdateAvail") : device.UpdateStatusText;
+        _isSelected = device.UpdateAvailable;   // devices with something to install arrive ticked
         _channel = device.UpdateChannel.Length > 0 ? device.UpdateChannel : "stable";
     }
 
@@ -73,12 +72,9 @@ public class UpdateItemViewModel : INotifyPropertyChanged
         set { _canSelect = value; Notify(nameof(CanSelect)); }
     }
 
-    private string _stateText;
-    public string StateText
-    {
-        get => _stateText;
-        set { _stateText = value; Notify(nameof(StateText)); }
-    }
+    // No StateText: the per-row state column is gone. Every line it carried already had a twin in the
+    // log one statement later, so it said everything twice, in two places, in two lengths. The log is
+    // the one that scrolls, keeps its history, and can be read after the run.
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Notify(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
@@ -257,23 +253,19 @@ public partial class UpdateAllView : UserControl
         // silently re-points a device at another channel is a change worth seeing in the log.
         var channel = _useDefaultChannel ? _defaultChannel : item.Channel;
         var already = string.Equals(device.UpdateChannel, channel, StringComparison.OrdinalIgnoreCase);
-        item.StateText = T("Ua_StateCheck");
         Log(already ? T("Ua_ChannelAlready", channel) : T("Ua_ChannelSwitched", device.UpdateChannel, channel));
         if (!await device.SetChannelAsync(channel, ct))
         {
-            item.StateText = T("Ua_StateCheckFailed", device.LastError);
             Log(T("Ua_CheckFailed", device.LastError));
             return false;
         }
         if (!device.UpdateAvailable)
         {
-            item.StateText = T("Ua_StateCurrent");
             item.IsSelected = false;
             Log(T("Ua_AlreadyCurrent"));
             return true;
         }
 
-        item.StateText = T("Ua_StateInstalling", device.LatestVersion);
         Log(T("Ua_Installing", device.LatestVersion));
         try
         {
@@ -281,19 +273,19 @@ public partial class UpdateAllView : UserControl
         }
         catch (Exception ex)
         {
-            item.StateText = T("Ua_StateInstallFailed", ex.Message);
             Log(T("Ua_InstallFailed", ex.Message));
             return false;
         }
 
         if (!waitForOnline)
         {
-            item.StateText = T("Ua_StateStarted");
             Log(T("Ua_StartedNoWait"));
             return true;
         }
 
-        item.StateText = T("Ua_StateWaiting");
+        // The only line the state column had that the log didn't. Said once, not on every poll – a
+        // countdown ticking into a log is noise you have to scroll past afterwards.
+        Log(T("Ua_StateWaiting"));
         var deadline = DateTime.UtcNow + RebootTimeout;
         await Task.Delay(TimeSpan.FromSeconds(20), ct); // wait out the download phase before polling
 
@@ -302,16 +294,13 @@ public partial class UpdateAllView : UserControl
             ct.ThrowIfCancellationRequested();
             if (await device.RefreshAsync(ct))
             {
-                item.StateText = T("Ua_StateDone", device.Version);
                 Log(T("Ua_BackOnline", device.Name, device.Version));
                 await device.CheckUpdateAsync(ct); // reset update status/flag
                 return true;
             }
-            item.StateText = T("Ua_StateWaitingSec", (int)(deadline - DateTime.UtcNow).TotalSeconds);
             await Task.Delay(RebootPollInterval, ct);
         }
 
-        item.StateText = T("Ua_StateTimeout");
         Log(T("Ua_Timeout", device.Name, RebootTimeout.TotalMinutes.ToString("0")));
         return false;
     }

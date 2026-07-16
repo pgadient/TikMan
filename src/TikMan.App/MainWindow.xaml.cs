@@ -1123,6 +1123,20 @@ public partial class MainWindow : Window
         MainProgress.Value = 0;
     }
 
+    /// <summary>The devices the update assistant can actually do something with: RouterOS, and with a
+    /// login. Everything TikMan updates is <c>/system package update</c> – so a printer or an IoT plug
+    /// in that list was only ever there to be scrolled past. Marked devices narrow it further, the way
+    /// they always did.
+    /// <para>MikroTik is asked of <see cref="DeviceViewModel.IdentifiedVendor"/>, not of
+    /// <c>Model.Vendor</c>: that enum picks the connector, defaults to MikroTik and is never assigned,
+    /// so it would let everything through.</para></summary>
+    private List<DeviceViewModel> UpdateCandidates()
+    {
+        var marked = MarkedDevices();
+        var pool = marked.Count > 0 ? marked : _devices.ToList();
+        return pool.Where(d => d.HasCredentials && d.IdentifiedVendor == "MikroTik").ToList();
+    }
+
     /// <summary>What used to bracket the update dialog's ShowDialog(): pause the poll timer while
     /// updates run (a monitoring query mid-reboot is noise at best), and write any reordering back when
     /// they're done. In a tab there is no closing moment to hang that off, so the view says when.</summary>
@@ -1228,7 +1242,7 @@ public partial class MainWindow : Window
         // Fill the assistants on the way in – devices and their versions change with every scan, and
         // both views keep what the user set for the devices that are still here.
         if (tab == 4) BackupView.Load(_devices.Where(d => d.HasCredentials).ToList(), _appData.BackupMethod);
-        if (tab == 5) UpdatesView.Load(MarkedDevices() is { Count: > 0 } marked ? marked : _devices.ToList());
+        if (tab == 5) UpdatesView.Load(UpdateCandidates());
         if (tab is 2 or 3)
         {
             ShowTopology(physical: tab == 3);

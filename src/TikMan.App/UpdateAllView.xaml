@@ -75,7 +75,6 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="{loc:Loc Col_State}" Binding="{Binding StateText}" Width="*"/>
                         </DataGrid.Columns>
                     </DataGrid>
 
@@ -93,8 +92,10 @@
             </Grid>
         </DockPanel>
 
+        <!-- The list only holds what can be updated (RouterOS + a login), so empty means "nothing here
+             qualifies" – not "nothing is marked", which is what this used to say. -->
         <Border x:Name="EmptyHint" Visibility="Collapsed" Background="#FBFCFD">
-            <TextBlock Text="{loc:Loc Msg_NoDevicesMarked}" TextWrapping="Wrap" MaxWidth="420"
+            <TextBlock Text="{loc:Loc Ua_NoCandidates}" TextWrapping="Wrap" MaxWidth="420"
                        Foreground="#666666" HorizontalAlignment="Center" VerticalAlignment="Center"
                        TextAlignment="Center"/>
         </Border>
