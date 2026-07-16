@@ -1220,6 +1220,10 @@ public partial class MainWindow : Window
         int tab = AddressTabs.SelectedIndex;
         BackupHost.Visibility = tab == 4 ? Visibility.Visible : Visibility.Collapsed;
         UpdatesHost.Visibility = tab == 5 ? Visibility.Visible : Visibility.Collapsed;
+        // The detail pane goes with the device list (IPv4/IPv6) and nowhere else: the maps want the
+        // height, and the assistants list the devices themselves – one device's logs underneath that
+        // are just 300px of noise. This is the only place that decides.
+        SetDetailPaneVisible(tab < 2);
         // Fill the assistants on the way in – devices and their versions change with every scan, and
         // both views keep what the user set for the devices that are still here.
         if (tab == 4) BackupView.Load(_devices.Where(d => d.HasCredentials).ToList(), _appData.BackupMethod);

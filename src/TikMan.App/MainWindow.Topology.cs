@@ -101,7 +101,6 @@ public partial class MainWindow
         _topoPhysical = physical;
         TopologyHost.Visibility = Visibility.Visible;
         DeviceGrid.Visibility = Visibility.Collapsed;
-        SetTopologyFullscreen(true);
         UpdateTopoScanBanner();
 
         // "Building…" overlay while we gather evidence + lay out, so the canvas isn't just blank white
@@ -129,7 +128,6 @@ public partial class MainWindow
     {
         TopologyHost.Visibility = Visibility.Collapsed;
         DeviceGrid.Visibility = Visibility.Visible;
-        SetTopologyFullscreen(false);
     }
 
     /// <summary>Keep the graph nicely framed as the window resizes – but only auto-fit while the user
@@ -142,19 +140,24 @@ public partial class MainWindow
 
     /// <summary>A map wants the whole window: the details pane and its splitter fold away while a
     /// topology tab is active and come back when the user returns to the lists.</summary>
-    private void SetTopologyFullscreen(bool on)
+    /// <summary>Shows or hides the bottom detail pane (logs / monitoring / details of the selected
+    /// device) together with its splitter. It belongs to the device list and to nothing else: a map
+    /// wants every pixel of height, and the backup/update assistants bring their own device list, next
+    /// to which one device's logs are just 300px of noise. Only the tab switch decides – it was named
+    /// after the topology because that was the first view to want the room.</summary>
+    private void SetDetailPaneVisible(bool visible)
     {
-        if (on)
-        {
-            DetailRow.MinHeight = 0;
-            DetailRow.Height = new GridLength(0);
-            SplitterRow.Height = new GridLength(0);
-        }
-        else
+        if (visible)
         {
             DetailRow.MinHeight = 120;
             DetailRow.Height = new GridLength(300);
             SplitterRow.Height = new GridLength(6);
+        }
+        else
+        {
+            DetailRow.MinHeight = 0;
+            DetailRow.Height = new GridLength(0);
+            SplitterRow.Height = new GridLength(0);
         }
     }
 
