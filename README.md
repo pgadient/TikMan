@@ -135,29 +135,17 @@ of the same logic.
 
 ## Device requirements (RouterOS v7)
 
-TikMan reaches RouterOS over the **REST API** (`https://<device>/rest/…`) **and/or SSH** — both
-encrypted. You don't have to choose: it prefers HTTPS, falls back to SSH when the HTTPS handshake
-fails, and only uses plain HTTP if you turn that on in the settings.
+Nothing. **SSH is enabled on RouterOS out of the box**, and it's enough on its own for monitoring,
+topology, Wi-Fi names, logs, backups and updates — so a device with a login works as it stands.
 
-1. **HTTPS (recommended):** enable `www-ssl` with a certificate (self-signed is fine on a LAN):
-   ```
-   /certificate add name=local common-name=local key-usage=key-cert-sign,crl-sign
-   /certificate sign local
-   /certificate add name=https common-name=router
-   /certificate sign https ca=local
-   /ip service set www-ssl certificate=https disabled=no
-   ```
-   SSH (port 22) is enabled out of the box and is enough on its own for monitoring, topology and
-   backups if you'd rather not set up certificates.
-2. **A dedicated API user** instead of `admin`:
-   ```
-   /user group add name=monitor policy=read,write,reboot,ssh,ftp,rest-api,test
-   /user add name=monitor group=monitor password=<strong-password>
-   ```
-   - Monitoring / logs / topology / checking updates: `read`, plus `rest-api` (HTTPS) and/or `ssh`.
-   - Config backup (.rsc): `write` (temporary export file) over HTTPS, or `ssh` for `/export`.
-   - Full backup (.backup) over SSH: `ssh`, `ftp`.
-   - Switching channels & installing updates: additionally `write`, `reboot`, `test`.
+TikMan reaches RouterOS over the **REST API** (`https://<device>/rest/…`) **and/or SSH** — both
+encrypted, and you don't have to choose. It prefers HTTPS, falls back to SSH when the HTTPS
+handshake fails (which on RouterOS it often does), and only uses plain HTTP if you switch that on
+yourself. Setting up `www-ssl` with a certificate makes the HTTPS path work; it's worth doing, and
+it's MikroTik's own documentation, not ours.
+
+A dedicated user rather than `admin` is a good idea, as always — TikMan only ever needs what the
+action needs: reading for monitoring, writing for backups, and reboot rights for updates.
 
 ## Build & run
 
