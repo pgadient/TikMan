@@ -46,6 +46,23 @@ underneath. 🔑 marks the devices that have a login stored.*
   that touches a password or a screen.
 - **Seven languages**, self-contained builds for x64 and ARM64, and quiet auto-updates.
 
+## Download
+
+Grab the latest build from **[Releases](https://github.com/pgadient/TikMan/releases)**. There's no
+installer — it's a single exe, and it doesn't write anything outside `%AppData%\TikMan`.
+
+| Take this | If |
+|---|---|
+| `TikMan-<version>-win-x64.exe` | you're on a normal PC — self-contained, nothing else to install (~68 MB) |
+| `TikMan-<version>-win-arm64.exe` | you're on ARM64 (~65 MB) |
+| the `-fdd` builds | you already have the **.NET 10 Desktop Runtime** and want ~12 MB instead |
+
+The exes are **unsigned**, so Windows SmartScreen shows an "unknown publisher" notice on first run —
+*More info → Run anyway*. Code signing would remove it, but needs a paid certificate.
+
+Optional: **Npcap** (in WinPcap-compatible mode) adds Zyxel ZON discovery. It's detected at runtime
+and simply skipped when absent — its licence means it can't be bundled.
+
 ## Features in detail
 
 ### Discovery & classification
@@ -154,10 +171,7 @@ dotnet publish src\TikMan.App -c Release -r win-x64 --self-contained true `
   -p:EnableCompressionInSingleFile=true -o dist\release
 ```
 
-Requires the **.NET 10 SDK**. Releases ship four variants: `win-x64` / `win-arm64`, each
-self-contained (~65 MB, no runtime needed) or framework-dependent (`-fdd`, ~11 MB, needs the
-.NET 10 Desktop Runtime). ZON discovery additionally needs **Npcap** (WinPcap-compatible mode);
-it's detected at runtime and simply skipped if absent.
+Requires the **.NET 10 SDK**. Cutting a release is written down in [RELEASING.md](RELEASING.md).
 
 ## Security & data storage
 
@@ -189,13 +203,3 @@ it is a rule of thumb, not a law. Two things bend it:
 - **The usual "you'll cut off the path" argument is weaker here**, because the assistant waits for
   each device to come back before moving on: once the router is up again, everything behind it is
   reachable again. That argument is about firing updates off blind.
-
-## Releases (maintainer notes)
-
-1. Bump `<Version>` in `src/TikMan.App/TikMan.App.csproj`.
-2. Publish all four variants (`win-x64`/`win-arm64` × self-contained/`-fdd`) and name the assets
-   exactly `TikMan-<version>-win-<arch>[-fdd].exe` — the in-app auto-updater matches on that name.
-3. On GitHub → **Releases → Draft a new release**: tag `vX.Y.Z` (matching `<Version>`), write
-   notes, attach the four exes. Binaries live in Releases, not in git.
-4. The exes are **unsigned**, so SmartScreen shows an "unknown publisher" warning on first run
-   (*More info → Run anyway*). Code signing would remove it but needs a paid certificate.
