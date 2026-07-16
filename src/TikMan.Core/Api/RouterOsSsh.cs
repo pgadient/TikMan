@@ -15,8 +15,10 @@ public static class RouterOsSsh
         new ConnectionInfo(host, port is > 0 and <= 65535 ? port : 22, user,
             new PasswordAuthenticationMethod(user, password)) { Timeout = TimeSpan.FromSeconds(12) }.WithCompatibleMacs();
 
+    /// <summary><paramref name="timeout"/> defaults to 30s, which is plenty for a local print. Pass more
+    /// for anything that leaves the device – an update check asks MikroTik's server and waits for it.</summary>
     private static async Task<string?> RunAsync(string host, int port, string user, string password,
-        string command, CancellationToken ct)
+        string command, CancellationToken ct, TimeSpan? timeout = null)
     {
         try
         {
@@ -27,7 +29,7 @@ public static class RouterOsSsh
                 try
                 {
                     using var cmd = ssh.CreateCommand(command);
-                    cmd.CommandTimeout = TimeSpan.FromSeconds(30);
+                    cmd.CommandTimeout = timeout ?? TimeSpan.FromSeconds(30);
                     return cmd.Execute();
                 }
                 finally { if (ssh.IsConnected) ssh.Disconnect(); }
@@ -113,7 +115,43 @@ public static class RouterOsSsh
         }, ct).ConfigureAwait(false);
     }
 
+    /// <summary>Checks for updates over the SSH CLI, optionally switching the channel first – the same
+    /// pair REST does, for devices whose HTTPS handshake is broken. Null when SSH can't be reached, so
+    /// the caller can fall back.
+    /// <para>Pass <paramref name="channel"/> null to check without touching the channel.</para></summary>
+    public static async Task<UpdateInfo?> CheckForUpdatesAsync(string host, int port, string user, string password,
+        string? channel = null, CancellationToken ct = default)
+    {
+        var script = (channel is { Length: > 0 } c ? $"/system package update set channel={c}; " : "")
+                   + "/system package update check-for-updates; /system package update print";
+        var text = await RunAsync(host, port, user, password, script, ct, TimeSpan.FromSeconds(60))
+            .ConfigureAwait(false);
+        return text is null ? null : ParseUpdate(text);
+    }
+
     // ---- parsers (pure, tested) ----
+
+    /// <summary>Parses <c>/system package update print</c>:
+    /// <code>
+    ///            channel: stable
+    ///  installed-version: 7.23.1
+    ///     latest-version: 7.23.2
+    ///             status: New version is available
+    /// </code>
+    /// The check's own progress chatter ("checking for updates...") carries no colon-key we know, so it
+    /// falls out of <see cref="ParseColon"/> on its own.</summary>
+    public static UpdateInfo ParseUpdate(string text)
+    {
+        var d = ParseColon(text);
+        string Get(string key) => d.TryGetValue(key, out var v) ? v : "";
+        return new UpdateInfo
+        {
+            Channel = Get("channel"),
+            InstalledVersion = Get("installed-version"),
+            LatestVersion = Get("latest-version"),
+            Status = Get("status"),
+        };
+    }
 
     /// <summary>Parses a "key: value" block (/system resource, routerboard, identity) – the keys are
     /// right-aligned with leading spaces, one per line.</summary>

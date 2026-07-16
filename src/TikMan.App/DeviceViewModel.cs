@@ -1196,46 +1196,50 @@ public class DeviceViewModel : INotifyPropertyChanged
         return true;
     }
 
-    public async Task<bool> CheckUpdateAsync(CancellationToken ct = default)
-    {
-        if (Model.Vendor != DeviceVendor.MikroTik) return false; // RouterOS-only update check
-        try
-        {
-            var info = await Client.CheckForUpdatesAsync(ct);
-            ApplyUpdateInfo(info);
-            await UpdateReleaseDateAsync(ct);
-            await FetchChangelogDatesAsync(ct);
-            LastError = "";
-            return true;
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (Exception ex)
-        {
-            UpdateStatusText = T("Upd_CheckFailedStatus");
-            LastError = Shorten(ex);
-            return false;
-        }
-    }
+    public Task<bool> CheckUpdateAsync(CancellationToken ct = default) =>
+        UpdateCheckAsync(channel: null, T("Upd_CheckFailedStatus"), ct);
 
-    public async Task<bool> SetChannelAsync(string channel, CancellationToken ct = default)
+    public Task<bool> SetChannelAsync(string channel, CancellationToken ct = default) =>
+        UpdateCheckAsync(channel, T("Upd_ChannelFailedStatus"), ct);
+
+    /// <summary>Checks for updates – optionally switching the channel first – over HTTPS REST, falling
+    /// back to the SSH CLI. That fallback is the whole point: plenty of RouterOS devices have a broken
+    /// HTTPS handshake ("connection forcibly closed"), which is why every other read here already goes
+    /// this way, and until now the update check was the one that didn't and died on the spot.
+    /// <para>Deliberately <b>not</b> routed through <see cref="SecureReadAsync"/>: that ends in plain
+    /// HTTP when the user allows it, and this writes the channel – a setting, over the wire, with the
+    /// password attached. HTTPS or SSH, or not at all.</para></summary>
+    private async Task<bool> UpdateCheckAsync(string? channel, string failedStatus, CancellationToken ct)
     {
-        if (Model.Vendor != DeviceVendor.MikroTik) return false; // RouterOS-only
+        UpdateInfo? info = null;
         try
         {
-            var info = await Client.SetChannelAndCheckAsync(channel, ct);
-            ApplyUpdateInfo(info);
-            await UpdateReleaseDateAsync(ct);
-            await FetchChangelogDatesAsync(ct);
-            LastError = "";
-            return true;
+            info = channel is null ? await Client.CheckForUpdatesAsync(ct)
+                                   : await Client.SetChannelAndCheckAsync(channel, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (Exception ex)
+        catch (Exception ex) { LastError = Shorten(ex); } // HTTPS broken – try SSH next
+
+        if (info is null && Model.EncryptedPassword.Length > 0)
         {
-            UpdateStatusText = T("Upd_ChannelFailedStatus");
-            LastError = Shorten(ex);
-            return false;
+            try
+            {
+                var password = CredentialProtector.Unprotect(Model.EncryptedPassword);
+                info = await RouterOsSsh.CheckForUpdatesAsync(Model.Host, Model.SshPort, Model.Username,
+                    password, channel, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) { LastError = Shorten(ex); }
         }
+
+        if (info is null) { UpdateStatusText = failedStatus; return false; }
+
+        ApplyUpdateInfo(info);
+        try { await UpdateReleaseDateAsync(ct); await FetchChangelogDatesAsync(ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception) { /* release dates are decoration – the version is what matters */ }
+        LastError = "";
+        return true;
     }
 
     /// <summary>Downloads the config export and returns (Config, Identity); null on error. Secure by

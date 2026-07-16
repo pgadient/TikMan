@@ -252,8 +252,12 @@ public partial class UpdateAllView : UserControl
         // from MikroTik's public server and leaves the device alone. Say which way it went: a run that
         // silently re-points a device at another channel is a change worth seeing in the log.
         var channel = _useDefaultChannel ? _defaultChannel : item.Channel;
-        var already = string.Equals(device.UpdateChannel, channel, StringComparison.OrdinalIgnoreCase);
-        Log(already ? T("Ua_ChannelAlready", channel) : T("Ua_ChannelSwitched", device.UpdateChannel, channel));
+        var current = device.UpdateChannel;
+        // Three cases, not two: we may not know the device's channel yet (nothing has read it – it is
+        // blank until a check runs). "switched from '' to testing" claims a switch that didn't happen.
+        Log(current.Length == 0 ? T("Ua_ChannelSetting", channel)
+            : string.Equals(current, channel, StringComparison.OrdinalIgnoreCase) ? T("Ua_ChannelAlready", channel)
+            : T("Ua_ChannelSwitched", current, channel));
         if (!await device.SetChannelAsync(channel, ct))
         {
             Log(T("Ua_CheckFailed", device.LastError));
