@@ -322,15 +322,14 @@ public static class DeviceClassifier
         return DeviceKind.Router;
     }
 
-    /// <summary>What a device said about itself over mDNS. This outranks everything else, because it
-    /// is the device's own answer rather than our inference: an iPhone, an iPad, a HomePod and an
-    /// Apple TV share one OUI and one (empty) port list, and only here do they differ –
-    /// "iPhone15,2" / "iPad13,8" / "AudioAccessory5,1" / "AppleTV6,2". Unknown when mDNS said nothing
-    /// that places the device.</summary>
-    public static DeviceKind MdnsKind(string? model, IEnumerable<string>? services, string? vendor = null)
+    /// <summary>The hardware model a device published over mDNS – what it says it *is*. This outranks
+    /// everything else, because it is the device's own answer rather than our inference: an iPhone, an
+    /// iPad, a HomePod and an Apple TV share one OUI and one (empty) port list, and only here do they
+    /// differ – "iPhone15,2" / "iPad13,8" / "AudioAccessory5,1" / "AppleTV6,2". Unknown when mDNS
+    /// carried no model, or none we recognise.</summary>
+    public static DeviceKind MdnsModelKind(string? model)
     {
         var m = (model ?? "").ToLowerInvariant();
-        var v = (vendor ?? "").ToLowerInvariant();
 
         // Apple states its hardware model outright.
         if (m.StartsWith("iphone", StringComparison.Ordinal)) return DeviceKind.Smartphone;
@@ -341,6 +340,23 @@ public static class DeviceClassifier
             m.StartsWith("macmini", StringComparison.Ordinal) || m.StartsWith("macpro", StringComparison.Ordinal) ||
             m.StartsWith("mac", StringComparison.Ordinal)) return DeviceKind.Pc;
 
+        return DeviceKind.Unknown;
+    }
+
+    /// <summary>What a device said about itself over mDNS: its model first, then the services it
+    /// advertises. Unknown when mDNS said nothing that places the device.
+    /// <para>⚠️ The service half is weaker than the model half, and callers must treat it that way:
+    /// a model is what the device <i>is</i>, a service is only what happens to be <i>running</i>. Any
+    /// PC can advertise "_spotify-connect._tcp" (the Spotify desktop client does, so you can cast to
+    /// it) or "_raop._tcp" – that makes it a workstation with Spotify open, not a speaker. So a host
+    /// with a real OS signature (see <see cref="IsWindowsHost"/>) must skip this and be classified by
+    /// its ports; use <see cref="MdnsModelKind"/> alone there.</para></summary>
+    public static DeviceKind MdnsKind(string? model, IEnumerable<string>? services, string? vendor = null)
+    {
+        var identity = MdnsModelKind(model);
+        if (identity != DeviceKind.Unknown) return identity;
+
+        var v = (vendor ?? "").ToLowerInvariant();
         var svc = new HashSet<string>(services ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
         bool Any(params string[] names) => names.Any(svc.Contains);
 
@@ -365,6 +381,15 @@ public static class DeviceClassifier
         if (Any("_workstation._tcp")) return DeviceKind.Pc;
 
         return DeviceKind.Unknown;
+    }
+
+    /// <summary>True when the ports say "general-purpose Windows machine": RDP, or the RPC/WMI + SMB
+    /// pair. No appliance on a LAN answers like that, so this is proof of a real OS underneath – which
+    /// is why it beats both the OUI and any mDNS service an application may have registered.</summary>
+    public static bool IsWindowsHost(IReadOnlyCollection<int>? openPorts)
+    {
+        var p = openPorts ?? Array.Empty<int>();
+        return p.Contains(3389) || (p.Contains(135) && p.Contains(445));
     }
 
     private static bool MatchesAny(string text, string[] tokens)
@@ -420,7 +445,7 @@ public static class DeviceClassifier
 
         // 3) A Windows box announces itself with RDP, or with the RPC/WMI + SMB pair. That beats the
         //    OUI: a workstation on a Zyxel-branded NIC is a PC, not a switch.
-        if (Has(3389) || (Has(135) && Has(445))) return DeviceKind.Pc;
+        if (IsWindowsHost(ports)) return DeviceKind.Pc;
 
         // 4) What the device calls itself. This outranks the vendor, because the vendor cannot help
         //    here: an iPhone, an iPad, a HomePod and an Apple TV are one and the same OUI, and a

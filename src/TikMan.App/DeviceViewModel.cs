@@ -713,12 +713,25 @@ public class DeviceViewModel : INotifyPropertyChanged
         // so without this an iPhone, an iPad, a HomePod and an Apple TV are the same device.
         Model.ExtraInfo.TryGetValue("mDNS-Modell", out var mdnsModel);
         Model.ExtraInfo.TryGetValue("mDNS-Dienste", out var mdnsServices);
-        // The vendor goes in too: a TV set and the box plugged into it speak the same protocols, and
-        // only who built it separates them.
-        var mdns = DeviceClassifier.MdnsKind(mdnsModel,
-            mdnsServices?.Split(", ", StringSplitOptions.RemoveEmptyEntries),
-            $"{MacVendor} {IdentifiedVendor}");
-        if (mdns != DeviceKind.Unknown) return mdns;
+
+        // The model is the device's identity and always wins. Its *services* are only what happens to
+        // be running, and on a machine with a real OS that is an application, not the device: the
+        // Spotify desktop client registers "_spotify-connect._tcp" so you can cast to it, which made
+        // every workstation with Spotify open a "speaker" – ahead of the RDP/WMI+SMB signature that
+        // exists precisely to say "this is a PC". So a Windows host skips the service rules and gets
+        // classified by its ports.
+        var identity = DeviceClassifier.MdnsModelKind(mdnsModel);
+        if (identity != DeviceKind.Unknown) return identity;
+
+        if (!DeviceClassifier.IsWindowsHost(Model.OpenPorts))
+        {
+            // The vendor goes in too: a TV set and the box plugged into it speak the same protocols,
+            // and only who built it separates them.
+            var mdns = DeviceClassifier.MdnsKind(mdnsModel,
+                mdnsServices?.Split(", ", StringSplitOptions.RemoveEmptyEntries),
+                $"{MacVendor} {IdentifiedVendor}");
+            if (mdns != DeviceKind.Unknown) return mdns;
+        }
 
         if (Model.Vendor == DeviceVendor.TpLink) return DeviceKind.Switch;
         // SwOS devices (CSS/CRS in switch mode) are switches, not routers.
