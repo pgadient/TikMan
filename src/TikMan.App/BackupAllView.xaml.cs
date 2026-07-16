@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using Microsoft.Win32;
 using TikMan.Core.Models;
 using TikMan.Core.Storage;
@@ -37,27 +38,48 @@ public class BackupItemViewModel : INotifyPropertyChanged
 
 /// <summary>Backup assistant: pick which devices (with a stored login) to back up, in which order, and
 /// whether to also pull the full binary backup (.backup) from MikroTik devices. All transports are the
-/// secure ones – HTTPS/SSH, never HTTP.</summary>
-public partial class BackupAllWindow : Window
+/// secure ones – HTTPS/SSH, never HTTP.
+/// <para>Lives directly in the Backup tab rather than behind a button: the tab was a title, a sentence
+/// and a button that opened this – a door into a room you were already standing in.</para></summary>
+public partial class BackupAllView : UserControl
 {
     private readonly ObservableCollection<BackupItemViewModel> _items = new();
-    private readonly BackupMethod _method;
+    private BackupMethod _method = BackupMethod.Auto;
     private CancellationTokenSource? _cts;
     private bool _running;
     private string _folder = "";
 
-    public BackupAllWindow(List<DeviceViewModel> candidates, BackupMethod method)
+    public BackupAllView()
     {
         InitializeComponent();
-        _method = method;
-        foreach (var device in candidates) _items.Add(new BackupItemViewModel(device));
         ItemGrid.ItemsSource = _items;
+    }
+
+    /// <summary>True while a backup run is in progress – the tab must not swap the list underneath it.</summary>
+    public bool IsRunning => _running;
+
+    /// <summary>(Re)fills the list, called each time the tab is shown: devices come and go with every
+    /// scan, and a stale list would offer to back up something that is no longer there. Ignored while a
+    /// run is going, and the selection/order the user set is kept for devices that are still around.</summary>
+    public void Load(IReadOnlyList<DeviceViewModel> candidates, BackupMethod method)
+    {
+        _method = method;
+        if (_running) return;
+
+        var previous = _items.ToDictionary(i => i.Device);
+        _items.Clear();
+        foreach (var device in candidates)
+            _items.Add(previous.TryGetValue(device, out var old) ? old : new BackupItemViewModel(device));
+
+        EmptyHint.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void ChooseFolder_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFolderDialog { Title = T("Dlg_FolderTitle") };
-        if (dialog.ShowDialog(this) == true) { _folder = dialog.FolderName; FolderText.Text = _folder; }
+        var owner = Window.GetWindow(this);
+        var ok = owner is null ? dialog.ShowDialog() : dialog.ShowDialog(owner);
+        if (ok == true) { _folder = dialog.FolderName; FolderText.Text = _folder; }
     }
 
     private void MoveUp_Click(object sender, RoutedEventArgs e) => MoveSelected(-1);
@@ -75,11 +97,6 @@ public partial class BackupAllWindow : Window
     }
 
     private void Stop_Click(object sender, RoutedEventArgs e) { _cts?.Cancel(); Log(T("Ua_StopRequested")); }
-
-    private void Window_Closing(object sender, CancelEventArgs e)
-    {
-        if (_running) { e.Cancel = true; Log(T("Ua_CloseWhileRunning")); }
-    }
 
     private async void Start_Click(object sender, RoutedEventArgs e)
     {
@@ -158,7 +175,6 @@ public partial class BackupAllWindow : Window
     {
         StartButton.IsEnabled = !running;
         StopButton.IsEnabled = running;
-        CloseButton.IsEnabled = !running;
         UpButton.IsEnabled = !running;
         DownButton.IsEnabled = !running;
         FolderButton.IsEnabled = !running;

@@ -58,6 +58,7 @@ public partial class MainWindow : Window
         _pollTimer.Tick += async (_, _) => await RefreshAllAsync(quiet: true);
         _logTimer.Tick += (_, _) => { if (SelectedDevice is { } vm) _ = LoadLogsAsync(vm, quiet: true); };
         _filterDebounce.Tick += FilterDebounce_Tick;
+        UpdatesView.RunningChanged += UpdatesView_RunningChanged;
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
@@ -1100,32 +1101,6 @@ public partial class MainWindow : Window
     // fetches the binary image alongside the config. DeviceViewModel.DownloadConfigAsync and
     // DownloadFullBackupAsync stay: the wizard and the web server both use them.
 
-    private void BackupAll_Click(object sender, RoutedEventArgs e)
-    {
-        // Only devices with a stored login can be backed up (the config export/SSH both need credentials).
-        var candidates = _devices.Where(d => d.HasCredentials).ToList();
-        if (candidates.Count == 0)
-        {
-            MessageBox.Show(this, T("Msg_NoBackupCandidates"), T("Ba_Title"),
-                MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
-        new BackupAllWindow(candidates, _appData.BackupMethod) { Owner = this }.ShowDialog();
-    }
-
-    private void InstallUpdates_Click(object sender, RoutedEventArgs e)
-    {
-        // Nothing marked → offer the update list for every device.
-        var targets = MarkedDevices();
-        if (targets.Count == 0) targets = _devices.ToList();
-        if (targets.Count == 0)
-        {
-            SetStatus(T("Msg_NoDevicesMarked"));
-            return;
-        }
-        OpenUpdateWindow(targets);
-    }
-
     // ----- Selection / progress -----
 
     private void BeginProgress(int max)
@@ -1147,21 +1122,24 @@ public partial class MainWindow : Window
         MainProgress.Value = 0;
     }
 
-    private void OpenUpdateWindow(List<DeviceViewModel> candidates)
+    /// <summary>What used to bracket the update dialog's ShowDialog(): pause the poll timer while
+    /// updates run (a monitoring query mid-reboot is noise at best), and write any reordering back when
+    /// they're done. In a tab there is no closing moment to hang that off, so the view says when.</summary>
+    private void UpdatesView_RunningChanged(object? sender, bool running)
     {
-        var wasPolling = _pollTimer.IsEnabled;
-        _pollTimer.IsEnabled = false; // don't interfere while updates are running
-        try
+        if (running)
         {
-            var dialog = new UpdateAllWindow(candidates) { Owner = this };
-            dialog.ShowDialog();
-            ApplyUpdateOrder(dialog.OrderedDevices); // persist any reordering done in the dialog
+            _updatesWasPolling = _pollTimer.IsEnabled;
+            _pollTimer.IsEnabled = false;
         }
-        finally
+        else
         {
-            _pollTimer.IsEnabled = wasPolling;
+            _pollTimer.IsEnabled = _updatesWasPolling;
+            ApplyUpdateOrder(UpdatesView.OrderedDevices);
         }
     }
+
+    private bool _updatesWasPolling;
 
     /// <summary>Reorders the main device list so the given devices appear in this order
     /// (at the positions they occupied), then persists the new order.</summary>
@@ -1238,10 +1216,14 @@ public partial class MainWindow : Window
     {
         if (!ReferenceEquals(e.OriginalSource, AddressTabs) || Ipv6Column is null || !IsLoaded) return;
 
-        // Tabs 3/4 swap the grid for a map (IP distribution / topology), 5/6 for a panel.
+        // Tabs 3/4 swap the grid for a map (IP distribution / topology), 5/6 for an assistant.
         int tab = AddressTabs.SelectedIndex;
         BackupHost.Visibility = tab == 4 ? Visibility.Visible : Visibility.Collapsed;
         UpdatesHost.Visibility = tab == 5 ? Visibility.Visible : Visibility.Collapsed;
+        // Fill the assistants on the way in – devices and their versions change with every scan, and
+        // both views keep what the user set for the devices that are still here.
+        if (tab == 4) BackupView.Load(_devices.Where(d => d.HasCredentials).ToList(), _appData.BackupMethod);
+        if (tab == 5) UpdatesView.Load(MarkedDevices() is { Count: > 0 } marked ? marked : _devices.ToList());
         if (tab is 2 or 3)
         {
             ShowTopology(physical: tab == 3);

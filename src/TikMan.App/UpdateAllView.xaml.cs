@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
 using static TikMan.App.Localization.LocalizationManager;
 
 namespace TikMan.App;
@@ -26,7 +27,7 @@ public class UpdateItemViewModel : INotifyPropertyChanged
     }
 
     private string _channel;
-    /// <summary>Per-device channel chosen in the update dialog (used unless "use default channel" is on).</summary>
+    /// <summary>Per-device channel chosen in the update view (used unless "use default channel" is on).</summary>
     public string Channel
     {
         get => _channel;
@@ -59,7 +60,11 @@ public class UpdateItemViewModel : INotifyPropertyChanged
     private void Notify(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
-public partial class UpdateAllWindow : Window
+/// <summary>Update assistant: pick which devices to update, in which order, on which channel.
+/// <para>Lives directly in the Updates tab rather than behind a button. Without a dialog's lifetime to
+/// hang them off, the two things the caller used to do around ShowDialog() – pausing the poll timer and
+/// persisting the order – now hang off <see cref="RunningChanged"/>.</para></summary>
+public partial class UpdateAllView : UserControl
 {
     private static readonly TimeSpan RebootPollInterval = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan RebootTimeout = TimeSpan.FromMinutes(10);
@@ -70,30 +75,42 @@ public partial class UpdateAllWindow : Window
     private bool _useDefaultChannel;
     private string _defaultChannel = "stable";
 
-    public UpdateAllWindow(List<DeviceViewModel> candidates)
+    public UpdateAllView()
     {
         InitializeComponent();
-        foreach (var device in candidates)
-            _items.Add(new UpdateItemViewModel(device));
         ItemGrid.ItemsSource = _items;
     }
 
-    /// <summary>Devices in the (possibly reordered) list order — used by the caller to persist the order.</summary>
+    /// <summary>Raised when a run starts (true) and ends (false). The host pauses its poll timer for the
+    /// duration – a monitoring query in the middle of a reboot is noise at best – and writes the
+    /// (possibly reordered) list back when it's over.</summary>
+    public event EventHandler<bool>? RunningChanged;
+
+    /// <summary>True while updates are being installed.</summary>
+    public bool IsRunning => _running;
+
+    /// <summary>Devices in the (possibly reordered) list order – the host persists this.</summary>
     public IReadOnlyList<DeviceViewModel> OrderedDevices => _items.Select(i => i.Device).ToList();
+
+    /// <summary>(Re)fills the list, called each time the tab is shown, since devices and their versions
+    /// change with every scan. Ignored while a run is going; rows for devices that are still here keep
+    /// the selection, channel and order the user gave them.</summary>
+    public void Load(IReadOnlyList<DeviceViewModel> candidates)
+    {
+        if (_running) return;
+
+        var previous = _items.ToDictionary(i => i.Device);
+        _items.Clear();
+        foreach (var device in candidates)
+            _items.Add(previous.TryGetValue(device, out var old) ? old : new UpdateItemViewModel(device));
+
+        EmptyHint.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     private void UseDefaultChannel_Changed(object sender, RoutedEventArgs e)
     {
         var useDefault = UseDefaultChannelCheck.IsChecked == true;
         foreach (var item in _items) item.ChannelEnabled = !useDefault;
-    }
-
-    private void Window_Closing(object sender, CancelEventArgs e)
-    {
-        if (_running)
-        {
-            e.Cancel = true;
-            Log(T("Ua_CloseWhileRunning"));
-        }
     }
 
     private void MoveUp_Click(object sender, RoutedEventArgs e) => MoveSelected(-1);
@@ -125,13 +142,14 @@ public partial class UpdateAllWindow : Window
             return;
         }
 
-        var answer = MessageBox.Show(this, T("Ua_ConfirmBody", selected.Count),
+        var answer = MessageBox.Show(Window.GetWindow(this)!, T("Ua_ConfirmBody", selected.Count),
             T("Ua_ConfirmTitle"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
         if (answer != MessageBoxResult.Yes) return;
 
         _running = true;
         _cts = new CancellationTokenSource();
         SetUiRunning(true);
+        RunningChanged?.Invoke(this, true);
 
         bool waitForOnline = WaitForOnlineCheck.IsChecked == true;
         bool continueOnError = ContinueOnErrorCheck.IsChecked == true;
@@ -175,6 +193,7 @@ public partial class UpdateAllWindow : Window
             _cts = null;
             SetUiRunning(false);
             UpdateProgress.Visibility = Visibility.Collapsed;
+            RunningChanged?.Invoke(this, false);
         }
     }
 
@@ -248,7 +267,6 @@ public partial class UpdateAllWindow : Window
     {
         StartButton.IsEnabled = !running;
         StopButton.IsEnabled = running;
-        CloseButton.IsEnabled = !running;
         UpButton.IsEnabled = !running;
         DownButton.IsEnabled = !running;
         UseDefaultChannelCheck.IsEnabled = !running;
