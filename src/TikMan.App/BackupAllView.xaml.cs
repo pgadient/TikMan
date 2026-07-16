@@ -14,7 +14,28 @@ namespace TikMan.App;
 public class BackupItemViewModel : INotifyPropertyChanged
 {
     public DeviceViewModel Device { get; }
-    public bool IsMikroTik => Device.Model.Vendor == DeviceVendor.MikroTik;
+
+    /// <summary>Is this really a RouterOS box? Asked of <see cref="DeviceViewModel.IdentifiedVendor"/>,
+    /// which means the board code (REST or MNDP) or the MikroTik OUI – the same test the classifier
+    /// trusts everywhere else.
+    /// <para>⚠️ NOT <c>Model.Vendor == DeviceVendor.MikroTik</c>, which is what this used to ask.
+    /// That enum picks the *connector* (REST vs the TP-Link SSH path), it defaults to MikroTik and
+    /// nothing in the code ever assigns it – so it is true for every device that exists, and the old
+    /// "binary backup on MikroTik only" guard excluded exactly nothing.</para></summary>
+    public bool IsMikroTik => Device.IdentifiedVendor == "MikroTik";
+
+    /// <summary>Whether this device can hand over a config export (.rsc). RouterOS only today, and not
+    /// because of a policy: <see cref="DeviceViewModel.DownloadConfigAsync"/> goes through the RouterOS
+    /// REST client or <c>/export</c> over SSH, and nothing else speaks either. Until now the assistant
+    /// tried it on every device with a login and let the others fail one by one.</summary>
+    public bool CanConfig => IsMikroTik;
+
+    /// <summary>Whether a full binary backup (.backup) can be pulled. Also RouterOS only – it is
+    /// <c>/system backup save</c> plus SCP.</summary>
+    public bool CanBinary => IsMikroTik;
+
+    /// <summary>False when TikMan can't back this device up at all – the row says so and sits out.</summary>
+    public bool IsSupported => CanConfig || CanBinary;
 
     public BackupItemViewModel(DeviceViewModel device)
     {
@@ -67,11 +88,44 @@ public partial class BackupAllView : UserControl
         if (_running) return;
 
         var previous = _items.ToDictionary(i => i.Device);
+        foreach (var old in _items) old.PropertyChanged -= Item_PropertyChanged;
         _items.Clear();
         foreach (var device in candidates)
-            _items.Add(previous.TryGetValue(device, out var old) ? old : new BackupItemViewModel(device));
+        {
+            var item = previous.TryGetValue(device, out var kept) ? kept : new BackupItemViewModel(device);
+            // A device TikMan can't back up says so up front and sits the run out, rather than being
+            // tried and failing once the run is under way.
+            if (!item.IsSupported)
+            {
+                item.IsSelected = false;
+                item.CanSelect = false;
+                item.StateText = T("Ba_StateUnsupported");
+            }
+            item.PropertyChanged += Item_PropertyChanged;
+            _items.Add(item);
+        }
 
         EmptyHint.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        UpdateStartEnabled();
+    }
+
+    private void Item_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(BackupItemViewModel.IsSelected)) UpdateStartEnabled();
+    }
+
+    private void BackupType_Changed(object sender, RoutedEventArgs e) => UpdateStartEnabled();
+
+    /// <summary>Start is only offered when it would actually do something: at least one kind of backup
+    /// asked for, and at least one ticked device that can produce that kind. A disabled button says
+    /// "nothing to do here" before the click; an error in the log says it afterwards.</summary>
+    private void UpdateStartEnabled()
+    {
+        if (StartButton is null) return; // fires from the checkbox during InitializeComponent
+        bool wantConfig = ConfigCheck.IsChecked == true;
+        bool wantBinary = BinaryCheck.IsChecked == true;
+        StartButton.IsEnabled = !_running && _items.Any(i =>
+            i.IsSelected && ((wantConfig && i.CanConfig) || (wantBinary && i.CanBinary)));
     }
 
     /// <summary>Asks where the backups go. Called on every Start – this writes files, so confirming the
@@ -107,11 +161,15 @@ public partial class BackupAllView : UserControl
 
     private async void Start_Click(object sender, RoutedEventArgs e)
     {
-        var selected = _items.Where(i => i.IsSelected).ToList();
-        if (selected.Count == 0) { Log(T("Ua_NoneSelected")); return; }
+        bool wantConfig = ConfigCheck.IsChecked == true;
+        bool wantBinary = BinaryCheck.IsChecked == true;
+        // Only the rows that a run would actually touch. The button is disabled when this is empty, so
+        // this is a guard, not a message.
+        var selected = _items.Where(i => i.IsSelected && ((wantConfig && i.CanConfig) || (wantBinary && i.CanBinary)))
+                             .ToList();
+        if (selected.Count == 0) return;
         if (!ChooseFolder()) return; // cancelled the folder dialog – they know why nothing happened
 
-        bool alsoBinary = AlsoBinaryCheck.IsChecked == true;
         _running = true;
         _cts = new CancellationTokenSource();
         SetUiRunning(true);
@@ -124,7 +182,7 @@ public partial class BackupAllView : UserControl
             foreach (var item in selected)
             {
                 _cts.Token.ThrowIfCancellationRequested();
-                if (await BackupDeviceAsync(item, alsoBinary, _cts.Token)) done++; else failed++;
+                if (await BackupDeviceAsync(item, wantConfig, wantBinary, _cts.Token)) done++; else failed++;
                 BackupProgress.Value += 1;
             }
             Log(T("Ba_Done", done, failed, _folder));
@@ -138,59 +196,88 @@ public partial class BackupAllView : UserControl
         }
     }
 
-    private async Task<bool> BackupDeviceAsync(BackupItemViewModel item, bool alsoBinary, CancellationToken ct)
+    /// <summary>Backs one device up with whatever was asked for *and* it can do. Either half may be off,
+    /// so success is "everything attempted worked" rather than "the config worked": a run for the binary
+    /// alone must not be reported as done because a config we never fetched didn't fail.</summary>
+    private async Task<bool> BackupDeviceAsync(BackupItemViewModel item, bool wantConfig, bool wantBinary,
+        CancellationToken ct)
     {
         var device = item.Device;
         var stamp = DateTime.Now;
         Log(T("Ba_DeviceHeader", device.Name, device.Host));
 
-        item.StateText = T("Ba_StateConfig");
-        var result = await device.DownloadConfigAsync(ct);
-        if (result is not { } data)
-        {
-            item.StateText = T("Ba_StateFailed", device.LastError);
-            Log(item.StateText);
-            return false;
-        }
-        string rscName;
-        try
-        {
-            rscName = BackupNaming.SuggestFileName(data.Identity, device.Board, device.Host, stamp);
-            File.WriteAllText(Path.Combine(_folder, rscName), data.Config);
-        }
-        catch (Exception ex) { item.StateText = T("Ba_StateFailed", ex.Message); Log(item.StateText); return false; }
+        bool doConfig = wantConfig && item.CanConfig;
+        bool doBinary = wantBinary && item.CanBinary;
+        string? rscName = null, binName = null;
+        bool configFailed = false;
 
-        // Optional: the full binary backup (MikroTik only, over SSH). Other vendors ignore the flag.
-        // Only the failure was ever logged, so a binary backup that worked left no trace at all: the
-        // run said "done – <name>.rsc" and the .backup sitting next to it was never mentioned.
-        string? binName = null;
-        if (alsoBinary && item.IsMikroTik)
+        if (doConfig)
+        {
+            item.StateText = T("Ba_StateConfig");
+            var result = await device.DownloadConfigAsync(ct);
+            if (result is not { } data)
+            {
+                item.StateText = T("Ba_StateFailed", device.LastError);
+                Log(item.StateText);
+                if (!doBinary) return false;
+                configFailed = true;   // still try the binary – it travels a different path
+            }
+            else
+            {
+                try
+                {
+                    rscName = BackupNaming.SuggestFileName(data.Identity, device.Board, device.Host, stamp);
+                    File.WriteAllText(Path.Combine(_folder, rscName), data.Config);
+                }
+                catch (Exception ex)
+                {
+                    item.StateText = T("Ba_StateFailed", ex.Message);
+                    Log(item.StateText);
+                    if (!doBinary) return false;
+                    rscName = null;
+                    configFailed = true;
+                }
+            }
+        }
+
+        if (doBinary)
         {
             item.StateText = T("Ba_StateBinary");
             Log(item.StateText);
-            var name = rscName.EndsWith(".rsc") ? rscName[..^4] + ".backup" : rscName + ".backup";
-            var ok = await device.DownloadFullBackupAsync(_method, device.Model.SshPort, Path.Combine(_folder, name), ct);
-            if (!ok)
+            // Name it after the config when we have one, so the pair sits together in the folder.
+            var name = rscName is { } r
+                ? (r.EndsWith(".rsc") ? r[..^4] : r) + ".backup"
+                : BackupNaming.SuggestFileName(device.Name, device.Board, device.Host, stamp)
+                    .Replace(".rsc", "") + ".backup";
+            var ok = await device.DownloadFullBackupAsync(_method, device.Model.SshPort,
+                Path.Combine(_folder, name), ct);
+            if (ok) binName = name;
+            else
             {
-                item.StateText = T("Ba_StateConfigOnly", device.LastError);
+                item.StateText = rscName is null
+                    ? T("Ba_StateFailed", device.LastError)
+                    : T("Ba_StateConfigOnly", device.LastError);
                 Log(item.StateText);
-                return true; // the config was saved – count it as a (partial) success
+                return rscName is not null; // the config landed – count it as a partial success
             }
-            binName = name;
         }
-        item.StateText = T("Ba_StateDone");
-        Log(T("Ba_StateDone") + " – " + rscName + (binName is null ? "" : " + " + binName));
-        return true;
+
+        var files = string.Join(" + ", new[] { rscName, binName }.Where(n => n is not null));
+        item.StateText = configFailed ? T("Ba_StateBinaryOnly", device.LastError) : T("Ba_StateDone");
+        Log(item.StateText + (files.Length > 0 ? " – " + files : ""));
+        return !configFailed;
     }
 
     private void SetUiRunning(bool running)
     {
-        StartButton.IsEnabled = !running;
         StopButton.IsEnabled = running;
         UpButton.IsEnabled = !running;
         DownButton.IsEnabled = !running;
-        AlsoBinaryCheck.IsEnabled = !running;
-        foreach (var item in _items) item.CanSelect = !running;
+        ConfigCheck.IsEnabled = !running;
+        BinaryCheck.IsEnabled = !running;
+        // A device we can't back up stays unpickable when the run ends, not just while it runs.
+        foreach (var item in _items) item.CanSelect = !running && item.IsSupported;
+        UpdateStartEnabled();
     }
 
     private void Log(string message)

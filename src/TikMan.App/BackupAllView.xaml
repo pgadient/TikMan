@@ -7,7 +7,16 @@
             <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Foreground="#555555" Text="{loc:Loc Ba_Hint}"/>
 
             <Border DockPanel.Dock="Top" Padding="0,8,0,0">
-                <CheckBox x:Name="AlsoBinaryCheck" VerticalAlignment="Center" Content="{loc:Loc Ba_AlsoBinary}"/>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock VerticalAlignment="Center" Foreground="#555555" Margin="0,0,10,0"
+                               Text="{loc:Loc Ba_TypesLabel}"/>
+                    <CheckBox x:Name="ConfigCheck" IsChecked="True" VerticalAlignment="Center"
+                              Checked="BackupType_Changed" Unchecked="BackupType_Changed"
+                              Content="{loc:Loc Ba_TypeConfig}"/>
+                    <CheckBox x:Name="BinaryCheck" IsChecked="True" VerticalAlignment="Center" Margin="16,0,0,0"
+                              Checked="BackupType_Changed" Unchecked="BackupType_Changed"
+                              Content="{loc:Loc Ba_TypeBinary}"/>
+                </StackPanel>
             </Border>
 
             <Border DockPanel.Dock="Bottom" Padding="0,8,0,0">
