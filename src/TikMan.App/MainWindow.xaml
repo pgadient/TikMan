@@ -647,7 +647,10 @@
 
                 <TabItem Header="{loc:Loc Tab_Details}">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="12" HorizontalAlignment="Left">
+                    <StackPanel Margin="12">
+                        <!-- Only what has no other home: user / MAC / latest / channel are columns in the
+                             list already, and the per-device backup buttons are what the backup wizard
+                             does better (pick devices, order, binary too). -->
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="170"/>
@@ -655,45 +658,20 @@
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="26"/>
-                                <RowDefinition Height="26"/>
-                                <RowDefinition Height="26"/>
-                                <RowDefinition Height="26"/>
-                                <RowDefinition Height="26"/>
-                                <RowDefinition Height="26"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <TextBlock Grid.Row="0" Grid.Column="0" FontWeight="SemiBold" Text="{loc:Loc Det_Connection}"/>
                             <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding ConnectionDisplay}"/>
-                            <TextBlock Grid.Row="1" Grid.Column="0" FontWeight="SemiBold" Text="{loc:Loc Det_User}"/>
-                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Model.Username}"/>
-                            <TextBlock Grid.Row="2" Grid.Column="0" FontWeight="SemiBold" Text="{loc:Loc Det_Mac}"/>
-                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Model.MacAddress}"/>
-                            <TextBlock Grid.Row="3" Grid.Column="0" FontWeight="SemiBold" Text="{loc:Loc Upd_Latest}"/>
-                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding LatestReleaseText}"/>
-                            <TextBlock Grid.Row="4" Grid.Column="0" FontWeight="SemiBold" Text="{loc:Loc Upd_Channel}"/>
-                            <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding UpdateChannel}"/>
-                            <TextBlock Grid.Row="5" Grid.Column="0" FontWeight="SemiBold" Text="{loc:Loc Det_Notes}"/>
-                            <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding Model.Notes}" TextWrapping="Wrap"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" FontWeight="SemiBold" Text="{loc:Loc Det_Notes}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Model.Notes}" TextWrapping="Wrap"/>
                         </Grid>
-                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0" HorizontalAlignment="Left">
                             <Button Style="{StaticResource ToolButton}" Click="SetLogin_Click" Content="{loc:Loc Det_Edit}"/>
-                            <Button Style="{StaticResource ToolButton}" Click="BackupSingle_Click" Content="{loc:Loc Det_BackupRsc}"/>
-                            <Button Style="{StaticResource ToolButton}" Click="BinaryBackupSingle_Click" Content="{loc:Loc Det_BackupFull}"/>
-                            <Button Click="OpenFirmwarePage_Click" Content="{loc:Loc Det_FirmwarePage}">
-                                <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource ToolButton}">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsTpLink}" Value="True">
-                                                <Setter Property="Visibility" Value="Visible"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
-                            </Button>
                         </StackPanel>
-                        <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#777777" MaxWidth="620" HorizontalAlignment="Left"
-                                   Text="{loc:Loc Det_BackupDesc}"/>
 
+                        <!-- The facts each device told us about itself. A WrapPanel of fixed-width cells,
+                             so this fills the width it is given: one column in a narrow pane, three or
+                             four when the detail pane is dragged open. -->
                         <ItemsControl ItemsSource="{Binding ExtraInfo}" Margin="0,12,0,0">
                             <ItemsControl.Style>
                                 <Style TargetType="ItemsControl">
@@ -704,11 +682,16 @@
                                     </Style.Triggers>
                                 </Style>
                             </ItemsControl.Style>
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <StackPanel Orientation="Horizontal" Margin="0,1">
-                                        <TextBlock Text="{Binding Key}" FontWeight="SemiBold" Foreground="#555555" Width="160"/>
-                                        <TextBlock Text="{Binding Value}" TextWrapping="Wrap" MaxWidth="460"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,1,24,1" Width="400">
+                                        <TextBlock Text="{Binding Key}" FontWeight="SemiBold" Foreground="#555555"
+                                                   Width="150" VerticalAlignment="Top" TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding Key}"/>
+                                        <TextBlock Text="{Binding Value}" TextWrapping="Wrap" Width="250"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
@@ -745,35 +728,9 @@
                     </ScrollViewer>
                 </TabItem>
 
-                <TabItem Header="{loc:Loc Tab_Available}">
-                    <DataGrid ItemsSource="{Binding AvailableUpdates}" AutoGenerateColumns="False" IsReadOnly="True"
-                              CanUserAddRows="False" HeadersVisibility="Column" Margin="4">
-                        <DataGrid.RowStyle>
-                            <Style TargetType="DataGridRow">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsCurrent}" Value="True">
-                                        <Setter Property="FontWeight" Value="SemiBold"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </DataGrid.RowStyle>
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="{loc:Loc Upd_Channel}" Binding="{Binding Channel}" Width="160"/>
-                            <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Version}" Width="140">
-                                <DataGridTextColumn.ElementStyle>
-                                    <Style TargetType="TextBlock">
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsInstalled}" Value="True">
-                                                <Setter Property="Foreground" Value="#2E9E44"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </DataGridTextColumn.ElementStyle>
-                            </DataGridTextColumn>
-                            <DataGridTextColumn Header="{loc:Loc Col_UpdateRel}" Binding="{Binding ReleaseDate}" Width="140"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </TabItem>
+                <!-- The "available updates" tab lived here; it belongs in the Updates view and will be
+                     folded into it. DeviceViewModel.AvailableUpdates and its fetch stay, unused for now,
+                     so there is nothing to rebuild when it moves. -->
 
                 <TabItem Header="{loc:Loc Col_LastError}">
                     <TextBox Text="{Binding LastError, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"
