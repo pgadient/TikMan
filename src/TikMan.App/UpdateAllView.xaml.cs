@@ -30,6 +30,11 @@ public class ChannelChoice : INotifyPropertyChanged
     private void Notify(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
+/// <summary>How one device's turn ended. Three outcomes, not two: a device that was already current
+/// was never touched, and counting it as "updated" claims work that didn't happen – "2 updated" for a
+/// run that installed one thing and skipped the other.</summary>
+public enum UpdateOutcome { Updated, Skipped, Failed }
+
 /// <summary>Row in the update assistant.</summary>
 public class UpdateItemViewModel : INotifyPropertyChanged
 {
@@ -201,7 +206,7 @@ public partial class UpdateAllView : UserControl
         bool continueOnError = ContinueOnErrorCheck.IsChecked == true;
         _useDefaultChannel = UseDefaultChannelCheck.IsChecked == true;
         _defaultChannel = DefaultChannelCombo.SelectedValue as string ?? "stable";
-        int done = 0, failed = 0;
+        int done = 0, skipped = 0, failed = 0;
 
         UpdateProgress.Minimum = 0;
         UpdateProgress.Maximum = selected.Count;
@@ -213,20 +218,19 @@ public partial class UpdateAllView : UserControl
             foreach (var item in selected)
             {
                 _cts.Token.ThrowIfCancellationRequested();
-                var ok = await UpdateDeviceAsync(item, waitForOnline, _cts.Token);
-                if (ok) done++;
-                else
+                switch (await UpdateDeviceAsync(item, waitForOnline, _cts.Token))
                 {
-                    failed++;
-                    if (!continueOnError)
-                    {
-                        Log(T("Ua_AbortOnError"));
+                    case UpdateOutcome.Updated: done++; break;
+                    case UpdateOutcome.Skipped: skipped++; break;
+                    default:
+                        failed++;
+                        if (!continueOnError) { Log(T("Ua_AbortOnError")); goto finished; }
                         break;
-                    }
                 }
                 UpdateProgress.Value += 1;
             }
-            Log(T("Ua_Done", done, failed));
+            finished:
+            Log(T("Ua_Done", done, skipped, failed));
         }
         catch (OperationCanceledException)
         {
@@ -243,7 +247,8 @@ public partial class UpdateAllView : UserControl
         }
     }
 
-    private async Task<bool> UpdateDeviceAsync(UpdateItemViewModel item, bool waitForOnline, CancellationToken ct)
+    private async Task<UpdateOutcome> UpdateDeviceAsync(UpdateItemViewModel item, bool waitForOnline,
+        CancellationToken ct)
     {
         var device = item.Device;
         Log(T("Ua_DeviceHeader", device.Name, device.Host));
@@ -261,13 +266,13 @@ public partial class UpdateAllView : UserControl
         if (!await device.SetChannelAsync(channel, ct))
         {
             Log(T("Ua_CheckFailed", device.LastError));
-            return false;
+            return UpdateOutcome.Failed;
         }
         if (!device.UpdateAvailable)
         {
             item.IsSelected = false;
             Log(T("Ua_AlreadyCurrent"));
-            return true;
+            return UpdateOutcome.Skipped;   // never touched – claiming an update here is what lied
         }
 
         Log(T("Ua_Installing", device.LatestVersion));
@@ -278,13 +283,13 @@ public partial class UpdateAllView : UserControl
         catch (Exception ex)
         {
             Log(T("Ua_InstallFailed", ex.Message));
-            return false;
+            return UpdateOutcome.Failed;
         }
 
         if (!waitForOnline)
         {
             Log(T("Ua_StartedNoWait"));
-            return true;
+            return UpdateOutcome.Updated;
         }
 
         // The only line the state column had that the log didn't. Said once, not on every poll – a
@@ -300,13 +305,13 @@ public partial class UpdateAllView : UserControl
             {
                 Log(T("Ua_BackOnline", device.Name, device.Version));
                 await device.CheckUpdateAsync(ct); // reset update status/flag
-                return true;
+                return UpdateOutcome.Updated;
             }
             await Task.Delay(RebootPollInterval, ct);
         }
 
         Log(T("Ua_Timeout", device.Name, RebootTimeout.TotalMinutes.ToString("0")));
-        return false;
+        return UpdateOutcome.Failed;
     }
 
     private void SetUiRunning(bool running)

@@ -10,6 +10,11 @@ using static TikMan.App.Localization.LocalizationManager;
 
 namespace TikMan.App;
 
+/// <summary>How one device's turn ended. <see cref="Partial"/> is a real third case, not a rounding of
+/// the other two: config saved but the binary failed (or the reverse) is neither "backed up" nor
+/// "failed", and folding it into either one misreports the run.</summary>
+public enum BackupOutcome { Saved, Partial, Failed }
+
 /// <summary>Row in the backup assistant.</summary>
 public class BackupItemViewModel : INotifyPropertyChanged
 {
@@ -172,16 +177,21 @@ public partial class BackupAllView : UserControl
         BackupProgress.Minimum = 0; BackupProgress.Maximum = selected.Count; BackupProgress.Value = 0;
         BackupProgress.Visibility = Visibility.Visible;
 
-        int done = 0, failed = 0;
+        int done = 0, partial = 0, failed = 0;
         try
         {
             foreach (var item in selected)
             {
                 _cts.Token.ThrowIfCancellationRequested();
-                if (await BackupDeviceAsync(item, wantConfig, wantBinary, _cts.Token)) done++; else failed++;
+                switch (await BackupDeviceAsync(item, wantConfig, wantBinary, _cts.Token))
+                {
+                    case BackupOutcome.Saved: done++; break;
+                    case BackupOutcome.Partial: partial++; break;
+                    default: failed++; break;
+                }
                 BackupProgress.Value += 1;
             }
-            Log(T("Ba_Done", done, failed, _folder));
+            Log(T("Ba_Done", done, partial, failed, _folder));
         }
         catch (OperationCanceledException) { Log(T("Ua_Stopped")); }
         finally
@@ -195,7 +205,7 @@ public partial class BackupAllView : UserControl
     /// <summary>Backs one device up with whatever was asked for *and* it can do. Either half may be off,
     /// so success is "everything attempted worked" rather than "the config worked": a run for the binary
     /// alone must not be reported as done because a config we never fetched didn't fail.</summary>
-    private async Task<bool> BackupDeviceAsync(BackupItemViewModel item, bool wantConfig, bool wantBinary,
+    private async Task<BackupOutcome> BackupDeviceAsync(BackupItemViewModel item, bool wantConfig, bool wantBinary,
         CancellationToken ct)
     {
         var device = item.Device;
@@ -214,7 +224,7 @@ public partial class BackupAllView : UserControl
             if (result is not { } data)
             {
                 Log(T("Ba_StateFailed", device.LastError));
-                if (!doBinary) return false;
+                if (!doBinary) return BackupOutcome.Failed;
                 configFailed = true;   // still try the binary – it travels a different path
             }
             else
@@ -227,7 +237,7 @@ public partial class BackupAllView : UserControl
                 catch (Exception ex)
                 {
                     Log(T("Ba_StateFailed", ex.Message));
-                    if (!doBinary) return false;
+                    if (!doBinary) return BackupOutcome.Failed;
                     rscName = null;
                     configFailed = true;
                 }
@@ -249,14 +259,15 @@ public partial class BackupAllView : UserControl
             {
                 Log(rscName is null ? T("Ba_StateFailed", device.LastError)
                                     : T("Ba_StateConfigOnly", device.LastError));
-                return rscName is not null; // the config landed – count it as a partial success
+                // The config landed but the binary didn't: partial, not done and not failed.
+                return rscName is null ? BackupOutcome.Failed : BackupOutcome.Partial;
             }
         }
 
         var files = string.Join(" + ", new[] { rscName, binName }.Where(n => n is not null));
         var done = configFailed ? T("Ba_StateBinaryOnly", device.LastError) : T("Ba_StateDone");
         Log(done + (files.Length > 0 ? " – " + files : ""));
-        return !configFailed;
+        return configFailed ? BackupOutcome.Partial : BackupOutcome.Saved;
     }
 
     private void SetUiRunning(bool running)
