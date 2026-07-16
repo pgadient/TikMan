@@ -239,6 +239,7 @@
                       HorizontalScrollBarVisibility="Auto"
                       RowDetailsVisibilityMode="Collapsed"
                       SelectionMode="Extended"
+                      SelectionUnit="FullRow"
                       LoadingRow="DeviceGrid_LoadingRow"
                       SelectionChanged="DeviceGrid_SelectionChanged"
                       MouseDoubleClick="DeviceGrid_MouseDoubleClick"
@@ -252,6 +253,20 @@
                         <Setter Property="VerticalAlignment" Value="Center"/>
                     </Style>
                 </DataGrid.Resources>
+
+                <!-- Selection is per row, but clicking still drew a focus rectangle around the one cell
+                     you hit – faint, meaningless (nothing here acts on a single cell) and just enough to
+                     catch the eye. Written as a property element, not CellStyle="{StaticResource …}":
+                     attributes on the DataGrid are parsed before DataGrid.Resources exists, so a key
+                     defined right above would not be found yet. BasedOn keeps the theme's template –
+                     that is the part a bare DataGridCell style throws away, which is what disturbs row
+                     heights (see the VCenter note above). -->
+                <DataGrid.CellStyle>
+                    <Style TargetType="DataGridCell" BasedOn="{StaticResource {x:Type DataGridCell}}">
+                        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                        <Setter Property="BorderThickness" Value="0"/>
+                    </Style>
+                </DataGrid.CellStyle>
                 <DataGrid.ContextMenu>
                     <ContextMenu>
                         <MenuItem Header="{loc:Loc Ctx_SetCredsSel}" Click="SetLogin_Click" FontWeight="SemiBold"/>

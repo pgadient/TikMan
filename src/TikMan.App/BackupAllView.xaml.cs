@@ -161,20 +161,25 @@ public partial class BackupAllView : UserControl
         catch (Exception ex) { item.StateText = T("Ba_StateFailed", ex.Message); Log(item.StateText); return false; }
 
         // Optional: the full binary backup (MikroTik only, over SSH). Other vendors ignore the flag.
+        // Only the failure was ever logged, so a binary backup that worked left no trace at all: the
+        // run said "done – <name>.rsc" and the .backup sitting next to it was never mentioned.
+        string? binName = null;
         if (alsoBinary && item.IsMikroTik)
         {
             item.StateText = T("Ba_StateBinary");
-            var binName = rscName.EndsWith(".rsc") ? rscName[..^4] + ".backup" : rscName + ".backup";
-            var ok = await device.DownloadFullBackupAsync(_method, device.Model.SshPort, Path.Combine(_folder, binName), ct);
+            Log(item.StateText);
+            var name = rscName.EndsWith(".rsc") ? rscName[..^4] + ".backup" : rscName + ".backup";
+            var ok = await device.DownloadFullBackupAsync(_method, device.Model.SshPort, Path.Combine(_folder, name), ct);
             if (!ok)
             {
                 item.StateText = T("Ba_StateConfigOnly", device.LastError);
                 Log(item.StateText);
                 return true; // the config was saved – count it as a (partial) success
             }
+            binName = name;
         }
         item.StateText = T("Ba_StateDone");
-        Log(T("Ba_StateDone") + " – " + rscName);
+        Log(T("Ba_StateDone") + " – " + rscName + (binName is null ? "" : " + " + binName));
         return true;
     }
 
