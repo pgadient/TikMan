@@ -1095,78 +1095,10 @@ public partial class MainWindow : Window
 
     // ----- Backups -----
 
-    private async void BackupSingle_Click(object sender, RoutedEventArgs e)
-    {
-        if (SelectedDevice is not { } vm)
-        {
-            SetStatus(T("Msg_SelectDeviceFirst"));
-            return;
-        }
-
-        SetStatus(T("Msg_LoadingConfig", vm.Name));
-        var result = await vm.DownloadConfigAsync();
-        if (result is not { } data)
-        {
-            SetStatus(T("Msg_BackupFailed", vm.Name, vm.LastError));
-            MessageBox.Show(this, T("Msg_BackupCantLoad", vm.LastError),
-                T("Msg_BackupSaveTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
-        }
-
-        var dialog = new SaveFileDialog
-        {
-            Title = T("Msg_BackupSaveTitle"),
-            FileName = BackupNaming.SuggestFileName(data.Identity, vm.Board, vm.Host, DateTime.Now),
-            Filter = T("Dlg_RscFilter"),
-            AddExtension = true,
-        };
-        if (dialog.ShowDialog(this) != true) return;
-
-        try
-        {
-            File.WriteAllText(dialog.FileName, data.Config);
-            SetStatus(T("Msg_BackupSaved", vm.Name, dialog.FileName));
-        }
-        catch (Exception ex)
-        {
-            SetStatus(T("Msg_SaveFailed", ex.Message));
-            MessageBox.Show(this, T("Msg_SaveFileFailed", ex.Message),
-                T("Msg_SaveFailedTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
-    }
-
-    private async void BinaryBackupSingle_Click(object sender, RoutedEventArgs e)
-    {
-        if (SelectedDevice is not { } vm)
-        {
-            SetStatus(T("Msg_SelectDeviceFirst"));
-            return;
-        }
-
-        var suggested = BackupNaming.SuggestFileName(vm.Name, vm.Board, vm.Host, DateTime.Now)
-            .Replace(".rsc", ".backup");
-        var dialog = new SaveFileDialog
-        {
-            Title = T("Full_SaveTitle"),
-            FileName = suggested,
-            Filter = T("Full_Filter"),
-            AddExtension = true,
-        };
-        if (dialog.ShowDialog(this) != true) return;
-
-        SetStatus(T("Full_Running", vm.Name));
-        var ok = await vm.DownloadFullBackupAsync(_appData.BackupMethod, vm.Model.SshPort, dialog.FileName);
-        if (ok)
-        {
-            SetStatus(T("Full_Saved", vm.Name, dialog.FileName));
-        }
-        else
-        {
-            SetStatus(T("Full_Failed", vm.Name, vm.LastError));
-            MessageBox.Show(this, T("Full_FailedBody", vm.LastError),
-                T("Full_FailedTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
-    }
+    // The single-device .rsc / .backup buttons lived here. The backup wizard (BackupAllWindow) does
+    // the same job better – it picks the devices that actually have a login, sets their order and
+    // fetches the binary image alongside the config. DeviceViewModel.DownloadConfigAsync and
+    // DownloadFullBackupAsync stay: the wizard and the web server both use them.
 
     private void BackupAll_Click(object sender, RoutedEventArgs e)
     {
