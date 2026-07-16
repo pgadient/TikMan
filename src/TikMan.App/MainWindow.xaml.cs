@@ -84,6 +84,7 @@ public partial class MainWindow : Window
         // A quiet bottom-bar hint when Npcap is missing, so ZON discovery's absence is explained.
         NpcapWarnText.Visibility = ZdpScanner.IsAvailable() ? Visibility.Collapsed : Visibility.Visible;
         UpdateDeviceCount();
+        ApplyDetailCollapsed(); // paints the chevron; the tab handler doesn't run this early
         SelectIntervalItem(_appData.PollIntervalSeconds);
         AutoRefreshCheck.IsChecked = _appData.AutoRefreshEnabled;
         LogAutoRefreshCheck.IsChecked = _appData.LogAutoRefresh;

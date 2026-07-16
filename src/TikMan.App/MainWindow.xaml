@@ -721,6 +721,15 @@
                              Background="Transparent" Margin="6" FontFamily="Consolas" FontSize="12"/>
                 </TabItem>
             </TabControl>
+
+            <!-- Collapse/expand the detail pane. Sits over the tab strip's right end, because that is
+                 the one strip that stays on screen when the pane is folded away – collapsing it to
+                 nothing would take the button with it and there would be no way back. -->
+            <Button x:Name="DetailToggle" Grid.Row="2" Click="DetailToggle_Click"
+                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,4,0"
+                    Padding="9,0" MinWidth="26" Height="20" FontSize="11" Cursor="Hand"
+                    Background="Transparent" BorderBrush="#CCCCCC" Foreground="#555555"
+                    ToolTip="{loc:Loc Det_TogglePane}"/>
         </Grid>
     </DockPanel>
 

@@ -140,6 +140,13 @@ public partial class MainWindow
 
     /// <summary>A map wants the whole window: the details pane and its splitter fold away while a
     /// topology tab is active and come back when the user returns to the lists.</summary>
+    /// <summary>Height the detail pane keeps when folded away by the chevron: the tab strip and nothing
+    /// else. Not zero – the strip carries the chevron that folds it back out.</summary>
+    private const double CollapsedDetailHeight = 24;
+
+    private double _detailHeight = 300;   // what to restore to; follows the splitter
+    private bool _detailCollapsed;
+
     /// <summary>Shows or hides the bottom detail pane (logs / monitoring / details of the selected
     /// device) together with its splitter. It belongs to the device list and to nothing else: a map
     /// wants every pixel of height, and the backup/update assistants bring their own device list, next
@@ -149,16 +156,42 @@ public partial class MainWindow
     {
         if (visible)
         {
-            DetailRow.MinHeight = 120;
-            DetailRow.Height = new GridLength(300);
             SplitterRow.Height = new GridLength(6);
+            DetailToggle.Visibility = Visibility.Visible;
+            ApplyDetailCollapsed();   // come back to the list the way the user left it, not at 300
         }
         else
         {
+            RememberDetailHeight();
             DetailRow.MinHeight = 0;
             DetailRow.Height = new GridLength(0);
             SplitterRow.Height = new GridLength(0);
+            DetailToggle.Visibility = Visibility.Collapsed;
         }
+    }
+
+    private void DetailToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_detailCollapsed) RememberDetailHeight();
+        _detailCollapsed = !_detailCollapsed;
+        ApplyDetailCollapsed();
+    }
+
+    /// <summary>The pane is at the bottom, so the chevron points where the click sends its top edge:
+    /// up to open, down to fold away.</summary>
+    private void ApplyDetailCollapsed()
+    {
+        DetailRow.MinHeight = _detailCollapsed ? 0 : 120;
+        DetailRow.Height = new GridLength(_detailCollapsed ? CollapsedDetailHeight : _detailHeight);
+        DetailToggle.Content = _detailCollapsed ? "⌃" : "⌄";
+    }
+
+    /// <summary>Keeps whatever height the pane has now, so dragging the splitter and then folding twice
+    /// returns to the size the user chose rather than to 300.</summary>
+    private void RememberDetailHeight()
+    {
+        if (!_detailCollapsed && DetailRow.ActualHeight > CollapsedDetailHeight + 1)
+            _detailHeight = DetailRow.ActualHeight;
     }
 
     /// <summary>Drops the collected topology evidence, so the next look at a map gathers it afresh –
