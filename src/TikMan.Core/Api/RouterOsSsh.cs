@@ -131,18 +131,32 @@ public static class RouterOsSsh
 
     // ---- parsers (pure, tested) ----
 
-    /// <summary>Parses <c>/system package update print</c>:
+    /// <summary>Parses <c>/system package update print</c> (real output from an L009 on 7.24beta3):
     /// <code>
-    ///            channel: stable
-    ///  installed-version: 7.23.1
-    ///     latest-version: 7.23.2
+    ///            channel: testing
+    ///               mode: https
+    ///  check-certificate: yes
+    ///         ip-version: auto
+    ///  installed-version: 7.24beta3
+    ///     latest-version: 7.24rc1
     ///             status: New version is available
     /// </code>
-    /// The check's own progress chatter ("checking for updates...") carries no colon-key we know, so it
-    /// falls out of <see cref="ParseColon"/> on its own.</summary>
+    /// <para>⚠️ Last value wins, which is why this doesn't use <see cref="ParseColon"/>: that keeps the
+    /// <i>first</i> value per key, and we run check-for-updates and print in one command. The check
+    /// prints its own block first, with a status that reads "checking for updates..." while it is still
+    /// talking to MikroTik – first-wins would hand back that half-finished block instead of the print's
+    /// settled one. Keys we don't know (mode, check-certificate, ip-version) simply fall out.</para></summary>
     public static UpdateInfo ParseUpdate(string text)
     {
-        var d = ParseColon(text);
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in text.Split('\n'))
+        {
+            var line = raw.TrimEnd('\r');
+            var c = line.IndexOf(':');
+            if (c <= 0) continue;
+            var key = line[..c].Trim();
+            if (key.Length > 0 && !key.Contains(' ')) d[key] = line[(c + 1)..].Trim(); // last wins
+        }
         string Get(string key) => d.TryGetValue(key, out var v) ? v : "";
         return new UpdateInfo
         {
