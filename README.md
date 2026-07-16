@@ -176,9 +176,19 @@ it's detected at runtime and simply skipped if absent.
 
 ## Note on bulk updates
 
-Updates reboot the device, so the assistant works sequentially and in list order: **edge devices
-first (APs, switches), the uplink router last** — otherwise you cut off the path to the devices
-still waiting.
+Updates reboot the device, so the assistant works sequentially and in list order, waiting for each
+device to come back before starting the next. Reorder with ▲/▼.
+
+As a rule of thumb, put the **edge devices first (APs, switches) and the uplink router last** — but
+it is a rule of thumb, not a law. Two things bend it:
+
+- **CAPsMAN.** If your controller is set to carry its CAPs along (`upgrade-policy`), the controller
+  goes **first** and pulls them up to its version. Upgrade a CAP ahead of its controller and it can
+  come back on a version the controller won't provision. With `upgrade-policy=none` this doesn't
+  apply — the controller leaves its CAPs alone.
+- **The usual "you'll cut off the path" argument is weaker here**, because the assistant waits for
+  each device to come back before moving on: once the router is up again, everything behind it is
+  reachable again. That argument is about firing updates off blind.
 
 ## Releases (maintainer notes)
 
