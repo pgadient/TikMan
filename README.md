@@ -10,18 +10,25 @@ It doesn't reimplement RouterOS; it's a fast, convenient front-end over the REST
 SSH for managing many devices at once — with a strong bias towards doing the secure thing by
 default. Open source (MIT): **github.com/pgadient/TikMan**.
 
+![TikMan's physical topology map: a router at the top, switches below it, and every device drawn under the switch port it is plugged into](screenshots/topo.png)
+
+*The physical map: not "these 40 addresses answered", but **which switch port each device is
+actually plugged into** — read from the bridge forwarding tables over RouterOS or plain SNMP.
+Traceroute cannot see layer 2; the forwarding table can. Exportable as PNG or vector PDF.*
+
 > ⚠️ **Disclaimer.** TikMan is developed with heavy AI assistance and tested against a real,
 > mixed-vendor network — but not against every device out there. It is provided **without any
 > warranty** ([LICENSE](LICENSE), MIT) and used **at your own risk**. Be especially careful
 > with **"Install update"** and **"Backup"**, which reboot devices and export configurations:
 > test first, verify your backups, and mind the ordering when doing bulk updates.
 
-## Screenshot
+## Screenshots
 
-![TikMan main window with the network scan dialog open](screenshots/main_window.png)
+![TikMan's main window: the device list, one row expanded to show its SMB shares, with the selected device's RouterOS log below](screenshots/main_window.png)
 
-*Main window: the device list with per-device details, monitoring, logs, updates and the
-topology maps — here with the network-scan dialog on top.*
+*The device list. Each device is identified and classified — type, name, addresses, the services
+it answers on, vendor and model — with the selected device's logs, CPU/memory and details
+underneath. 🔑 marks the devices that have a login stored.*
 
 ## Highlights
 
