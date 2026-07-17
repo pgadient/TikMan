@@ -1,10 +1,28 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="TikMan.App.Avalonia.MainWindow"
-        Width="960" Height="640"
+        x:CompileBindings="False"
+        Width="1040" Height="680"
         Title="TikMan">
-    <StackPanel Margin="24" Spacing="12">
-        <TextBlock Text="TikMan" FontSize="24" FontWeight="SemiBold" />
-        <TextBlock Text="Avalonia native GUI — Gerüst läuft." Opacity="0.7" />
-    </StackPanel>
+    <DockPanel Margin="16">
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="14" Margin="0,0,0,12">
+            <TextBlock Text="TikMan" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <Button Content="Scannen" Click="OnScanClick" IsEnabled="{Binding CanScan}" />
+            <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Opacity="0.7" />
+        </StackPanel>
+
+        <DataGrid ItemsSource="{Binding Devices}"
+                  IsReadOnly="True"
+                  CanUserResizeColumns="True"
+                  GridLinesVisibility="Horizontal">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="2*" />
+                <DataGridTextColumn Header="IP" Binding="{Binding Ip}" Width="Auto" />
+                <DataGridTextColumn Header="Typ" Binding="{Binding KindText}" Width="Auto" />
+                <DataGridTextColumn Header="Hersteller" Binding="{Binding Vendor}" Width="1.4*" />
+                <DataGridTextColumn Header="Modell" Binding="{Binding Model}" Width="1.6*" />
+                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="Auto" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
 </Window>
