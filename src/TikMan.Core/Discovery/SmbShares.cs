@@ -49,8 +49,13 @@ public static class SmbShares
     /// <summary>Returns the visible disk-share names of a host and how the enumeration went.
     /// NOTE: NetShareEnum is a blocking native call that ignores cancellation – the caller should
     /// race it against a timeout so the UI never hangs on a slow/unresponsive server.</summary>
-    public static Task<ShareListResult> ListAsync(string host, CancellationToken ct = default) =>
-        Task.Run(() =>
+    public static Task<ShareListResult> ListAsync(string host, CancellationToken ct = default)
+    {
+        // netapi32 only exists on Windows; elsewhere share enumeration is simply unavailable
+        // (Failed, like an unreachable server – the UI already treats that as "nothing to show").
+        if (!OperatingSystem.IsWindows())
+            return Task.FromResult(new ShareListResult(ShareListStatus.Failed, new List<string>()));
+        return Task.Run(() =>
         {
             var shares = new List<string>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -85,6 +90,7 @@ public static class SmbShares
             if (denied) return new ShareListResult(ShareListStatus.AccessDenied, shares);
             return new ShareListResult(ShareListStatus.Failed, shares);
         }, ct);
+    }
 
     /// <summary>True when the host exposes a disk share of the given name (NetShareGetInfo level 1 needs
     /// no admin rights: it returns the share for anyone, or NERR_NetNameNotFound when it doesn't exist).</summary>

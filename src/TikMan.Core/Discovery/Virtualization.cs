@@ -30,7 +30,7 @@ public static class Virtualization
     public static bool IsVirtual(string? mac) => Hypervisor(mac).Length > 0;
 
     /// <summary>The first three bytes of a MAC as six upper-case hex digits, whatever the separators
-    /// ("00:15:5D:FA:21:00" → "00155D"); "" when there aren't three bytes to read.</summary>
+    /// ("00:15:5D:3C:8A:1F" → "00155D"); "" when there aren't three bytes to read.</summary>
     private static string Normalize(string? mac)
     {
         if (string.IsNullOrEmpty(mac)) return "";

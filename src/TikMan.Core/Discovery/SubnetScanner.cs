@@ -132,15 +132,40 @@ public static class SubnetScanner
         public int dwType; // 3 = dynamic, 4 = static
     }
 
-    /// <summary>Resolves the MAC of an on-link IPv4 host (Windows only, "" otherwise). An active ARP
-    /// request runs first; if the host doesn't answer it right now (SendARP fails with error 67 when
-    /// the neighbour entry is in the Probe/Stale state) it falls back to the OS ARP table, which the
-    /// scan's ping has usually populated already.</summary>
+    /// <summary>Resolves the MAC of an on-link IPv4 host; "" when the platform can't say. Windows:
+    /// an active ARP request first, then the OS ARP table (SendARP fails with error 67 while the
+    /// neighbour entry is Probe/Stale, but the scan's ping has usually populated the table already).
+    /// Linux: the kernel neighbour table (/proc/net/arp) – the ping that preceded this call is what
+    /// fills it. macOS: not yet ("" – the scan itself works, only the MAC/OUI columns stay empty).</summary>
     public static string ResolveMacAddress(IPAddress ip)
     {
-        if (!OperatingSystem.IsWindows() || ip.AddressFamily != AddressFamily.InterNetwork) return "";
-        var mac = SendArpMac(ip);
-        return mac.Length > 0 ? mac : ArpTableMac(ip);
+        if (ip.AddressFamily != AddressFamily.InterNetwork) return "";
+        if (OperatingSystem.IsWindows())
+        {
+            var mac = SendArpMac(ip);
+            return mac.Length > 0 ? mac : ArpTableMac(ip);
+        }
+        if (OperatingSystem.IsLinux()) return ProcArpMac(ip);
+        return "";
+    }
+
+    /// <summary>Linux neighbour table: one line per entry, "IP … Flags HWaddress … Device". An
+    /// incomplete entry carries the all-zero MAC, which is as good as no answer.</summary>
+    private static string ProcArpMac(IPAddress ip)
+    {
+        try
+        {
+            var target = ip.ToString();
+            foreach (var line in File.ReadLines("/proc/net/arp").Skip(1))
+            {
+                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length >= 4 && parts[0] == target &&
+                    parts[3].Length == 17 && parts[3] != "00:00:00:00:00:00")
+                    return parts[3].ToUpperInvariant();
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        return "";
     }
 
     private static string SendArpMac(IPAddress ip)

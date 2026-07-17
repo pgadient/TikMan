@@ -12,6 +12,9 @@ public static class WmiProbe
     public static async Task<Dictionary<string, string>> QueryAsync(string host, CancellationToken ct = default)
     {
         var info = new Dictionary<string, string>();
+        // WMI is DCOM with the caller's Windows identity – there is nothing equivalent to speak from
+        // Linux/macOS, so the probe simply has nothing to say there (best-effort, like a refused login).
+        if (!OperatingSystem.IsWindows()) return info;
         try
         {
             await Task.Run(() =>
