@@ -1,20 +1,18 @@
 using System.IO;
 using System.Net;
-using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Text;
 using TikMan.Core.Storage;
 
-namespace TikMan.App.Web;
+namespace TikMan.Web;
 
 /// <summary>Supplies the TLS certificate for the web server. Either loads the user's own .pfx, or
-/// generates a self-signed certificate and caches it (DPAPI-protected) under the app data folder so it
-/// stays stable across restarts – a browser's "trust this certificate" exception then keeps working.</summary>
-[SupportedOSPlatform("windows")]
-internal static class WebCertificate
+/// generates a self-signed certificate and caches it under the app data folder so it stays stable
+/// across restarts – a browser's "trust this certificate" exception then keeps working. The cache is
+/// protected by <see cref="CredentialProtector"/> (DPAPI on Windows, AES on Linux/macOS), so the whole
+/// server, TLS included, is cross-platform.</summary>
+public static class WebCertificate
 {
-    private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("TikMan.web.cert.v1");
     private static string CachePath => Path.Combine(DeviceStore.StorageDirectory, "webserver.pfx");
 
     /// <summary>Returns a certificate with a usable private key for <c>SslStream</c> server auth.
@@ -35,7 +33,7 @@ internal static class WebCertificate
         {
             Directory.CreateDirectory(DeviceStore.StorageDirectory);
             var pfx = created.Export(X509ContentType.Pfx);
-            File.WriteAllBytes(CachePath, ProtectedData.Protect(pfx, Entropy, DataProtectionScope.CurrentUser));
+            File.WriteAllText(CachePath, CredentialProtector.ProtectBytes(pfx));
         }
         catch { /* not persisting is fine – we just regenerate next time */ }
         return created;
@@ -46,7 +44,8 @@ internal static class WebCertificate
         try
         {
             if (!File.Exists(CachePath)) return null;
-            var pfx = ProtectedData.Unprotect(File.ReadAllBytes(CachePath), Entropy, DataProtectionScope.CurrentUser);
+            var pfx = CredentialProtector.UnprotectBytes(File.ReadAllText(CachePath));
+            if (pfx is null) return null; // cache from another user/OS – regenerate
             var cert = Reimport(X509CertificateLoader.LoadPkcs12(pfx, null, X509KeyStorageFlags.Exportable));
             return cert.NotAfter > DateTime.Now.AddDays(7) ? cert : null; // renew if (nearly) expired
         }

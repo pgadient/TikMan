@@ -1,4 +1,4 @@
-namespace TikMan.App.Web;
+namespace TikMan.Web;
 
 /// <summary>A read-only snapshot of one device for the web dashboard. Deliberately flat and free of
 /// any WPF/ViewModel type so it can be serialised straight to JSON off the UI thread's data.

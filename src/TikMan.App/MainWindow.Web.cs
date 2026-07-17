@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
-using TikMan.App.Web;
+using TikMan.Web;
 using TikMan.Core.Discovery;
 using TikMan.Core.Storage;
 using static TikMan.App.Localization.LocalizationManager;

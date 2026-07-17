@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Headless TikMan: TikMan.Core + the extracted TikMan.Web server, no WPF. This is the Linux/macOS
+       entry point – it runs the same web dashboard the Windows GUI hosts, in its own process. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>TikMan.Host</RootNamespace>
+    <AssemblyName>tikman-host</AssemblyName>
+    <!-- Old distros (the CI/WSL test box is Ubuntu 18.04) ship an ancient ICU; Core parses invariantly. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TikMan.Core\TikMan.Core.csproj" />
+    <ProjectReference Include="..\TikMan.Web\TikMan.Web.csproj" />
+  </ItemGroup>
+
+</Project>

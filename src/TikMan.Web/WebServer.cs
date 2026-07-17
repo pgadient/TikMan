@@ -9,7 +9,7 @@ using System.Text;
 using System.Text.Json;
 using TikMan.Core.Api;
 
-namespace TikMan.App.Web;
+namespace TikMan.Web;
 
 /// <summary>A tiny embedded HTTP(S) server built directly on <see cref="TcpListener"/> + optional
 /// <see cref="SslStream"/> – deliberately NOT HttpListener/Kestrel:
@@ -40,7 +40,7 @@ public sealed class WebServer : IDisposable
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
-    /// <summary>The URL the server is listening on once started (e.g. https://192.168.0.5:9090/), else "".</summary>
+    /// <summary>The URL the server is listening on once started (e.g. https://192.0.2.5:9090/), else "".</summary>
     public string BoundUrl { get; private set; } = "";
 
     /// <summary>True when the server is serving over TLS.</summary>

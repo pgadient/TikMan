@@ -1,4 +1,4 @@
-namespace TikMan.App.Web;
+namespace TikMan.Web;
 
 /// <summary>Static web assets, embedded as strings so they ship inside the single-file exe (there is no
 /// wwwroot folder on disk to serve from). Increment 1 is a live, auto-refreshing device list; scan

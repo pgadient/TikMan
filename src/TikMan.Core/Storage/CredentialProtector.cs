@@ -19,16 +19,25 @@ public static class CredentialProtector
     private static readonly object KeyLock = new();
     private static byte[]? _unixKey;
 
-    public static string Protect(string plaintext)
+    public static string Protect(string plaintext) =>
+        string.IsNullOrEmpty(plaintext) ? "" : ProtectBytes(Encoding.UTF8.GetBytes(plaintext));
+
+    public static string Unprotect(string encrypted)
     {
-        if (string.IsNullOrEmpty(plaintext)) return "";
+        var bytes = UnprotectBytes(encrypted);
+        return bytes is null ? "" : Encoding.UTF8.GetString(bytes);
+    }
+
+    /// <summary>Protects arbitrary bytes the same way as a password string – so the web-server's cached
+    /// TLS certificate (a .pfx, not text) rides the identical DPAPI-on-Windows / AES-on-Unix path.
+    /// Returns a base64 string (with the "u1:" prefix on Unix).</summary>
+    public static string ProtectBytes(byte[] plain)
+    {
         if (OperatingSystem.IsWindows())
-            return Convert.ToBase64String(
-                ProtectedData.Protect(Encoding.UTF8.GetBytes(plaintext), Entropy, DataProtectionScope.CurrentUser));
+            return Convert.ToBase64String(ProtectedData.Protect(plain, Entropy, DataProtectionScope.CurrentUser));
 
         var key = UnixKey();
         var nonce = RandomNumberGenerator.GetBytes(12);
-        var plain = Encoding.UTF8.GetBytes(plaintext);
         var cipher = new byte[plain.Length];
         var tag = new byte[16];
         using (var aes = new AesGcm(key, tag.Length)) aes.Encrypt(nonce, plain, cipher, tag);
@@ -37,28 +46,29 @@ public static class CredentialProtector
         return UnixPrefix + Convert.ToBase64String(blob);
     }
 
-    public static string Unprotect(string encrypted)
+    /// <summary>Reverse of <see cref="ProtectBytes"/>; null when the blob can't be read on this
+    /// machine/user (foreign profile, wrong OS format, tampered GCM tag, missing key file).</summary>
+    public static byte[]? UnprotectBytes(string encrypted)
     {
-        if (string.IsNullOrEmpty(encrypted)) return "";
+        if (string.IsNullOrEmpty(encrypted)) return null;
         try
         {
             if (encrypted.StartsWith(UnixPrefix, StringComparison.Ordinal))
             {
                 var blob = Convert.FromBase64String(encrypted[UnixPrefix.Length..]);
-                if (blob.Length < 12 + 16) return "";
+                if (blob.Length < 12 + 16) return null;
                 var plain = new byte[blob.Length - 12 - 16];
                 using var aes = new AesGcm(UnixKey(), 16);
                 aes.Decrypt(blob.AsSpan(0, 12), blob.AsSpan(12 + 16), blob.AsSpan(12, 16), plain);
-                return Encoding.UTF8.GetString(plain);
+                return plain;
             }
-            if (!OperatingSystem.IsWindows()) return ""; // a DPAPI blob on Unix – unreadable by design
-            var bytes = ProtectedData.Unprotect(Convert.FromBase64String(encrypted), Entropy, DataProtectionScope.CurrentUser);
-            return Encoding.UTF8.GetString(bytes);
+            if (!OperatingSystem.IsWindows()) return null; // a DPAPI blob on Unix – unreadable by design
+            return ProtectedData.Unprotect(Convert.FromBase64String(encrypted), Entropy, DataProtectionScope.CurrentUser);
         }
         catch (Exception ex) when (ex is CryptographicException or FormatException or IOException
             or UnauthorizedAccessException)
         {
-            return ""; // e.g. devices.json copied from another user/PC, or the key file is gone
+            return null; // e.g. devices.json copied from another user/PC, or the key file is gone
         }
     }
 
