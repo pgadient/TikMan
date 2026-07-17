@@ -214,8 +214,9 @@ public partial class MainWindow
             }));
 
             // Every device that could plausibly *be* a bridge gets asked for its forwarding table:
-            // RouterOS with credentials over REST (richest), everything else – including a MikroTik we
-            // hold no login for – over SNMP with the configured read community.
+            // RouterOS with credentials over REST (richest), a Zyxel switch with credentials over its
+            // SSH CLI (GetBridgeHostsAsync routes there itself), everything else – including a
+            // MikroTik we hold no login for – over SNMP with the configured read community.
             var bridges = _devices.Where(d => d.HasIpv4 &&
                 (d.Board.Length > 0 || d.IdentifiedVendor == "MikroTik" ||
                  d.KindOf() is DeviceKind.Switch or DeviceKind.AccessPoint or DeviceKind.Router
@@ -241,7 +242,7 @@ public partial class MainWindow
                     }
                     return;
                 }
-                // No login – SNMP is the fallback, and it works vendor-neutrally (Zyxel & Co. too).
+                // No login (or an SSH read that failed) – SNMP is the fallback, vendor-neutral.
                 if (await SnmpFdb.ReadAsync(d.Ipv4Address, community) is { } snmp)
                     lock (fdb) fdb[d] = snmp;
             }));

@@ -29,11 +29,11 @@ public class BackupItemViewModel : INotifyPropertyChanged
     /// "binary backup on MikroTik only" guard excluded exactly nothing.</para></summary>
     public bool IsMikroTik => Device.IdentifiedVendor == "MikroTik";
 
-    /// <summary>Whether this device can hand over a config export (.rsc). RouterOS only today, and not
-    /// because of a policy: <see cref="DeviceViewModel.DownloadConfigAsync"/> goes through the RouterOS
-    /// REST client or <c>/export</c> over SSH, and nothing else speaks either. Until now the assistant
-    /// tried it on every device with a login and let the others fail one by one.</summary>
-    public bool CanConfig => IsMikroTik;
+    /// <summary>Whether this device can hand over a config export. RouterOS (.rsc via REST or
+    /// <c>/export</c> over SSH) and Zyxel switches (.cfg – the running-config over the ZyNOS SSH CLI,
+    /// see <see cref="TikMan.Core.Api.ZyxelSsh"/>). Everything else sits the run out instead of being
+    /// tried and failing one by one.</summary>
+    public bool CanConfig => IsMikroTik || Device.IsZyxelSwitch;
 
     /// <summary>Whether a full binary backup (.backup) can be pulled. Also RouterOS only – it is
     /// <c>/system backup save</c> plus SCP.</summary>
@@ -231,7 +231,8 @@ public partial class BackupAllView : UserControl
             {
                 try
                 {
-                    rscName = BackupNaming.SuggestFileName(data.Identity, device.Board, device.Host, stamp);
+                    rscName = BackupNaming.SuggestFileName(data.Identity, device.Board, device.Host, stamp,
+                        device.ConfigFileExtension);
                     File.WriteAllText(Path.Combine(_folder, rscName), data.Config);
                 }
                 catch (Exception ex)

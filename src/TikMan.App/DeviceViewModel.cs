@@ -650,6 +650,16 @@ public class DeviceViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>True when this is a Zyxel switch – the gate for every <see cref="ZyxelSsh"/> path
+    /// (config backup, forwarding table, monitoring). Deliberately narrow: the ZyNOS "show" CLI those
+    /// parsers are pinned to lives on the XGS/GS switches, while Zyxel's firewalls (ZLD) and NWA/WAC
+    /// APs speak a different dialect – routing them here would only manufacture failed logins.</summary>
+    public bool IsZyxelSwitch => IdentifiedVendor == "Zyxel" && KindOf() == DeviceKind.Switch;
+
+    /// <summary>Extension of this device's config export: a RouterOS export is a script (.rsc), a
+    /// Zyxel running-config is what Zyxel's own web export calls a .cfg.</summary>
+    public string ConfigFileExtension => IsZyxelSwitch ? ".cfg" : ".rsc";
+
     // Fragments of raw IEEE OUI names → the clean brand shown when nothing better identifies the
     // vendor (e.g. "Zyxel Communications Corp" → "Zyxel").
     private static readonly (string Fragment, string Brand)[] OuiBrands =
@@ -1007,7 +1017,18 @@ public class DeviceViewModel : INotifyPropertyChanged
 
     public async Task<Dictionary<string, string>?> GetBridgeHostsAsync(CancellationToken ct = default)
     {
-        var entries = await SecureReadAsync((c, t) => c.GetBridgeHostsAsync(t), RouterOsSsh.GetBridgeHostsAsync, ct);
+        List<(string Mac, string Port)>? entries;
+        // A Zyxel switch hands its forwarding table over its own SSH CLI – RouterOS REST and CLI
+        // mean nothing to it. Same shape as SNMP delivers, so the map takes it without caring.
+        if (IsZyxelSwitch)
+        {
+            if (!HasCredentials) return null; // SNMP fallback in RunTracesAsync covers the no-login case
+            var password = CredentialProtector.Unprotect(Model.EncryptedPassword);
+            var zyxel = await ZyxelSsh.GetFdbAsync(Model.Host, Model.SshPort, Model.Username, password, ct);
+            entries = zyxel?.Select(kv => (kv.Key, kv.Value)).ToList();
+        }
+        else
+            entries = await SecureReadAsync((c, t) => c.GetBridgeHostsAsync(t), RouterOsSsh.GetBridgeHostsAsync, ct);
         if (entries is null) return null;
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (mac, port) in entries)
@@ -1022,6 +1043,7 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// or when it isn't RouterOS. Supplements the bridge table in the physical topology.</summary>
     public async Task<List<(string Mac, string Port)>?> GetNeighborsAsync(CancellationToken ct = default)
     {
+        if (IdentifiedVendor == "Zyxel") return null; // RouterOS-only read – don't send its CLI to a Zyxel
         var raw = await SecureReadAsync((c, t) => c.GetNeighborsAsync(t), RouterOsSsh.GetNeighborsAsync, ct);
         return raw?.Select(n => (NormalizeMac(n.Mac), n.Item2))
             .Where(t => t.Item1.Length == 12 && t.Item2.Length > 0)
@@ -1032,6 +1054,7 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// actually radiates; null without credentials / not RouterOS / no radios.</summary>
     public async Task<Dictionary<string, string>?> GetWifiSsidsAsync(CancellationToken ct = default)
     {
+        if (IdentifiedVendor == "Zyxel") return null; // RouterOS-only read – don't send its CLI to a Zyxel
         var map = await SecureReadAsync((c, t) => c.GetWifiSsidsAsync(t), RouterOsSsh.GetWifiSsidsAsync, ct);
         return map is { Count: > 0 } ? map : null;
     }
@@ -1082,6 +1105,7 @@ public class DeviceViewModel : INotifyPropertyChanged
     {
         if (IsRefreshing) return Status == DeviceStatus.Online;
         if (Model.Vendor == DeviceVendor.TpLink) return await RefreshTpLinkAsync(ct);
+        if (IsZyxelSwitch && HasCredentials) return await RefreshZyxelAsync(ct);
         IsRefreshing = true;
         try
         {
@@ -1150,6 +1174,45 @@ public class DeviceViewModel : INotifyPropertyChanged
         while (History.Count > MaxHistory) History.RemoveAt(0);
         if (LatestVersion != "" && Version != "")
             UpdateAvailable = LatestVersion != StripChannelSuffix(Version);
+    }
+
+    /// <summary>Refreshes a Zyxel switch over its SSH CLI – there is no REST to fall back on. One
+    /// read (<c>show system-information</c>) yields firmware, uptime and serial; CPU/RAM aren't in
+    /// it, so the graphs stay empty. An answer without model and firmware counts as a failure:
+    /// that is what a non-ZyNOS device prints for the unknown command.</summary>
+    private async Task<bool> RefreshZyxelAsync(CancellationToken ct)
+    {
+        IsRefreshing = true;
+        try
+        {
+            var password = CredentialProtector.Unprotect(Model.EncryptedPassword);
+            var info = await ZyxelSsh.GetInfoAsync(Model.Host, Model.SshPort, Model.Username, password, ct);
+            if (info is { } i && (i.Model.Length > 0 || i.Firmware.Length > 0))
+            {
+                ApplyZyxelInfo(i);
+                Status = DeviceStatus.Online; LastError = ""; HadTlsError = false;
+                return true;
+            }
+            LastError = "SSH read failed";
+            Status = await PingAsync(ct).ConfigureAwait(false) ? DeviceStatus.Online : DeviceStatus.Offline;
+            return false;
+        }
+        finally { IsRefreshing = false; }
+    }
+
+    /// <summary>Applies what a Zyxel switch said about itself (<c>show system-information</c>) to the
+    /// live columns. ⚠️ Never writes <see cref="Board"/>: a filled board name is how
+    /// <see cref="IdentifiedVendor"/> recognises RouterOS, so setting it would relabel the switch
+    /// "MikroTik" and reroute every later call to APIs the device doesn't have.</summary>
+    public void ApplyZyxelInfo(ZyxelSsh.ZyxelInfo info)
+    {
+        if (info.Firmware.Length > 0) Version = info.Firmware;
+        if (info.Uptime.Length > 0) Uptime = info.Uptime;
+        if (info.Serial.Length > 0 && Model.SerialNumber.Length == 0) Model.SerialNumber = info.Serial;
+        if (info.Model.Length > 0) Model.ExtraInfo["Modell"] = info.Model;
+        // Pin the vendor independently of the MAC OUI, so a VPN scan (no OUI) says "Zyxel" too.
+        Model.ExtraInfo["Hersteller (Web)"] = "Zyxel";
+        RaiseDetailsChanged();
     }
 
     /// <summary>Refreshes a TP-Link switch over SSH (no REST API): reads firmware + model via
@@ -1250,6 +1313,17 @@ public class DeviceViewModel : INotifyPropertyChanged
     {
         if (Model.EncryptedPassword.Length == 0) { LastError = "no credentials"; return null; }
         var password = CredentialProtector.Unprotect(Model.EncryptedPassword);
+
+        // Zyxel switch: the running-config over SSH is the whole story – no REST, no /export. The
+        // text carries "admin-password cipher …" lines, so it is a credential-bearing artefact:
+        // written to the chosen file, never logged.
+        if (IsZyxelSwitch)
+        {
+            var cfg = await ZyxelSsh.GetRunningConfigAsync(Model.Host, Model.SshPort, Model.Username, password, ct);
+            if (cfg is null) { LastError = "SSH config export failed"; return null; }
+            LastError = "";
+            return (cfg, Name);
+        }
 
         async Task<(string Config, string Identity)> Export(RouterOsClient c)
         {

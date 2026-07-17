@@ -228,7 +228,8 @@ public partial class MainWindow : IWebBackend
             {
                 var res = await await Dispatcher.InvokeAsync(() => vm.DownloadConfigAsync());
                 if (res is not { } r) return BackupResult.Fail(T("Web_BackupFailed"));
-                var name = BackupNaming.SuggestFileName(r.Identity, vm.Board, host, DateTime.Now);
+                var name = BackupNaming.SuggestFileName(r.Identity, vm.Board, host, DateTime.Now,
+                    vm.ConfigFileExtension);
                 return new BackupResult(true, "", name, "text/plain; charset=utf-8",
                     System.Text.Encoding.UTF8.GetBytes(r.Config));
             }

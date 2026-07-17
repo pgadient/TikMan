@@ -19,13 +19,14 @@ public static class BackupNaming
         "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
     };
 
-    /// <summary>Format: &lt;identity-or-board&gt;_&lt;IP&gt;_&lt;timestamp&gt;.rsc,
+    /// <summary>Format: &lt;identity-or-board&gt;_&lt;IP&gt;_&lt;timestamp&gt;&lt;ext&gt;,
     /// e.g. "L009UiGS_192.168.14.19_20260704-011530.rsc" – capped at 50 characters by trimming the
     /// label first (it is the decorative part) and the host second (the timestamp stays, it is what
-    /// keeps successive backups distinct).</summary>
-    public static string SuggestFileName(string identity, string board, string host, DateTime when)
+    /// keeps successive backups distinct). The extension names the dialect: ".rsc" for a RouterOS
+    /// export, ".cfg" for a Zyxel running-config.</summary>
+    public static string SuggestFileName(string identity, string board, string host, DateTime when,
+        string ext = ".rsc")
     {
-        const string ext = ".rsc";
         var stamp = $"{when:yyyyMMdd-HHmmss}";
         var label = Sanitize(FirstNonEmpty(identity, board, "mikrotik"), fallback: "mikrotik");
         var hostPart = Sanitize(host, fallback: "");
