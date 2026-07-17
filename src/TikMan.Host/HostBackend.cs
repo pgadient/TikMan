@@ -139,14 +139,17 @@ public sealed class HostBackend : IWebBackend
                 foreach (var f in found) Merge(f);
                 Persist();
             }
-            await ProbeAllAsync().ConfigureAwait(false); // fresh status right away, not up to 30s later
+            await EnrichAsync(CancellationToken.None).ConfigureAwait(false); // name devices the port scan can't
+            await ProbeAllAsync().ConfigureAwait(false);   // fresh status right away, not up to 30s later
         }
         catch { /* a scan that fails leaves the last-known list in place */ }
         finally { lock (_lock) { _scanning = false; _phase = ""; _progress = 0; } }
     }
 
     /// <summary>Merges a freshly discovered host into the list, matched by MAC (or IP when it has no
-    /// MAC), so a re-scan updates rather than duplicates.</summary>
+    /// MAC), so a re-scan updates rather than duplicates. A record carrying a board (or a Winbox/API
+    /// port) is a MikroTik – MNDP only ever answers on MikroTik gear – so the vendor is pinned here,
+    /// the same signal the GUI's <c>IdentifiedVendor</c> trusts without a login.</summary>
     private void Merge(DiscoveredDevice f)
     {
         var existing = _devices.FirstOrDefault(d =>
@@ -156,10 +159,75 @@ public sealed class HostBackend : IWebBackend
         d.Host = f.IpAddress;
         if (f.MacAddress.Length > 0) d.MacAddress = f.MacAddress;
         if (f.Identity.Length > 0 && d.Name.Length == 0) d.Name = f.Identity;
-        if (f.Board.Length > 0) d.ExtraInfo["Modell"] = f.Board;
+        if (f.Board.Length > 0)
+        {
+            d.ExtraInfo["Modell"] = f.Board;
+            d.ExtraInfo["Hersteller (Web)"] = "MikroTik"; // MNDP announces only from MikroTik
+        }
+        else if (f.IsLikelyMikroTik && !d.ExtraInfo.ContainsKey("Hersteller (Web)"))
+            d.ExtraInfo["Hersteller (Web)"] = "MikroTik"; // Winbox/API port ⇒ MikroTik, even without a board
         if (f.Version.Length > 0) d.ExtraInfo["Version"] = f.Version;
-        d.OpenPorts = f.OpenPorts.Distinct().OrderBy(p => p).ToList();
+        // Port scan gives the fuller port set; a discovery-only record (MNDP) has none, so don't wipe.
+        if (f.OpenPorts.Count > 0) d.OpenPorts = f.OpenPorts.Distinct().OrderBy(p => p).ToList();
         if (existing is null) _devices.Add(d);
+    }
+
+    /// <summary>Names devices the TCP port scan can't: MikroTik announce their board over MNDP (no
+    /// login), and Apple/Sonos/smart-TV gear sits on generic ODM OUIs behind a bare web port but names
+    /// itself over mDNS/SSDP. All three run without credentials and on any network. Best-effort – a
+    /// blocked multicast just means fewer names, never a failure.</summary>
+    private async Task EnrichAsync(CancellationToken ct)
+    {
+        var mndpTask = Safe(() => MndpScanner.DiscoverAsync(TimeSpan.FromSeconds(4), null, ct),
+            new List<DiscoveredDevice>());
+        var mdnsTask = Safe(() => MdnsScanner.DiscoverAsync(TimeSpan.FromSeconds(4), ct),
+            new Dictionary<string, MdnsScanner.MdnsInfo>());
+        var ssdpTask = Safe(() => SsdpScanner.DiscoverAsync(TimeSpan.FromSeconds(4), ct),
+            new Dictionary<string, SsdpScanner.SsdpInfo>());
+        await Task.WhenAll(mndpTask, mdnsTask, ssdpTask).ConfigureAwait(false);
+
+        lock (_lock)
+        {
+            foreach (var f in mndpTask.Result) Merge(f);
+            foreach (var d in _devices)
+            {
+                if (mdnsTask.Result.TryGetValue(d.Host, out var m)) ApplyMdns(d, m);
+                if (ssdpTask.Result.TryGetValue(d.Host, out var s)) ApplySsdp(d, s);
+            }
+            Persist();
+        }
+    }
+
+    private static async Task<T> Safe<T>(Func<Task<T>> run, T fallback)
+    {
+        try { return await run().ConfigureAwait(false); } catch { return fallback; }
+    }
+
+    private static void ApplyMdns(Device d, MdnsScanner.MdnsInfo m)
+    {
+        if (m.HostName.Length > 0 && d.Name.Length == 0) d.Name = m.HostName;
+        if (m.Model.Length > 0) d.ExtraInfo["mDNS-Modell"] = m.Model; // raw model (e.g. "AudioAccessory5,1")
+    }
+
+    private static void ApplySsdp(Device d, SsdpScanner.SsdpInfo s)
+    {
+        // The friendly name is the owner-given one – the best label there is – unless it's just a UUID.
+        if (s.FriendlyName.Length > 0 && !LooksLikeUuid(s.FriendlyName) && d.Name.Length == 0)
+            d.Name = s.FriendlyName;
+        if (s.Manufacturer.Length > 0 && !d.ExtraInfo.ContainsKey("Hersteller (Web)"))
+            d.ExtraInfo["Hersteller (Web)"] = s.Manufacturer;
+        if (s.ModelName.Length > 0 && !d.ExtraInfo.ContainsKey("Modell"))
+            d.ExtraInfo["Modell"] = s.ModelName;
+    }
+
+    /// <summary>A bare UUID (e.g. "uuid:2f402f80-…" or a hex/dashed blob) is a worse label than none –
+    /// SSDP responders often use one as the friendly name. Filter it so it doesn't become the device name.</summary>
+    private static bool LooksLikeUuid(string s)
+    {
+        var t = s.Trim();
+        if (t.StartsWith("uuid:", StringComparison.OrdinalIgnoreCase)) return true;
+        int hex = t.Count(Uri.IsHexDigit), dash = t.Count(c => c == '-');
+        return t.Length >= 32 && dash >= 4 && hex + dash >= t.Length - 2;
     }
 
     private void Persist()
@@ -283,9 +351,13 @@ public sealed class HostBackend : IWebBackend
 
     private static string Vendor(Device d)
     {
+        // Probe-derived vendor first (MNDP/mDNS/SSDP wrote it here); the MAC OUI is the last resort, the
+        // same order the GUI's IdentifiedVendor uses so local and VPN scans agree.
         if (d.ExtraInfo.TryGetValue("Hersteller (Web)", out var w) && w.Length > 0) return w;
         var oui = OuiLookup.Lookup(d.MacAddress);
-        return oui.Length > 0 ? oui : "";
+        var lower = oui.ToLowerInvariant();
+        if (lower.Contains("mikrotik") || lower.Contains("routerboard")) return "MikroTik";
+        return oui;
     }
 
     private static string Model(Device d) =>
@@ -294,17 +366,25 @@ public sealed class HostBackend : IWebBackend
     private static string Board(Device d) =>
         d.ExtraInfo.TryGetValue("Modell", out var m) ? m : "";
 
-    private static bool IsMikroTik(Device d)
-    {
-        var oui = OuiLookup.Lookup(d.MacAddress).ToLowerInvariant();
-        return oui.Contains("mikrotik") || oui.Contains("routerboard");
-    }
+    private static bool IsMikroTik(Device d) => Vendor(d) == "MikroTik";
 
     private static bool IsZyxelSwitch(Device d) =>
         Vendor(d).Contains("Zyxel", StringComparison.OrdinalIgnoreCase) && Kind(d) == DeviceKind.Switch;
 
-    private static DeviceKind Kind(Device d) =>
-        DeviceClassifier.Guess(Vendor(d), d.OpenPorts, Model(d), d.Name);
+    /// <summary>Device kind, mirroring the GUI's order of trust. A MikroTik is split by its board code
+    /// (CRS/CSS ⇒ switch, a board with a radio ⇒ AP, else router) – the generic model rules don't know
+    /// those codes – otherwise the shared classifier decides from vendor/ports/model.</summary>
+    private static DeviceKind Kind(Device d)
+    {
+        // The mDNS model is identity and outranks all – an Apple HomePod/Apple TV names itself, where
+        // one shared OUI and no open ports would otherwise tell us nothing.
+        if (d.ExtraInfo.TryGetValue("mDNS-Modell", out var mm) && mm.Length > 0
+            && DeviceClassifier.MdnsModelKind(mm) is var mk && mk != DeviceKind.Unknown)
+            return mk;
+        if (Vendor(d) == "MikroTik" && Model(d) is { Length: > 0 } board)
+            return DeviceClassifier.MikroTikKind(board);
+        return DeviceClassifier.Guess(Vendor(d), d.OpenPorts, Model(d), d.Name);
+    }
 
     private static int VncPort(Device d) =>
         d.OpenPorts.Contains(5900) ? 5900 : d.OpenPorts.Contains(5901) ? 5901 : 0;
@@ -322,7 +402,9 @@ public sealed class HostBackend : IWebBackend
         StatusText(d), Kind(d) is DeviceKind.Router or DeviceKind.Firewall, d.EncryptedPassword.Length > 0);
 
     /// <summary>English kind labels for the web UI (which is English). The GUI's localized names live
-    /// in the WPF layer; duplicating a short map here keeps Core free of a display concern.</summary>
+    /// in the WPF layer; duplicating a short map here keeps Core free of a display concern.
+    /// ⚠️ Every <see cref="DeviceKind"/> needs a case – a missing one falls to "" and a correctly
+    /// classified device shows a blank type (that bug ate the Apple HomePod's "Audio").</summary>
     private static string KindText(DeviceKind k) => k switch
     {
         DeviceKind.Router => "Router",
@@ -341,6 +423,13 @@ public sealed class HostBackend : IWebBackend
         DeviceKind.Notebook => "Notebook",
         DeviceKind.Tablet => "Tablet",
         DeviceKind.PaymentTerminal => "Payment Terminal",
+        DeviceKind.Franking => "Franking Machine",
+        DeviceKind.Management => "Management (BMC)",
+        DeviceKind.Smartphone => "Smartphone",
+        DeviceKind.Audio => "Speaker",
+        DeviceKind.GameConsole => "Game Console",
+        DeviceKind.Tv => "TV",
+        DeviceKind.StreamingBox => "Streaming Box",
         _ => "",
     };
 
