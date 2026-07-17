@@ -27,10 +27,40 @@ public sealed class HostBackend : IWebBackend
     private string _phase = "";
     private int _scanned, _scanTotal;
 
+    // Liveness per device id (WebId). Kept out of the persisted Device model on purpose – it is runtime
+    // state, not settings. "" / missing = never checked ("Unknown").
+    private readonly Dictionary<string, bool> _online = new();
+
     public HostBackend()
     {
         _appData = DeviceStore.Load();
         if (_appData.PersistDeviceList) _devices.AddRange(_appData.Devices);
+        _ = Task.Run(MonitorLoopAsync); // background liveness, so the dashboard's status dots are live
+    }
+
+    /// <summary>Re-probes every device's reachability on a fixed cadence (and once at startup), so the
+    /// status column reflects reality rather than staying "Unknown". A device is reachable when a TCP
+    /// connect to one of its discovered open ports succeeds – privilege-free on every OS, unlike ICMP.</summary>
+    private async Task MonitorLoopAsync()
+    {
+        while (true)
+        {
+            await ProbeAllAsync().ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+        }
+    }
+
+    private async Task ProbeAllAsync()
+    {
+        List<Device> snapshot;
+        lock (_lock) snapshot = _devices.ToList();
+        foreach (var d in snapshot)
+        {
+            var port = d.OpenPorts.Count > 0 ? d.OpenPorts[0] : 0;
+            var host = d.Host;
+            bool up = port > 0 && await Reachability.TcpProbeAsync(host, port).ConfigureAwait(false);
+            lock (_lock) _online[WebId(d)] = up;
+        }
     }
 
     public string AppTitle => "TikMan";
@@ -109,6 +139,7 @@ public sealed class HostBackend : IWebBackend
                 foreach (var f in found) Merge(f);
                 Persist();
             }
+            await ProbeAllAsync().ConfigureAwait(false); // fresh status right away, not up to 30s later
         }
         catch { /* a scan that fails leaves the last-known list in place */ }
         finally { lock (_lock) { _scanning = false; _phase = ""; _progress = 0; } }
@@ -278,7 +309,11 @@ public sealed class HostBackend : IWebBackend
     private static int VncPort(Device d) =>
         d.OpenPorts.Contains(5900) ? 5900 : d.OpenPorts.Contains(5901) ? 5901 : 0;
 
-    private static string StatusText(Device d) => "Unknown";
+    /// <summary>"Online"/"Offline" once the monitor has probed this device, else "Unknown" (grey dot) –
+    /// e.g. a device restored from the saved list before the first probe, or one with no open port to
+    /// test. Must be called under <see cref="_lock"/> (reads <see cref="_online"/>).</summary>
+    private string StatusText(Device d) =>
+        _online.TryGetValue(WebId(d), out var up) ? (up ? "Online" : "Offline") : "Unknown";
 
     private static List<string> Ipv6Of(Device d) => new();
 
