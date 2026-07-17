@@ -160,8 +160,32 @@ public static class DeviceStore
         Converters = { new JsonStringEnumConverter() }, // store enums as readable strings
     };
 
-    public static string StorageDirectory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TikMan");
+    /// <summary>The per-user settings folder (…/TikMan). On Windows that is %AppData%\TikMan.
+    /// <para>⚠️ On Linux/macOS single-file builds <see cref="Environment.GetFolderPath"/> can hand back
+    /// an empty string – which would put the settings in a stray relative "TikMan" beside the working
+    /// directory (a different place every time the app is launched from a different folder). So when it
+    /// comes back empty we resolve the platform's config home ourselves: <c>$XDG_CONFIG_HOME</c> or
+    /// <c>$HOME/.config</c> on Linux, <c>$HOME/Library/Application Support</c> on macOS – never "".</para></summary>
+    public static string StorageDirectory
+    {
+        get
+        {
+            var baseDir = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            if (string.IsNullOrEmpty(baseDir)) baseDir = FallbackConfigHome();
+            return Path.Combine(baseDir, "TikMan");
+        }
+    }
+
+    private static string FallbackConfigHome()
+    {
+        var home = Environment.GetEnvironmentVariable("HOME");
+        if (OperatingSystem.IsMacOS() && !string.IsNullOrEmpty(home))
+            return Path.Combine(home, "Library", "Application Support");
+        var xdg = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
+        if (!string.IsNullOrEmpty(xdg)) return xdg;
+        if (!string.IsNullOrEmpty(home)) return Path.Combine(home, ".config");
+        return Path.Combine(Path.GetTempPath(), "tikman-config"); // last resort – absolute, never ""
+    }
 
     public static string StorageFile => Path.Combine(StorageDirectory, "devices.json");
 

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=TikMan
+Comment=Network device dashboard (MikroTik & multi-vendor)
+Exec=tikman-host
+Icon=tikman
+Categories=Network;System;
+# A first launch prints a generated web login; Terminal=true lets a file manager that honours it show
+# that output. The login is also written to a file and the browser is opened, so it is fine either way.
+Terminal=true
