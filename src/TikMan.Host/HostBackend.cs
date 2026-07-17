@@ -315,30 +315,120 @@ public sealed class HostBackend : IWebBackend
 
     // ---- topology (logical only, headless) ------------------------------------------------------
 
-    public Task<TopoGraph> GetTopologyAsync(bool physical)
+    public async Task<TopoGraph> GetTopologyAsync(bool physical)
     {
-        // The GUI's physical map is derived from WPF layout + forwarding tables; headless we render a
-        // flat logical view (Internet → devices). A proper Core-side layout is a later increment.
+        if (!physical) return BuildLogical();
+
+        // Physical: gather the bridge forwarding tables (who sees which MAC on which port), then let the
+        // shared Core builder place everything. Slow – it talks to every infrastructure device – but only
+        // when the physical tab is opened.
+        var fdb = await GatherFdbAsync().ConfigureAwait(false);
+        var gatewayIp = TraceRoute.DefaultGateway();
+
+        List<TopoInputDevice> input;
+        lock (_lock)
+            input = _devices.Select(d => new TopoInputDevice(
+                WebId(d), d.Host, d.MacAddress, Display(d), d.Host,
+                Kind(d) is DeviceKind.Switch or DeviceKind.Router or DeviceKind.AccessPoint or DeviceKind.Firewall
+                    || IsMikroTik(d))).ToList();
+
+        var layout = PhysicalTopology.Build(input, fdb, gatewayIp);
+        return new TopoGraph(
+            layout.Nodes.Select(n => new TopoNodeDto(n.Key, n.DeviceId, n.Title, n.Detail, n.Mac,
+                n.X, n.Y, n.W, n.H, n.Fill, n.Line, n.Text)).ToList(),
+            layout.Edges.Select(e => new TopoEdgeDto(e.From, e.To)).ToList());
+    }
+
+    /// <summary>The flat logical view: Internet → devices (infrastructure warm, clients green). No
+    /// forwarding tables needed, so it is instant and works on any network.</summary>
+    private TopoGraph BuildLogical()
+    {
         lock (_lock)
         {
             var nodes = new List<TopoNodeDto>
             {
-                new("internet", "", "Internet", "", "", 40, 20, 150, 46, "#dfe7f5", "#2266cc", "#1b1d21"),
+                new("internet", "", "Internet", "", "", 40, 20, 150, 46, "#EEF1F3", "#B8C4CB", "#546E7A"),
             };
             var edges = new List<TopoEdgeDto>();
             int i = 0;
             foreach (var d in _devices)
             {
                 var key = "d" + i;
-                double x = 40 + i % 8 * 175.0, y = 120 + i / 8 * 90.0;
+                double x = 40 + i % 8 * 190.0, y = 120 + i / 8 * 90.0;
                 var gw = Kind(d) is DeviceKind.Router or DeviceKind.Firewall;
                 nodes.Add(new TopoNodeDto(key, WebId(d), Display(d), d.Host, d.MacAddress,
-                    x, y, 160, 56, gw ? "#f7e2c4" : "#d9efdd", gw ? "#f68500" : "#2c9a4a", "#1b1d21"));
+                    x, y, 168, 56, gw ? "#FFF1DF" : "#EDF8ED", gw ? "#F3C48A" : "#AFD8AF",
+                    gw ? "#B26B12" : "#3F7A46"));
                 edges.Add(new TopoEdgeDto("internet", key));
                 i++;
             }
-            return Task.FromResult(new TopoGraph(nodes, edges));
+            return new TopoGraph(nodes, edges);
         }
+    }
+
+    /// <summary>Collects each infrastructure device's MAC→port forwarding table: RouterOS over REST (with
+    /// a login), a Zyxel switch over its SSH CLI (with a login), otherwise SNMP (no login, vendor-neutral).
+    /// Best-effort per device – one that won't answer simply contributes nothing.</summary>
+    private async Task<Dictionary<string, IReadOnlyDictionary<string, string>>> GatherFdbAsync()
+    {
+        List<Device> bridges;
+        string community;
+        lock (_lock)
+        {
+            community = _appData.SnmpCommunity?.Trim() is { Length: > 0 } c ? c : "public";
+            bridges = _devices.Where(d =>
+                Kind(d) is DeviceKind.Switch or DeviceKind.Router or DeviceKind.AccessPoint or DeviceKind.Firewall
+                || IsMikroTik(d)).ToList();
+        }
+
+        var result = new Dictionary<string, IReadOnlyDictionary<string, string>>();
+        foreach (var d in bridges)
+        {
+            var table = await OneFdbAsync(d, community).ConfigureAwait(false);
+            if (table is { Count: > 0 }) result[WebId(d)] = table;
+        }
+        return result;
+    }
+
+    private async Task<Dictionary<string, string>?> OneFdbAsync(Device d, string community)
+    {
+        List<(string Mac, string Port)>? raw = null;
+        var password = d.EncryptedPassword.Length > 0 ? CredentialProtector.Unprotect(d.EncryptedPassword) : "";
+
+        try
+        {
+            if (IsMikroTik(d) && password.Length > 0)
+            {
+                using var client = new RouterOsClient(d.Host, d.Port, d.UseHttps, d.Username, password, ignoreCertErrors: true);
+                raw = await client.GetBridgeHostsAsync().ConfigureAwait(false);
+            }
+            else if (IsZyxelSwitch(d) && password.Length > 0)
+            {
+                var zy = await ZyxelSsh.GetFdbAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
+                raw = zy?.Select(kv => (kv.Key, kv.Value)).ToList();
+            }
+        }
+        catch { raw = null; }
+
+        // No login (or the authenticated read failed) → SNMP, which is vendor-neutral and needs none.
+        if (raw is null || raw.Count == 0)
+        {
+            try
+            {
+                var snmp = await SnmpFdb.ReadAsync(d.Host, community).ConfigureAwait(false);
+                raw = snmp?.Select(kv => (kv.Key, kv.Value)).ToList();
+            }
+            catch { /* SNMP off – nothing to add */ }
+        }
+        if (raw is null) return null;
+
+        var map = new Dictionary<string, string>();
+        foreach (var (mac, port) in raw)
+        {
+            var key = PhysicalTopology.NormalizeMac(mac);
+            if (key.Length == 12 && port.Length > 0 && !map.ContainsKey(key)) map[key] = port;
+        }
+        return map.Count > 0 ? map : null;
     }
 
     // ---- mapping helpers ------------------------------------------------------------------------
