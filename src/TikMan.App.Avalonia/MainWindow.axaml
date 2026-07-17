@@ -1,0 +1,10 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="TikMan.App.Avalonia.MainWindow"
+        Width="960" Height="640"
+        Title="TikMan">
+    <StackPanel Margin="24" Spacing="12">
+        <TextBlock Text="TikMan" FontSize="24" FontWeight="SemiBold" />
+        <TextBlock Text="Avalonia native GUI — Gerüst läuft." Opacity="0.7" />
+    </StackPanel>
+</Window>
