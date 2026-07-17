@@ -36,7 +36,8 @@ public static class PhysicalTopology
         IReadOnlyList<TopoInputDevice> devices,
         IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> fdb, // bridgeId → (normMAC → port)
         string gatewayIp,
-        IReadOnlyDictionary<(string BridgeId, string Port), string>? ssids = null)
+        IReadOnlyDictionary<(string BridgeId, string Port), string>? ssids = null,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? traces = null)   // deviceIp → hop IPs
     {
         var boxes = new List<TopoBox>();
         var links = new List<TopoLink>();
@@ -166,12 +167,47 @@ public static class PhysicalTopology
             }
         }
 
-        // 3) No forwarding-table evidence: grouped under one "unknown path" node, honestly.
+        // 3) Whatever the FDB couldn't place: a traced router path (routed segments), else "unknown".
+        var byIp = devices.Where(d => d.Ip.Length > 0)
+            .GroupBy(d => d.Ip, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First());
+        var hopNodes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); // hopIp → placed key
         string? unknownKey = null;
         foreach (var d in devices.OrderBy(x => Ipv4SortKey(x.Ip)))
         {
             if ((gwDev is not null && d.Id == gwDev.Id) || nodeKeyOf.ContainsKey(d.Id) || attachedViaFdb.Contains(d.Id))
                 continue;
+
+            // A traced route: chain its routers (each hop != the gateway) under the root, then the leaf.
+            if (traces is not null && traces.TryGetValue(d.Ip, out var hops) && hops.Count > 0)
+            {
+                var parentKey = gwKey;
+                int level = 0;
+                foreach (var hop in hops.Where(h => !string.Equals(h, gatewayIp, StringComparison.OrdinalIgnoreCase)))
+                {
+                    level++;
+                    if (!hopNodes.TryGetValue(hop, out var hopKey))
+                    {
+                        // Reuse a known device as the hop when we have one and it isn't placed yet.
+                        if (byIp.TryGetValue(hop, out var hopDev) && !nodeKeyOf.ContainsKey(hopDev.Id))
+                        {
+                            hopKey = hopDev.Id;
+                            Add(hopKey, hopDev.Id, hopDev.Title, hopDev.Detail, hopDev.Mac, TopoRole.Infrastructure);
+                            nodeKeyOf[hopDev.Id] = hopKey;
+                        }
+                        else { hopKey = "::hop:" + hop; Add(hopKey, null, hop, hop, "", TopoRole.Infrastructure); }
+                        hopNodes[hop] = hopKey;
+                        PlaceAt(level, hopKey);
+                        Connect(parentKey, hopKey);
+                    }
+                    parentKey = hopKey;
+                }
+                Add(d.Id, d.Id, d.Title, d.Detail, d.Mac, d.IsInfrastructure ? TopoRole.Infrastructure : TopoRole.Client);
+                nodeKeyOf[d.Id] = d.Id;
+                PlaceAt(levels.TryGetValue(parentKey, out var pl) ? pl + 1 : 1, d.Id);
+                Connect(parentKey, d.Id);
+                continue;
+            }
+
             if (unknownKey is null)
             {
                 unknownKey = "::unknown";

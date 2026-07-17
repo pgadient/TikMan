@@ -186,8 +186,10 @@ public sealed class HostBackend : IWebBackend
             new Dictionary<string, SsdpScanner.SsdpInfo>());
         await Task.WhenAll(mndpTask, mdnsTask, ssdpTask).ConfigureAwait(false);
 
+        string community;
         lock (_lock)
         {
+            community = _appData.SnmpCommunity?.Trim() is { Length: > 0 } c ? c : "public";
             foreach (var f in mndpTask.Result) Merge(f);
             foreach (var d in _devices)
             {
@@ -195,6 +197,55 @@ public sealed class HostBackend : IWebBackend
                 if (ssdpTask.Result.TryGetValue(d.Host, out var s)) ApplySsdp(d, s);
             }
             Persist();
+        }
+
+        await ProbeDevicesAsync(community, ct).ConfigureAwait(false); // per-device HTTP/SNMP for model+vendor
+    }
+
+    /// <summary>Per-device, unauthenticated probes that fill the model and vendor a bare port scan can't:
+    /// the web UI's &lt;title&gt; (often the exact model) + a brand from it, and SNMP's sysDescr (the exact
+    /// model on printers/copiers/switches). Runs concurrently, gently capped. Only fills gaps – a name or
+    /// model an earlier, stronger source set is never overwritten.</summary>
+    private async Task ProbeDevicesAsync(string community, CancellationToken ct)
+    {
+        List<Device> snapshot;
+        lock (_lock) snapshot = _devices.ToList();
+        using var gate = new SemaphoreSlim(16);
+        await Task.WhenAll(snapshot.Select(async d =>
+        {
+            await gate.WaitAsync(ct).ConfigureAwait(false);
+            try { await ProbeOneDeviceAsync(d, community, ct).ConfigureAwait(false); }
+            catch { /* best-effort per device */ }
+            finally { gate.Release(); }
+        })).ConfigureAwait(false);
+        lock (_lock) Persist();
+    }
+
+    private async Task ProbeOneDeviceAsync(Device d, string community, CancellationToken ct)
+    {
+        var host = d.Host;
+        if (host.Length == 0) return;
+
+        if (d.OpenPorts.Any(p => p is 80 or 443 or 8080))
+        {
+            var fp = await HttpFingerprint.ProbeAsync(host, ct).ConfigureAwait(false);
+            lock (_lock)
+            {
+                if (fp.Title.Length > 0 && !d.ExtraInfo.ContainsKey("Web-Titel")) d.ExtraInfo["Web-Titel"] = fp.Title;
+                if (fp.Vendor.Length > 0 && !d.ExtraInfo.ContainsKey("Hersteller (Web)"))
+                    d.ExtraInfo["Hersteller (Web)"] = fp.Vendor;
+            }
+        }
+
+        if (await SnmpProbe.QueryAsync(host, ct, community).ConfigureAwait(false) is { } s)
+        {
+            lock (_lock)
+            {
+                if (s.SysName.Length > 0 && d.Name.Length == 0) d.Name = s.SysName;
+                // sysDescr is the exact model on printers/copiers/switches (an OS string on servers, which
+                // the model rules simply don't match). Only when nothing better named the device.
+                if (s.SysDescr.Length > 0 && !d.ExtraInfo.ContainsKey("Modell")) d.ExtraInfo["Modell"] = s.SysDescr;
+            }
         }
     }
 
@@ -319,11 +370,12 @@ public sealed class HostBackend : IWebBackend
     {
         if (!physical) return BuildLogical();
 
-        // Physical: gather the bridge forwarding tables (who sees which MAC on which port), then let the
-        // shared Core builder place everything. Slow – it talks to every infrastructure device – but only
-        // when the physical tab is opened.
-        var fdb = await GatherFdbAsync().ConfigureAwait(false);
+        // Physical: gather the bridge forwarding tables (who sees which MAC on which port) plus the WLAN
+        // SSIDs and traced routes, then let the shared Core builder place everything. Slow – it talks to
+        // every infrastructure device – but only when the physical tab is opened.
+        var (fdb, ssids) = await GatherFdbAsync().ConfigureAwait(false);
         var gatewayIp = TraceRoute.DefaultGateway();
+        var traces = await GatherTracesAsync().ConfigureAwait(false);
 
         List<TopoInputDevice> input;
         lock (_lock)
@@ -332,7 +384,7 @@ public sealed class HostBackend : IWebBackend
                 Kind(d) is DeviceKind.Switch or DeviceKind.Router or DeviceKind.AccessPoint or DeviceKind.Firewall
                     || IsMikroTik(d))).ToList();
 
-        var layout = PhysicalTopology.Build(input, fdb, gatewayIp);
+        var layout = PhysicalTopology.Build(input, fdb, gatewayIp, ssids, traces);
         return new TopoGraph(
             layout.Nodes.Select(n => new TopoNodeDto(n.Key, n.DeviceId, n.Title, n.Detail, n.Mac,
                 n.X, n.Y, n.W, n.H, n.Fill, n.Line, n.Text)).ToList(),
@@ -367,9 +419,11 @@ public sealed class HostBackend : IWebBackend
     }
 
     /// <summary>Collects each infrastructure device's MAC→port forwarding table: RouterOS over REST (with
-    /// a login), a Zyxel switch over its SSH CLI (with a login), otherwise SNMP (no login, vendor-neutral).
-    /// Best-effort per device – one that won't answer simply contributes nothing.</summary>
-    private async Task<Dictionary<string, IReadOnlyDictionary<string, string>>> GatherFdbAsync()
+    /// a login, plus its neighbour table and WLAN SSIDs), a Zyxel switch over its SSH CLI (with a login),
+    /// otherwise SNMP (no login, vendor-neutral). Best-effort per device – one that won't answer simply
+    /// contributes nothing. Returns the FDB and the (bridge, port)→SSID labels for the wlan ports.</summary>
+    private async Task<(Dictionary<string, IReadOnlyDictionary<string, string>> Fdb,
+                        Dictionary<(string, string), string> Ssids)> GatherFdbAsync()
     {
         List<Device> bridges;
         string community;
@@ -381,18 +435,47 @@ public sealed class HostBackend : IWebBackend
                 || IsMikroTik(d)).ToList();
         }
 
-        var result = new Dictionary<string, IReadOnlyDictionary<string, string>>();
+        var fdb = new Dictionary<string, IReadOnlyDictionary<string, string>>();
+        var ssids = new Dictionary<(string, string), string>();
         foreach (var d in bridges)
         {
-            var table = await OneFdbAsync(d, community).ConfigureAwait(false);
-            if (table is { Count: > 0 }) result[WebId(d)] = table;
+            var (table, wifi) = await OneFdbAsync(d, community).ConfigureAwait(false);
+            if (table is { Count: > 0 }) fdb[WebId(d)] = table;
+            if (wifi is not null)
+                foreach (var (iface, ssid) in wifi) ssids[(WebId(d), iface)] = ssid;
         }
+        return (fdb, ssids);
+    }
+
+    /// <summary>Traceroutes every device in parallel (capped), so routed segments (devices behind another
+    /// router) can be chained on the map. Best-effort: unprivileged ICMP may not resolve hops, in which
+    /// case a device without an FDB sighting just lands under "unknown path".</summary>
+    private async Task<Dictionary<string, IReadOnlyList<string>>> GatherTracesAsync()
+    {
+        List<string> ips;
+        lock (_lock) ips = _devices.Select(d => d.Host).Where(h => h.Length > 0).Distinct().ToList();
+        var result = new Dictionary<string, IReadOnlyList<string>>();
+        using var gate = new SemaphoreSlim(24);
+        var tasks = ips.Select(async ip =>
+        {
+            await gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var hops = await TraceRoute.TraceAsync(ip).ConfigureAwait(false);
+                if (hops is { Count: > 0 }) lock (result) result[ip] = hops;
+            }
+            catch { /* trace failed – device falls back to FDB/unknown */ }
+            finally { gate.Release(); }
+        });
+        await Task.WhenAll(tasks).ConfigureAwait(false);
         return result;
     }
 
-    private async Task<Dictionary<string, string>?> OneFdbAsync(Device d, string community)
+    private async Task<(Dictionary<string, string>? Fdb, Dictionary<string, string>? Ssids)> OneFdbAsync(
+        Device d, string community)
     {
         List<(string Mac, string Port)>? raw = null;
+        Dictionary<string, string>? wifi = null;
         var password = d.EncryptedPassword.Length > 0 ? CredentialProtector.Unprotect(d.EncryptedPassword) : "";
 
         try
@@ -401,6 +484,16 @@ public sealed class HostBackend : IWebBackend
             {
                 using var client = new RouterOsClient(d.Host, d.Port, d.UseHttps, d.Username, password, ignoreCertErrors: true);
                 raw = await client.GetBridgeHostsAsync().ConfigureAwait(false);
+                // Neighbour table: extra MAC→physical-port sightings, merged into the FDB below.
+                try
+                {
+                    var neigh = await client.GetNeighborsAsync().ConfigureAwait(false);
+                    raw.AddRange(neigh.Select(n => (n.Mac, n.Interface)));
+                }
+                catch { /* no neighbour endpoint / older RouterOS */ }
+                // WLAN SSIDs label the wlan ports ("wifi1 (MyWLAN)").
+                try { wifi = await client.GetWifiSsidsAsync().ConfigureAwait(false); }
+                catch { /* no wifi package */ }
             }
             else if (IsZyxelSwitch(d) && password.Length > 0)
             {
@@ -420,7 +513,7 @@ public sealed class HostBackend : IWebBackend
             }
             catch { /* SNMP off – nothing to add */ }
         }
-        if (raw is null) return null;
+        if (raw is null) return (null, wifi is { Count: > 0 } ? wifi : null);
 
         var map = new Dictionary<string, string>();
         foreach (var (mac, port) in raw)
@@ -428,7 +521,7 @@ public sealed class HostBackend : IWebBackend
             var key = PhysicalTopology.NormalizeMac(mac);
             if (key.Length == 12 && port.Length > 0 && !map.ContainsKey(key)) map[key] = port;
         }
-        return map.Count > 0 ? map : null;
+        return (map.Count > 0 ? map : null, wifi is { Count: > 0 } ? wifi : null);
     }
 
     // ---- mapping helpers ------------------------------------------------------------------------
@@ -473,7 +566,17 @@ public sealed class HostBackend : IWebBackend
             return mk;
         if (Vendor(d) == "MikroTik" && Model(d) is { Length: > 0 } board)
             return DeviceClassifier.MikroTikKind(board);
-        return DeviceClassifier.Guess(Vendor(d), d.OpenPorts, Model(d), d.Name);
+        return DeviceClassifier.Guess(Vendor(d), d.OpenPorts, ClassifyText(d), d.Name);
+    }
+
+    /// <summary>The model text the classifier weighs: the SNMP/MNDP model plus the web title, since the
+    /// exact model shows up in one or the other (a printer's title says the model, a switch's sysDescr
+    /// does). The DTO's model column stays the clean <see cref="Model"/> value.</summary>
+    private static string ClassifyText(Device d)
+    {
+        var model = Model(d);
+        var title = d.ExtraInfo.TryGetValue("Web-Titel", out var t) ? t : "";
+        return (model + " " + title).Trim();
     }
 
     private static int VncPort(Device d) =>
