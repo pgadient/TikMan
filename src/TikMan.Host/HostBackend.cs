@@ -225,28 +225,136 @@ public sealed class HostBackend : IWebBackend
     {
         var host = d.Host;
         if (host.Length == 0) return;
+        var ports = d.OpenPorts;
+        bool web = ports.Any(p => p is 80 or 443 or 8080);
 
-        if (d.OpenPorts.Any(p => p is 80 or 443 or 8080))
+        // QNAP first: its plain web pages return noise, so ask the QTS login endpoint. If it answers,
+        // the device is a QNAP NAS and the other web probes would only muddy it.
+        if (web && await QnapProbe.QueryAsync(host, ports, ct).ConfigureAwait(false) is { } qnap)
+        {
+            lock (_lock)
+            {
+                d.ExtraInfo["Hersteller (Web)"] = "QNAP";
+                if (qnap.Os.Length > 0) d.ExtraInfo["System"] = qnap.Os;
+                if (qnap.Model.Length > 0) d.ExtraInfo["Modell"] = qnap.Model;
+                if (qnap.Hostname.Length > 0 && d.Name.Length == 0) d.Name = qnap.Hostname;
+            }
+            return;
+        }
+
+        // Web fingerprint: server header, page <title> (often the exact model) and a brand from it.
+        if (web)
         {
             var fp = await HttpFingerprint.ProbeAsync(host, ct).ConfigureAwait(false);
             lock (_lock)
             {
+                if (fp.WebServer.Length > 0 && !d.ExtraInfo.ContainsKey("Webserver")) d.ExtraInfo["Webserver"] = fp.WebServer;
                 if (fp.Title.Length > 0 && !d.ExtraInfo.ContainsKey("Web-Titel")) d.ExtraInfo["Web-Titel"] = fp.Title;
                 if (fp.Vendor.Length > 0 && !d.ExtraInfo.ContainsKey("Hersteller (Web)"))
                     d.ExtraInfo["Hersteller (Web)"] = fp.Vendor;
             }
         }
 
+        // TLS cert (443): some devices embed model/serial/MAC in the subject and speak only legacy TLS
+        // no HTTP page loads over (e.g. a Cisco SPA122 ATA). After the web probe, so a clean title wins.
+        if (ports.Contains(443) && await TlsCertProbe.QueryAsync(host, 443, ct).ConfigureAwait(false) is { } tls)
+        {
+            lock (_lock)
+            {
+                if (!d.ExtraInfo.ContainsKey("Hersteller (Web)"))
+                {
+                    var brand = ModelVendor.FromModel(tls.Model);
+                    if (brand.Length == 0) brand = ModelVendor.FromModel(tls.Vendor);
+                    if (brand.Length == 0 && tls.Vendor.Length is > 0 and <= 30) brand = tls.Vendor;
+                    if (brand.Length > 0) d.ExtraInfo["Hersteller (Web)"] = brand;
+                }
+                if (tls.Model.Length > 0 && !d.ExtraInfo.ContainsKey("Modell")) d.ExtraInfo["Modell"] = tls.Model;
+                if (tls.Serial.Length > 0 && d.SerialNumber.Length == 0) d.SerialNumber = tls.Serial;
+                if (tls.Mac.Length > 0 && d.MacAddress.Length == 0) d.MacAddress = tls.Mac;
+            }
+        }
+
+        // Vendor-gated web probes: a Brother printer, a Swisscom Internet-Box, a Frontier-Silicon radio
+        // all expose exact model/serial/firmware on their own endpoints. Gate on the hints gathered so far.
+        var hint = VendorHint(d);
+        if (web && hint.Contains("brother") &&
+            await BrotherProbe.QueryAsync(host, ct).ConfigureAwait(false) is { } br)
+        {
+            lock (_lock)
+            {
+                if (br.Serial.Length > 0 && d.SerialNumber.Length == 0) d.SerialNumber = br.Serial;
+                if (br.MainFirmware.Length > 0) d.ExtraInfo["Firmware"] = br.MainFirmware;
+                foreach (var kv in br.SubFirmware) d.ExtraInfo[kv.Key] = kv.Value;
+            }
+        }
+        if (web && (hint.Contains("swisscom") || hint.Replace("-", "").Replace(" ", "").Contains("internetbox")) &&
+            await SwisscomProbe.QueryAsync(host, ct).ConfigureAwait(false) is { } box)
+        {
+            lock (_lock)
+            {
+                if (box.ModelName.Length > 0) d.ExtraInfo["Modell"] = box.ModelName;
+                if (box.Serial.Length > 0) d.SerialNumber = box.Serial;
+                if (box.Firmware.Length > 0) d.ExtraInfo["Firmware"] = box.Firmware;
+            }
+        }
+        if (web && (hint.Contains("frontier") || hint.Contains("internet radio")) &&
+            await FrontierSiliconProbe.QueryAsync(host, ct).ConfigureAwait(false) is { } radio)
+        {
+            lock (_lock)
+            {
+                if (radio.Name.Length > 0) d.ExtraInfo["Modell"] = radio.Name;
+                if (radio.Vendor.Length > 0 && !d.ExtraInfo.ContainsKey("Hersteller (Web)")) d.ExtraInfo["Hersteller (Web)"] = radio.Vendor;
+                if (radio.Serial.Length > 0 && d.SerialNumber.Length == 0) d.SerialNumber = radio.Serial;
+                if (radio.Firmware.Length > 0) d.ExtraInfo["Firmware"] = radio.Firmware;
+            }
+        }
+
+        // SNMP sysDescr/sysName: the exact model on printers/copiers/switches, no login.
         if (await SnmpProbe.QueryAsync(host, ct, community).ConfigureAwait(false) is { } s)
         {
             lock (_lock)
             {
                 if (s.SysName.Length > 0 && d.Name.Length == 0) d.Name = s.SysName;
-                // sysDescr is the exact model on printers/copiers/switches (an OS string on servers, which
-                // the model rules simply don't match). Only when nothing better named the device.
                 if (s.SysDescr.Length > 0 && !d.ExtraInfo.ContainsKey("Modell")) d.ExtraInfo["Modell"] = s.SysDescr;
             }
         }
+
+        // Generic vendor SSH probe (Zyxel/Netgear/D-Link/HPE/… ): model/serial/firmware from read-only
+        // "show" commands, ordered by the vendor hint. Needs a login.
+        if (ports.Contains(22) && d.EncryptedPassword.Length > 0 && d.Username.Trim().Length > 0)
+        {
+            var password = CredentialProtector.Unprotect(d.EncryptedPassword);
+            if (password.Length > 0 &&
+                await SshInfoProbe.QueryAsync(host, d.SshPort, d.Username.Trim(), password, hint, ct)
+                    .ConfigureAwait(false) is { } ssh)
+            {
+                lock (_lock)
+                {
+                    if (ssh.Model.Length > 0 && !d.ExtraInfo.ContainsKey("Modell")) d.ExtraInfo["Modell"] = ssh.Model;
+                    if (ssh.Serial.Length > 0 && d.SerialNumber.Length == 0) d.SerialNumber = ssh.Serial;
+                    if (ssh.Firmware.Length > 0 && !d.ExtraInfo.ContainsKey("Firmware")) d.ExtraInfo["Firmware"] = ssh.Firmware;
+                }
+            }
+        }
+
+        // DNS (UDP 53) isn't seen by the TCP scan; a UDP forwarder (Swisscom box, dnsmasq) gets its badge
+        // and the open port, which the classifier weighs.
+        try
+        {
+            if (await DnsProbe.IsOpenAsync(host, ct).ConfigureAwait(false))
+                lock (_lock) { if (!d.OpenPorts.Contains(53)) d.OpenPorts.Add(53); }
+        }
+        catch { /* best effort */ }
+    }
+
+    /// <summary>Every vendor signal held for a device, one lowercase haystack: the OUI/probe vendor, the
+    /// model and the scraped web title – what the vendor-gated probes match against.</summary>
+    private static string VendorHint(Device d)
+    {
+        var vendor = Vendor(d);
+        var model = d.ExtraInfo.TryGetValue("Modell", out var m) ? m : "";
+        var title = d.ExtraInfo.TryGetValue("Web-Titel", out var t) ? t : "";
+        return $"{vendor} {model} {title}".ToLowerInvariant();
     }
 
     private static async Task<T> Safe<T>(Func<Task<T>> run, T fallback)
