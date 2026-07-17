@@ -66,9 +66,86 @@ public static class ZyxelSsh
             ? text : null;
     }
 
+    /// <summary>The forwarding table as MAC → port name, the same shape <see cref="Discovery.SnmpFdb"/>
+    /// returns – so the physical topology map takes it without knowing where it came from. Null when SSH
+    /// didn't answer.
+    /// <para>This is the point of the whole class: the map's evidence for non-MikroTik gear has only
+    /// ever come from SNMP, and a switch with SNMP off contributes nothing. Now it does.</para></summary>
+    public static async Task<Dictionary<string, string>?> GetFdbAsync(string host, int port, string user,
+        string password, CancellationToken ct = default)
+    {
+        var macs = await RunAsync(host, port, user, password, "show mac address-table all", ct);
+        if (macs is null) return null;
+
+        // Port names in the same read: a user who labelled port 20 "Uplink-Server" should see that on
+        // the map, not "20". Best-effort – the number is a fine label on its own.
+        var status = await RunAsync(host, port, user, password, "show interfaces status", ct);
+        var names = status is null ? new Dictionary<string, string>() : ParseInterfaceNames(status);
+
+        var fdb = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (mac, portId) in ParseMacTable(macs))
+            fdb[mac] = names.TryGetValue(portId, out var name) ? name : portId;
+        return fdb;
+    }
+
     // ---- parsers (pure, pinned to real output) ----
 
-    /// <summary>Parses <c>show system-information</c> (shape verbatim from an XGS1930-52HP on ZyNOS V5.00, serial and MAC anonymised):
+    /// <summary>Parses <c>show mac address-table all</c> (shape verbatim from an XGS1930-52HP,
+    /// MACs anonymised):
+    /// <code>
+    ///   Port      VLAN ID        MAC Address         Type
+    ///   51        1              00:15:5d:0a:0b:0c   Dynamic
+    ///   21        3              5c:6a:80:aa:bb:cc   Dynamic
+    ///   CPU       1              bc:99:11:00:11:22   Static
+    /// </code>
+    /// Two things the real output taught:
+    /// <list type="bullet">
+    /// <item><b>CPU is not a port.</b> That row is the switch's own MAC (it matches the Ethernet Address
+    /// in <c>show system-information</c>) and is marked Static. Treating it as a port would hang the
+    /// switch off itself.</item>
+    /// <item><b>A MAC repeats per VLAN.</b> The same host on a trunk port shows up once per VLAN it is
+    /// seen in, so the last one wins and the map gets one entry per device, not one per VLAN.</item>
+    /// </list></summary>
+    public static List<(string Mac, string Port)> ParseMacTable(string text)
+    {
+        var list = new List<(string, string)>();
+        foreach (var raw in text.Split('\n'))
+        {
+            var parts = raw.TrimEnd('\r').Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 3) continue;
+            var (port, mac) = (parts[0], parts[2]);
+            if (!LooksLikeMac(mac)) continue;                                  // header and stray lines
+            if (port.Equals("CPU", StringComparison.OrdinalIgnoreCase)) continue;  // the switch itself
+            list.Add((mac.ToLowerInvariant(), port));
+        }
+        return list;
+    }
+
+    /// <summary>Parses the port names out of <c>show interfaces status</c>:
+    /// <code>
+    ///   Port      Name          Link        State             Type          Up Time
+    ///      1         Port1           1G/F FORWARDING         10/100/1000M    2:01:34
+    /// </code>
+    /// Number → name. The default names ("Port1") say nothing the number doesn't, but a labelled port
+    /// carries its label onto the map.</summary>
+    public static Dictionary<string, string> ParseInterfaceNames(string text)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in text.Split('\n'))
+        {
+            var parts = raw.TrimEnd('\r').Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2) continue;
+            if (!int.TryParse(parts[0], out _)) continue;   // header, and the "---- ----" rule line
+            d[parts[0]] = parts[1];
+        }
+        return d;
+    }
+
+    private static bool LooksLikeMac(string s) =>
+        s.Length == 17 && s[2] == ':' && s[5] == ':' && s.Count(c => c == ':') == 5;
+
+    /// <summary>Parses <c>show system-information</c> (shape verbatim from an XGS1930-52HP on
+    /// ZyNOS V5.00, serial and MAC anonymised):
     /// <code>
     /// Product Model           : XGS1930-52HP
     /// System Name             : XGS1930
