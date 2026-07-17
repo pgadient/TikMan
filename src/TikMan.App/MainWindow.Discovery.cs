@@ -639,6 +639,24 @@ public partial class MainWindow
             catch { /* best effort */ }
         }
 
+        // SMB (445/139): the NTLM handshake reveals the computer name + OS build without a login. Runs
+        // AFTER WMI on purpose – on Windows WMI is richer (manufacturer/model/serial), so SMB only fills
+        // the gaps (a name/OS WMI couldn't get, e.g. no admin rights, or a Samba/NAS box). Cross-platform,
+        // so it also lands these facts on VPN scans where WMI's DCOM never reaches.
+        if ((ports.Contains(445) || ports.Contains(139)) && !ct.IsCancellationRequested)
+        {
+            try
+            {
+                var host = vm.Ipv4Address.Length > 0 ? vm.Ipv4Address : vm.Host;
+                if (await SmbInfoProbe.QueryAsync(host, 445, ct) is { } smb)
+                {
+                    vm.ApplySmbInfo(smb);
+                    changed = false; // ApplySmbInfo already raised the details
+                }
+            }
+            catch { /* best effort */ }
+        }
+
         // Frontier-Silicon internet radios (Teufel, Hama, …) name themselves on GET /device.
         if (webMaybe && LooksLikeFsRadio(vm) && !ct.IsCancellationRequested)
         {

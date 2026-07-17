@@ -299,6 +299,18 @@ public class DeviceViewModel : INotifyPropertyChanged
         RaiseDetailsChanged();
     }
 
+    /// <summary>Applies what the credential-free SMB handshake revealed (computer name, OS build). Fills
+    /// gaps only – on Windows WMI runs first and its manufacturer/model/serial/OS take precedence; here we
+    /// add a name/OS WMI couldn't get (no admin rights, a Samba/NAS box, or a VPN scan DCOM can't reach).</summary>
+    public void ApplySmbInfo(SmbInfoProbe.SmbInfo smb)
+    {
+        bool changed = false;
+        if (smb.ComputerName.Length > 0 && Name.Length == 0) { Name = smb.ComputerName; changed = true; }
+        if (smb.OsFriendly.Length > 0 && !Model.ExtraInfo.ContainsKey("OS") && !Model.ExtraInfo.ContainsKey("System"))
+        { Model.ExtraInfo["System"] = smb.OsFriendly; changed = true; }
+        if (changed) RaiseDetailsChanged();
+    }
+
     /// <summary>Applies what the Swisscom Internet-Box reported (exact model, serial, firmware).</summary>
     public void ApplySwisscomInfo(SwisscomProbe.BoxInfo box)
     {

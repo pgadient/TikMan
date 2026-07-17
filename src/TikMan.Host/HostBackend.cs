@@ -309,6 +309,17 @@ public sealed class HostBackend : IWebBackend
             }
         }
 
+        // SMB (445): the NTLM handshake reveals the computer name and OS build without a login – the
+        // cross-platform stand-in for WMI, which names Windows PCs/servers and Samba/NAS boxes.
+        if (ports.Contains(445) && await SmbInfoProbe.QueryAsync(host, 445, ct).ConfigureAwait(false) is { } smb)
+        {
+            lock (_lock)
+            {
+                if (smb.ComputerName.Length > 0 && d.Name.Length == 0) d.Name = smb.ComputerName;
+                if (smb.OsFriendly.Length > 0 && !d.ExtraInfo.ContainsKey("System")) d.ExtraInfo["System"] = smb.OsFriendly;
+            }
+        }
+
         // SNMP sysDescr/sysName: the exact model on printers/copiers/switches, no login.
         if (await SnmpProbe.QueryAsync(host, ct, community).ConfigureAwait(false) is { } s)
         {
