@@ -25,6 +25,15 @@ public partial class MainWindow : Window
     private async void OnSettingsClick(object? sender, RoutedEventArgs e) =>
         await new SettingsWindow(_vm.Settings).ShowDialog(this);
 
+    private async void OnLoginClick(object? sender, RoutedEventArgs e)
+    {
+        var device = _vm.SelectedDevice;
+        if (device is null) return;
+        var dlg = new LoginWindow(device.Name, _vm.LoginUserFor(device));
+        if (await dlg.ShowDialog<LoginResult?>(this) is { } result)
+            _vm.SetLogin(result.User, result.Password);
+    }
+
     /// <summary>Draws the topology when its tab is selected: the logical map is instant, the physical one
     /// reads the forwarding tables (async, with a loading hint). The device tab needs no work.</summary>
     private async void OnTabChanged(object? sender, SelectionChangedEventArgs e)

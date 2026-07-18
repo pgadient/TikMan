@@ -83,6 +83,20 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     /// <summary>The physical topology from forwarding tables – slow (reads every bridge), so awaited.</summary>
     public Task<TopoLayout> BuildPhysicalTopologyAsync() => _fleet.BuildPhysicalTopologyAsync();
 
+    /// <summary>The username to pre-fill a login dialog with: the device's current one, or the app's
+    /// default. The selected device's <see cref="DeviceSnapshot.User"/> is used when it already has one.</summary>
+    public string LoginUserFor(DeviceSnapshot? d) =>
+        d is { User.Length: > 0 } ? d.User : (_appData.DefaultUsername ?? "");
+
+    /// <summary>Stores (or clears, when the password is empty) the login for the selected device via the
+    /// fleet, which DPAPI/AES-encrypts it and persists – the password is never held in plaintext here.</summary>
+    public void SetLogin(string user, string password)
+    {
+        if (_selected is null) return;
+        _fleet.SetLogin(_selected.Id, user, password);
+        ActionResult = password.Length > 0 ? "Angemeldet." : "Anmeldung entfernt.";
+    }
+
     /// <summary>Sends a Wake-on-LAN magic packet to the selected device.</summary>
     public void Wake()
     {

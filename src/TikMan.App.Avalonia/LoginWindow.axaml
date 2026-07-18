@@ -1,0 +1,31 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="TikMan.App.Avalonia.LoginWindow"
+        x:CompileBindings="False"
+        Width="420" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/tikman.png"
+        Title="Anmelden">
+    <StackPanel Margin="20" Spacing="12">
+        <TextBlock Text="Zugangsdaten" FontSize="16" FontWeight="SemiBold" />
+        <TextBlock x:Name="PromptText" Opacity="0.7" TextWrapping="Wrap" />
+
+        <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Benutzer" VerticalAlignment="Center" />
+            <TextBox   Grid.Row="0" Grid.Column="1" x:Name="UserBox" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Passwort" VerticalAlignment="Center" Margin="0,8,0,0" />
+            <TextBox   Grid.Row="1" Grid.Column="1" x:Name="PassBox" Margin="0,8,0,0"
+                       PasswordChar="●" RevealPassword="{Binding #RevealBox.IsChecked}" />
+        </Grid>
+
+        <CheckBox x:Name="RevealBox" Content="Passwort anzeigen" />
+
+        <TextBlock Opacity="0.6" FontSize="12" TextWrapping="Wrap"
+                   Text="Das Passwort wird nur zum Verbinden verwendet und lokal verschlüsselt gespeichert (DPAPI auf Windows, AES auf Linux/macOS) – nie im Klartext. Leer lassen entfernt die Anmeldung." />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+            <Button Content="Abbrechen" Click="OnCancel" />
+            <Button Content="Speichern" Click="OnSave" />
+        </StackPanel>
+    </StackPanel>
+</Window>

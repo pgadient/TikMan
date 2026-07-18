@@ -78,10 +78,16 @@
                                     </ItemsControl>
                                 </StackPanel>
 
+                                <Grid ColumnDefinitions="90,*" Margin="0,2,0,0">
+                                    <TextBlock Grid.Column="0" Text="Anmeldung" Opacity="0.6" />
+                                    <TextBlock Grid.Column="1" Text="{Binding SelectedDevice.User}" />
+                                </Grid>
+
                                 <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,4,0,0">
+                                    <Button Content="Anmelden…" Click="OnLoginClick" />
                                     <Button Content="Wake-on-LAN" Click="OnWakeClick" IsEnabled="{Binding CanWake}" />
-                                    <TextBlock Text="{Binding ActionResult}" Opacity="0.7" VerticalAlignment="Center" TextWrapping="Wrap" />
                                 </StackPanel>
+                                <TextBlock Text="{Binding ActionResult}" Opacity="0.7" TextWrapping="Wrap" Margin="0,2,0,0" />
 
                                 <ItemsControl ItemsSource="{Binding SelectedDevice.Info}" Margin="0,6,0,0">
                                     <ItemsControl.ItemTemplate>
