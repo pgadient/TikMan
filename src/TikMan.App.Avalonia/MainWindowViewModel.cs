@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Avalonia.Threading;
+using TikMan.Core.Api;
 using TikMan.Core.Discovery;
 using TikMan.Core.Fleet;
 using TikMan.Core.Storage;
@@ -105,6 +106,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _selected is null
             ? Task.FromResult(FleetService.BackupData.Fail("Kein Gerät ausgewählt."))
             : _fleet.BackupConfigAsync(_selected.Id);
+
+    /// <summary>Opens an interactive SSH shell to the selected device (needs a login); null on failure.</summary>
+    public Task<ITerminalSession?> OpenTerminalAsync() =>
+        _selected is null
+            ? Task.FromResult<ITerminalSession?>(null)
+            : _fleet.OpenTerminalAsync(_selected.Id, 120, 32);
 
     /// <summary>Surfaces a one-line result under the detail actions (used by the code-behind dialogs).</summary>
     public void ReportAction(string message) => ActionResult = message;

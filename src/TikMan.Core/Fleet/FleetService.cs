@@ -109,6 +109,17 @@ public sealed class FleetService
         public static BackupData Fail(string message) => new(false, message, "", Array.Empty<byte>());
     }
 
+    /// <summary>Opens an interactive SSH shell to a device with its stored login. Null when the device is
+    /// unknown, has no login, or the connection fails. The password is used only to authenticate.</summary>
+    public async Task<ITerminalSession?> OpenTerminalAsync(string id, uint cols, uint rows)
+    {
+        var d = RawDevice(id);
+        if (d is null || d.EncryptedPassword.Length == 0) return null;
+        var password = CredentialProtector.Unprotect(d.EncryptedPassword);
+        if (password.Length == 0) return null;
+        return await SshTerminalSession.ConnectAsync(d.Host, d.SshPort, d.Username, password, cols, rows).ConfigureAwait(false);
+    }
+
     /// <summary>Exports a device's config: RouterOS <c>/export</c> over SSH (.rsc), a Zyxel switch's
     /// running-config over its SSH CLI (.cfg). Needs a stored login. Others aren't config-backup-capable.</summary>
     public async Task<BackupData> BackupConfigAsync(string id)

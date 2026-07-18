@@ -35,6 +35,17 @@ public partial class MainWindow : Window
             _vm.SetLogin(result.User, result.Password);
     }
 
+    private async void OnTerminalClick(object? sender, RoutedEventArgs e)
+    {
+        var device = _vm.SelectedDevice;
+        if (device is null) return;
+        _vm.ReportAction("Verbinde per SSH…");
+        var session = await _vm.OpenTerminalAsync();
+        if (session is null) { _vm.ReportAction("SSH-Verbindung fehlgeschlagen."); return; }
+        _vm.ReportAction("");
+        new TerminalWindow(session, device.Name).Show(this); // non-modal: keep browsing while it's open
+    }
+
     private async void OnBackupClick(object? sender, RoutedEventArgs e)
     {
         _vm.ReportAction("Backup läuft…");

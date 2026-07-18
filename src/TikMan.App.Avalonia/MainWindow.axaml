@@ -84,6 +84,8 @@
 
                                 <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,4,0,0">
                                     <Button Content="Anmelden…" Click="OnLoginClick" />
+                                    <Button Content="Terminal…" Click="OnTerminalClick" IsEnabled="{Binding CanBackup}"
+                                            ToolTip.Tip="SSH-Konsole öffnen (benötigt Login)" />
                                     <Button Content="Backup…" Click="OnBackupClick" IsEnabled="{Binding CanBackup}"
                                             ToolTip.Tip="Konfiguration sichern (RouterOS/Zyxel-Switch, benötigt Login)" />
                                     <Button Content="Wake-on-LAN" Click="OnWakeClick" IsEnabled="{Binding CanWake}" />
