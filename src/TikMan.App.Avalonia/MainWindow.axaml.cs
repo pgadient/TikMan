@@ -3,7 +3,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Interactivity;
-using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using TikMan.Core.Discovery;
@@ -23,48 +22,56 @@ public partial class MainWindow : Window
     private void OnScanClick(object? sender, RoutedEventArgs e) => _vm.Scan();
     private void OnWakeClick(object? sender, RoutedEventArgs e) => _vm.Wake();
 
-    private void OnShowList(object? sender, RoutedEventArgs e)
+    /// <summary>Draws the topology when its tab is selected: the logical map is instant, the physical one
+    /// reads the forwarding tables (async, with a loading hint). The device tab needs no work.</summary>
+    private async void OnTabChanged(object? sender, SelectionChangedEventArgs e)
     {
-        ListView.IsVisible = true;
-        MapScroller.IsVisible = false;
+        if (Tabs is null) return; // fires once during construction, before the fields are set
+        try
+        {
+            switch (Tabs.SelectedIndex)
+            {
+                case 1:
+                    Draw(_vm.BuildLogicalTopology(), LogicalCanvas);
+                    break;
+                case 2:
+                    ShowLoading(PhysicalCanvas);
+                    Draw(await _vm.BuildPhysicalTopologyAsync(), PhysicalCanvas);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            var canvas = Tabs.SelectedIndex == 2 ? PhysicalCanvas : LogicalCanvas;
+            canvas.Children.Clear();
+            canvas.Children.Add(new TextBlock { Text = "Karte fehlgeschlagen: " + ex.Message, Margin = new Thickness(24) });
+        }
     }
 
-    private void OnShowLogical(object? sender, RoutedEventArgs e) => Draw(_vm.BuildLogicalTopology());
-
-    private async void OnShowPhysical(object? sender, RoutedEventArgs e)
+    private static void ShowLoading(Canvas canvas)
     {
-        ListView.IsVisible = false;
-        MapScroller.IsVisible = true;
-        MapCanvas.Children.Clear();
-        MapCanvas.Children.Add(new TextBlock
+        canvas.Children.Clear();
+        canvas.Children.Add(new TextBlock
         {
             Text = "Karte wird erstellt… (Forwarding-Tabellen werden gelesen)",
             Margin = new Thickness(24),
         });
-        try { Draw(await _vm.BuildPhysicalTopologyAsync()); }
-        catch (Exception ex)
-        {
-            MapCanvas.Children.Clear();
-            MapCanvas.Children.Add(new TextBlock { Text = "Karte fehlgeschlagen: " + ex.Message, Margin = new Thickness(24) });
-        }
     }
 
-    /// <summary>Renders a topology layout onto the canvas: edges as lines behind the boxes, each node as a
+    /// <summary>Renders a topology layout onto a canvas: edges as lines behind the boxes, each node as a
     /// coloured rounded rectangle at its computed position. The colours are the shared hex strings the Core
     /// builder produced, so the map looks the same here, in the web UI and in the WPF/PDF export.</summary>
-    private void Draw(TopoLayout layout)
+    private static void Draw(TopoLayout layout, Canvas canvas)
     {
-        ListView.IsVisible = false;
-        MapScroller.IsVisible = true;
-        MapCanvas.Children.Clear();
+        canvas.Children.Clear();
 
         var byKey = new Dictionary<string, TopoBox>();
         foreach (var n in layout.Nodes) byKey[n.Key] = n;
 
-        foreach (var e in layout.Edges)
+        foreach (var edge in layout.Edges)
         {
-            if (!byKey.TryGetValue(e.From, out var a) || !byKey.TryGetValue(e.To, out var b)) continue;
-            MapCanvas.Children.Add(new Line
+            if (!byKey.TryGetValue(edge.From, out var a) || !byKey.TryGetValue(edge.To, out var b)) continue;
+            canvas.Children.Add(new Line
             {
                 StartPoint = new Point(a.X + a.W / 2, a.Y + a.H / 2),
                 EndPoint = new Point(b.X + b.W / 2, b.Y + b.H / 2),
@@ -100,14 +107,14 @@ public partial class MainWindow : Window
             };
             Canvas.SetLeft(box, n.X);
             Canvas.SetTop(box, n.Y);
-            MapCanvas.Children.Add(box);
+            canvas.Children.Add(box);
 
             maxX = Math.Max(maxX, n.X + n.W);
             maxY = Math.Max(maxY, n.Y + n.H);
         }
 
-        MapCanvas.Width = maxX + 40;
-        MapCanvas.Height = maxY + 40;
+        canvas.Width = maxX + 40;
+        canvas.Height = maxY + 40;
     }
 
     private static IBrush Brush(string hex) => new SolidColorBrush(Color.Parse(hex));

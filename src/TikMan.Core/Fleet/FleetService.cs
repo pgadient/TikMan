@@ -531,24 +531,11 @@ public sealed class FleetService
         return t.Length >= 32 && dash >= 4 && hex + dash >= t.Length - 2;
     }
 
-    /// <summary>Scan targets from every up IPv4 interface: the local /24 around each address.</summary>
-    private static string LocalScanTargets()
-    {
-        var ranges = new List<string>();
-        foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
-        {
-            if (nic.OperationalStatus != OperationalStatus.Up || nic.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
-            foreach (var ua in nic.GetIPProperties().UnicastAddresses)
-            {
-                if (ua.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork || IPAddress.IsLoopback(ua.Address)) continue;
-                var b = ua.Address.GetAddressBytes();
-                var range = $"{b[0]}.{b[1]}.{b[2]}.1-254";
-                if (!ranges.Contains(range)) ranges.Add(range);
-            }
-        }
-        return string.Join(",", ranges);
-    }
+    /// <summary>Scan targets = every local IPv4 network as a CIDR from its <b>real</b> subnet mask, via
+    /// <see cref="NetworkInfo.GetLocalSubnets"/>. ⚠️ Not a hardcoded /24: on a /21 (or /22 …) a /24 sweep
+    /// misses seven eighths of the network – which is exactly why the scan found only a fraction.</summary>
+    private static string LocalScanTargets() =>
+        string.Join(",", NetworkInfo.GetLocalSubnets().Select(s => s.Cidr).Distinct());
 
-    private static int CountTargets(string targets) =>
-        targets.Split(',', StringSplitOptions.RemoveEmptyEntries).Sum(r => r.Contains('-') ? 254 : 1);
+    private static int CountTargets(string targets) => SubnetScanner.CountHosts(targets);
 }
