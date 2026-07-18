@@ -101,6 +101,45 @@ public sealed class FleetService
     /// <summary>The local IPv4 networks (real interface masks) for a UI adapter/subnet picker.</summary>
     public static IReadOnlyList<LocalSubnet> LocalSubnets() => NetworkInfo.GetLocalSubnets();
 
+    /// <summary>A finished config backup: the suggested filename and the bytes to write, or a failure with
+    /// a reason. The bytes can carry secrets (a Zyxel running-config has "admin-password cipher …"), so
+    /// they are only ever written to the chosen file – never logged.</summary>
+    public sealed record BackupData(bool Ok, string Message, string FileName, byte[] Bytes)
+    {
+        public static BackupData Fail(string message) => new(false, message, "", Array.Empty<byte>());
+    }
+
+    /// <summary>Exports a device's config: RouterOS <c>/export</c> over SSH (.rsc), a Zyxel switch's
+    /// running-config over its SSH CLI (.cfg). Needs a stored login. Others aren't config-backup-capable.</summary>
+    public async Task<BackupData> BackupConfigAsync(string id)
+    {
+        var d = RawDevice(id);
+        if (d is null) return BackupData.Fail("Gerät nicht gefunden.");
+        if (d.EncryptedPassword.Length == 0) return BackupData.Fail("Keine Anmeldung gespeichert.");
+        if (!IsMikroTik(d) && !IsZyxelSwitch(d)) return BackupData.Fail("Konfig-Backup nur für MikroTik und Zyxel-Switches.");
+
+        var password = CredentialProtector.Unprotect(d.EncryptedPassword);
+        if (password.Length == 0) return BackupData.Fail("Keine Anmeldung gespeichert.");
+        try
+        {
+            string? config; string ext;
+            if (IsZyxelSwitch(d))
+            {
+                config = await ZyxelSsh.GetRunningConfigAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
+                ext = ".cfg";
+            }
+            else
+            {
+                config = await SshConfigExport.GetAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
+                ext = ".rsc";
+            }
+            if (config is null) return BackupData.Fail("Konfig-Export über SSH fehlgeschlagen.");
+            var name = BackupNaming.SuggestFileName(d.Name, Model(d), d.Host, DateTime.Now, ext);
+            return new BackupData(true, "", name, System.Text.Encoding.UTF8.GetBytes(config));
+        }
+        catch (Exception ex) { return BackupData.Fail("Backup fehlgeschlagen: " + ex.Message); }
+    }
+
     // ---- scanning + enrichment -------------------------------------------------------------------
 
     private async Task RunScanAsync()

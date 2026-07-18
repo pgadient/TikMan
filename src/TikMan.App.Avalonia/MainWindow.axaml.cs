@@ -5,6 +5,7 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using TikMan.Core.Discovery;
 
 namespace TikMan.App.Avalonia;
@@ -32,6 +33,31 @@ public partial class MainWindow : Window
         var dlg = new LoginWindow(device.Name, _vm.LoginUserFor(device));
         if (await dlg.ShowDialog<LoginResult?>(this) is { } result)
             _vm.SetLogin(result.User, result.Password);
+    }
+
+    private async void OnBackupClick(object? sender, RoutedEventArgs e)
+    {
+        _vm.ReportAction("Backup läuft…");
+        var backup = await _vm.BackupConfigAsync();
+        if (!backup.Ok) { _vm.ReportAction(backup.Message); return; }
+
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            SuggestedFileName = backup.FileName,
+            FileTypeChoices = new[]
+            {
+                new FilePickerFileType("Konfiguration") { Patterns = new[] { "*.rsc", "*.cfg" } },
+            },
+        });
+        if (file is null) { _vm.ReportAction("Backup abgebrochen."); return; }
+
+        try
+        {
+            await using var stream = await file.OpenWriteAsync();
+            await stream.WriteAsync(backup.Bytes);
+            _vm.ReportAction("Backup gespeichert: " + backup.FileName);
+        }
+        catch (System.Exception ex) { _vm.ReportAction("Speichern fehlgeschlagen: " + ex.Message); }
     }
 
     /// <summary>Draws the topology when its tab is selected: the logical map is instant, the physical one

@@ -53,11 +53,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             Raise(nameof(SelectedDevice));
             Raise(nameof(HasSelection));
             Raise(nameof(CanWake));
+            Raise(nameof(CanBackup));
         }
     }
 
     public bool HasSelection => _selected is not null;
     public bool CanWake => _selected is { Mac.Length: > 0 };
+    public bool CanBackup => _selected is { HasLogin: true };
 
     private string _action = "";
     public string ActionResult { get => _action; private set { _action = value; Raise(nameof(ActionResult)); } }
@@ -96,6 +98,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _fleet.SetLogin(_selected.Id, user, password);
         ActionResult = password.Length > 0 ? "Angemeldet." : "Anmeldung entfernt.";
     }
+
+    /// <summary>Exports the selected device's config (RouterOS .rsc / Zyxel .cfg) – the bytes are handed
+    /// back for the caller to save; they can hold secrets, so they are never logged.</summary>
+    public Task<FleetService.BackupData> BackupConfigAsync() =>
+        _selected is null
+            ? Task.FromResult(FleetService.BackupData.Fail("Kein Gerät ausgewählt."))
+            : _fleet.BackupConfigAsync(_selected.Id);
+
+    /// <summary>Surfaces a one-line result under the detail actions (used by the code-behind dialogs).</summary>
+    public void ReportAction(string message) => ActionResult = message;
 
     /// <summary>Sends a Wake-on-LAN magic packet to the selected device.</summary>
     public void Wake()
