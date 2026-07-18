@@ -2,37 +2,65 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="TikMan.App.Avalonia.SettingsWindow"
         x:CompileBindings="False"
-        Width="460" SizeToContent="Height"
+        Width="520" SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
         Icon="/Assets/tikman.png"
         Title="Einstellungen">
     <StackPanel Margin="20" Spacing="14">
         <TextBlock Text="Einstellungen" FontSize="18" FontWeight="SemiBold" />
 
-        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" >
-            <TextBlock Grid.Row="0" Grid.Column="0" Text="SNMP-Community" VerticalAlignment="Center" />
-            <TextBox   Grid.Row="0" Grid.Column="1" Text="{Binding SnmpCommunity, Mode=TwoWay}" />
+        <TabControl>
+            <TabItem Header="Allgemein">
+                <StackPanel Spacing="10" Margin="0,10,0,0">
+                    <Grid ColumnDefinitions="200,*" RowDefinitions="Auto">
+                        <TextBlock Grid.Column="0" Text="Standard-Benutzername" VerticalAlignment="Center" />
+                        <TextBox Grid.Column="1" Text="{Binding DefaultUsername, Mode=TwoWay}" />
+                    </Grid>
+                    <CheckBox Content="Geräteliste über Neustarts behalten" IsChecked="{Binding PersistDeviceList, Mode=TwoWay}" />
+                    <CheckBox Content="Beim Start nicht automatisch scannen" IsChecked="{Binding NoInitialScan, Mode=TwoWay}" />
+                    <CheckBox Content="Beim Start auf App-Updates prüfen" IsChecked="{Binding CheckForUpdates, Mode=TwoWay}" />
+                    <CheckBox Content="Zeilen standardmässig ausgeklappt" IsChecked="{Binding ExpandRowsByDefault, Mode=TwoWay}" />
+                    <CheckBox Content="Kombinierter Fortschrittsbalken" IsChecked="{Binding SingleProgressBar, Mode=TwoWay}" />
+                </StackPanel>
+            </TabItem>
 
-            <TextBlock Grid.Row="1" Grid.Column="0" Text="Ping-Timeout (ms)" VerticalAlignment="Center" Margin="0,8,0,0" />
-            <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding PingTimeoutMs, Mode=TwoWay}"
-                           Minimum="50" Maximum="5000" Increment="50" Margin="0,8,0,0" />
+            <TabItem Header="Scan">
+                <StackPanel Spacing="10" Margin="0,10,0,0">
+                    <Grid ColumnDefinitions="200,*" RowDefinitions="Auto,Auto,Auto">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="SNMP-Community" VerticalAlignment="Center" />
+                        <TextBox   Grid.Row="0" Grid.Column="1" Text="{Binding SnmpCommunity, Mode=TwoWay}" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Ping-Timeout (ms)" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding PingTimeoutMs, Mode=TwoWay}" Minimum="50" Maximum="5000" Increment="50" Margin="0,8,0,0" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Ping-Wiederholungen" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding PingRetries, Mode=TwoWay}" Minimum="0" Maximum="5" Increment="1" Margin="0,8,0,0" />
+                    </Grid>
+                    <CheckBox Content="Einfacher Scan-Modus (weniger Proben)" IsChecked="{Binding SimpleScanMode, Mode=TwoWay}" />
+                </StackPanel>
+            </TabItem>
 
-            <TextBlock Grid.Row="2" Grid.Column="0" Text="Ping-Wiederholungen" VerticalAlignment="Center" Margin="0,8,0,0" />
-            <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding PingRetries, Mode=TwoWay}"
-                           Minimum="0" Maximum="5" Increment="1" Margin="0,8,0,0" />
-
-            <TextBlock Grid.Row="3" Grid.Column="0" Text="Standard-Benutzername" VerticalAlignment="Center" Margin="0,8,0,0" />
-            <TextBox   Grid.Row="3" Grid.Column="1" Text="{Binding DefaultUsername, Mode=TwoWay}" Margin="0,8,0,0" />
-
-            <CheckBox  Grid.Row="4" Grid.Column="1" Content="Geräteliste über Neustarts behalten"
-                       IsChecked="{Binding PersistDeviceList, Mode=TwoWay}" Margin="0,8,0,0" />
-
-            <CheckBox  Grid.Row="5" Grid.Column="1" Content="Unsicheren HTTP-Rückfall erlauben (Klartext!)"
-                       IsChecked="{Binding AllowHttpFallback, Mode=TwoWay}" Margin="0,4,0,0" />
-        </Grid>
+            <TabItem Header="Verbindungen">
+                <StackPanel Spacing="10" Margin="0,10,0,0">
+                    <CheckBox Content="Unsicheren HTTP-Rückfall erlauben (Klartext!)" IsChecked="{Binding AllowHttpFallback, Mode=TwoWay}" />
+                    <CheckBox Content="Zertifikatsfehler ignorieren (Standard)" IsChecked="{Binding DefaultIgnoreCertErrors, Mode=TwoWay}" />
+                    <Grid ColumnDefinitions="200,*" RowDefinitions="Auto">
+                        <TextBlock Grid.Column="0" Text="Update-Kanal (Standard)" VerticalAlignment="Center" />
+                        <TextBox Grid.Column="1" Text="{Binding DefaultUpdateChannel, Mode=TwoWay}" Watermark="stable" />
+                    </Grid>
+                    <CheckBox Content="Externen SSH-Client verwenden" IsChecked="{Binding UseExternalSshClient, Mode=TwoWay}" />
+                    <Grid ColumnDefinitions="200,*" RowDefinitions="Auto,Auto,Auto">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="SSH-Client-Pfad" VerticalAlignment="Center" />
+                        <TextBox   Grid.Row="0" Grid.Column="1" Text="{Binding ExternalSshClientPath, Mode=TwoWay}" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="VLC-Pfad (für VNC/RTSP)" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <TextBox   Grid.Row="1" Grid.Column="1" Text="{Binding VlcPath, Mode=TwoWay}" Margin="0,8,0,0" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="WinSCP-Pfad" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <TextBox   Grid.Row="2" Grid.Column="1" Text="{Binding WinScpPath, Mode=TwoWay}" Margin="0,8,0,0" />
+                    </Grid>
+                </StackPanel>
+            </TabItem>
+        </TabControl>
 
         <TextBlock Opacity="0.6" TextWrapping="Wrap" FontSize="12"
-                   Text="Zugangsdaten werden pro Gerät gesetzt und lokal verschlüsselt gespeichert (nie im Klartext)." />
+                   Text="Diese Einstellungen teilen sich die Avalonia- und die Windows-App (dieselbe Konfigurationsdatei). Zugangsdaten werden pro Gerät gesetzt und lokal verschlüsselt gespeichert." />
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
             <Button Content="Abbrechen" Click="OnCancel" />

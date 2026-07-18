@@ -7,8 +7,18 @@ namespace TikMan.App.Avalonia;
 
 public partial class SettingsWindow : Window
 {
+    // The settings this dialog edits. Snapshotted on open so «Abbrechen» reverts the live AppData
+    // instance the fleet reads from (reflection keeps the two lists – XAML + here – from drifting).
+    private static readonly string[] Fields =
+    {
+        "DefaultUsername", "PersistDeviceList", "NoInitialScan", "CheckForUpdates", "ExpandRowsByDefault",
+        "SingleProgressBar", "SnmpCommunity", "PingTimeoutMs", "PingRetries", "SimpleScanMode",
+        "AllowHttpFallback", "DefaultIgnoreCertErrors", "DefaultUpdateChannel", "UseExternalSshClient",
+        "ExternalSshClientPath", "VlcPath", "WinScpPath",
+    };
+
     private readonly AppData _appData = new();
-    private readonly (string Snmp, int Timeout, int Retries, string User, bool Persist, bool Http) _original;
+    private readonly Dictionary<string, object?> _original = new();
 
     public SettingsWindow() => AvaloniaXamlLoader.Load(this); // XAML previewer
 
@@ -16,26 +26,21 @@ public partial class SettingsWindow : Window
     {
         AvaloniaXamlLoader.Load(this);
         _appData = appData;
-        // Remember the fields we expose, so «Abbrechen» reverts the live instance we bind to.
-        _original = (appData.SnmpCommunity, appData.PingTimeoutMs, appData.PingRetries,
-                     appData.DefaultUsername, appData.PersistDeviceList, appData.AllowHttpFallback);
+        foreach (var f in Fields)
+            if (typeof(AppData).GetProperty(f) is { } p) _original[f] = p.GetValue(appData);
         DataContext = appData;
     }
 
     private void OnSave(object? sender, RoutedEventArgs e)
     {
-        try { DeviceStore.Save(_appData); } catch { /* keep the dialog open on a write failure is overkill; ignore */ }
+        try { DeviceStore.Save(_appData); } catch { /* a write failure shouldn't trap the user in the dialog */ }
         Close();
     }
 
     private void OnCancel(object? sender, RoutedEventArgs e)
     {
-        _appData.SnmpCommunity = _original.Snmp;
-        _appData.PingTimeoutMs = _original.Timeout;
-        _appData.PingRetries = _original.Retries;
-        _appData.DefaultUsername = _original.User;
-        _appData.PersistDeviceList = _original.Persist;
-        _appData.AllowHttpFallback = _original.Http;
+        foreach (var f in Fields)
+            if (typeof(AppData).GetProperty(f) is { } p && _original.TryGetValue(f, out var v)) p.SetValue(_appData, v);
         Close();
     }
 }

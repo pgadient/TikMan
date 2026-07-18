@@ -12,7 +12,10 @@ namespace TikMan.Core.Fleet;
 public sealed record DeviceSnapshot(
     string Id, string Name, string Ip, string Mac, string Vendor, DeviceKind Kind, string KindText,
     string Model, string Status, bool IsGateway, bool HasLogin, int VncPort, string User,
-    IReadOnlyList<KeyValuePair<string, string>> Info);
+    IReadOnlyList<KeyValuePair<string, string>> Info, IReadOnlyList<string> Ipv6)
+{
+    public bool HasIpv6 => Ipv6.Count > 0;
+}
 
 /// <summary>The shared device inventory: it scans the network, enriches and classifies the results, keeps
 /// each device's reachability current, and persists the list – all UI-free, so the headless host and the
@@ -505,7 +508,8 @@ public sealed class FleetService
     private DeviceSnapshot ToSnapshot(Device d) => new(
         WebId(d), Display(d), d.Host, d.MacAddress, Vendor(d), Kind(d), KindText(Kind(d)), Model(d),
         StatusText(d), Kind(d) is DeviceKind.Router or DeviceKind.Firewall, d.EncryptedPassword.Length > 0,
-        VncPort(d), d.Username, d.ExtraInfo.Select(kv => new KeyValuePair<string, string>(kv.Key, kv.Value)).ToList());
+        VncPort(d), d.Username, d.ExtraInfo.Select(kv => new KeyValuePair<string, string>(kv.Key, kv.Value)).ToList(),
+        d.AltAddresses.Where(a => a.Contains(':')).Distinct().ToList());
 
     private static string VendorHint(Device d)
     {

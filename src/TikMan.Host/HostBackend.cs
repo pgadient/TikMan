@@ -36,7 +36,7 @@ public sealed class HostBackend : IWebBackend
         var s = _fleet.SnapshotOf(id);
         if (s is null) return null;
         return new DeviceDetail(s.Id, s.Name, s.Ip, s.Mac, s.Vendor, s.KindText, s.Model, s.Status,
-            s.HasLogin, s.User, s.Mac.Length > 0, s.VncPort, new List<string>(),
+            s.HasLogin, s.User, s.Mac.Length > 0, s.VncPort, s.Ipv6,
             s.Info.Select(kv => new KeyVal(kv.Key, kv.Value)).ToList());
     }
 
