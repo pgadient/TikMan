@@ -15,4 +15,5 @@ public partial class MainWindow : Window
     }
 
     private void OnScanClick(object? sender, RoutedEventArgs e) => _vm.Scan();
+    private void OnWakeClick(object? sender, RoutedEventArgs e) => _vm.Wake();
 }
