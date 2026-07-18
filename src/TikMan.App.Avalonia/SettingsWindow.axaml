@@ -1,0 +1,42 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="TikMan.App.Avalonia.SettingsWindow"
+        x:CompileBindings="False"
+        Width="460" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/tikman.png"
+        Title="Einstellungen">
+    <StackPanel Margin="20" Spacing="14">
+        <TextBlock Text="Einstellungen" FontSize="18" FontWeight="SemiBold" />
+
+        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" >
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="SNMP-Community" VerticalAlignment="Center" />
+            <TextBox   Grid.Row="0" Grid.Column="1" Text="{Binding SnmpCommunity, Mode=TwoWay}" />
+
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Ping-Timeout (ms)" VerticalAlignment="Center" Margin="0,8,0,0" />
+            <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding PingTimeoutMs, Mode=TwoWay}"
+                           Minimum="50" Maximum="5000" Increment="50" Margin="0,8,0,0" />
+
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Ping-Wiederholungen" VerticalAlignment="Center" Margin="0,8,0,0" />
+            <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding PingRetries, Mode=TwoWay}"
+                           Minimum="0" Maximum="5" Increment="1" Margin="0,8,0,0" />
+
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="Standard-Benutzername" VerticalAlignment="Center" Margin="0,8,0,0" />
+            <TextBox   Grid.Row="3" Grid.Column="1" Text="{Binding DefaultUsername, Mode=TwoWay}" Margin="0,8,0,0" />
+
+            <CheckBox  Grid.Row="4" Grid.Column="1" Content="Geräteliste über Neustarts behalten"
+                       IsChecked="{Binding PersistDeviceList, Mode=TwoWay}" Margin="0,8,0,0" />
+
+            <CheckBox  Grid.Row="5" Grid.Column="1" Content="Unsicheren HTTP-Rückfall erlauben (Klartext!)"
+                       IsChecked="{Binding AllowHttpFallback, Mode=TwoWay}" Margin="0,4,0,0" />
+        </Grid>
+
+        <TextBlock Opacity="0.6" TextWrapping="Wrap" FontSize="12"
+                   Text="Zugangsdaten werden pro Gerät gesetzt und lokal verschlüsselt gespeichert (nie im Klartext)." />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+            <Button Content="Abbrechen" Click="OnCancel" />
+            <Button Content="Speichern" Click="OnSave" />
+        </StackPanel>
+    </StackPanel>
+</Window>

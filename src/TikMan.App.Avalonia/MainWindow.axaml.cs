@@ -22,6 +22,9 @@ public partial class MainWindow : Window
     private void OnScanClick(object? sender, RoutedEventArgs e) => _vm.Scan();
     private void OnWakeClick(object? sender, RoutedEventArgs e) => _vm.Wake();
 
+    private async void OnSettingsClick(object? sender, RoutedEventArgs e) =>
+        await new SettingsWindow(_vm.Settings).ShowDialog(this);
+
     /// <summary>Draws the topology when its tab is selected: the logical map is instant, the physical one
     /// reads the forwarding tables (async, with a loading hint). The device tab needs no work.</summary>
     private async void OnTabChanged(object? sender, SelectionChangedEventArgs e)

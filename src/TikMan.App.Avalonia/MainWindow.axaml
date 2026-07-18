@@ -3,11 +3,17 @@
         x:Class="TikMan.App.Avalonia.MainWindow"
         x:CompileBindings="False"
         Width="1120" Height="720"
+        Icon="/Assets/tikman.png"
         Title="TikMan">
     <DockPanel Margin="16">
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="12" Margin="0,0,0,12">
-            <TextBlock Text="TikMan" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="10" Margin="0,0,0,12">
+            <Image Source="/Assets/tikman.png" Width="26" Height="26" VerticalAlignment="Center" />
+            <ComboBox ItemsSource="{Binding Adapters}" SelectedItem="{Binding SelectedAdapter, Mode=TwoWay}"
+                      Width="240" MinWidth="180" VerticalAlignment="Center" />
+            <TextBox Text="{Binding ScanRange, Mode=TwoWay}" Watermark="z. B. 192.168.8.0/21"
+                     Width="180" VerticalAlignment="Center" />
             <Button Content="Scannen" Click="OnScanClick" IsEnabled="{Binding CanScan}" />
+            <Button Content="⚙" Click="OnSettingsClick" ToolTip.Tip="Einstellungen" />
             <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Opacity="0.7" />
         </StackPanel>
 

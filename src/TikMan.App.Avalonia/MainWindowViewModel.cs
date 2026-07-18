@@ -14,6 +14,12 @@ namespace TikMan.App.Avalonia;
 public sealed class MainWindowViewModel : INotifyPropertyChanged
 {
     private readonly FleetService _fleet;
+    private readonly TikMan.Core.Storage.AppData _appData;
+
+    /// <summary>The live settings the fleet reads (SNMP community, ping timeout …). The settings dialog
+    /// edits this instance; the fleet picks the values up on the next scan.</summary>
+    public TikMan.Core.Storage.AppData Settings => _appData;
+    public void SaveSettings() => DeviceStore.Save(_appData);
 
     public ObservableCollection<DeviceSnapshot> Devices { get; } = new();
 
@@ -22,6 +28,20 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private bool _canScan = true;
     public bool CanScan { get => _canScan; private set { _canScan = value; Raise(nameof(CanScan)); } }
+
+    /// <summary>Adapter / subnet picker entries: "Alle lokalen Netze" plus one per up interface (its real
+    /// CIDR). Choosing one fills <see cref="ScanRange"/>, which the scan actually uses (also editable).</summary>
+    public ObservableCollection<ScanChoice> Adapters { get; } = new();
+
+    private ScanChoice? _selectedAdapter;
+    public ScanChoice? SelectedAdapter
+    {
+        get => _selectedAdapter;
+        set { _selectedAdapter = value; Raise(nameof(SelectedAdapter)); if (value is not null) ScanRange = value.Cidr; }
+    }
+
+    private string _scanRange = "";
+    public string ScanRange { get => _scanRange; set { _scanRange = value; Raise(nameof(ScanRange)); } }
 
     private DeviceSnapshot? _selected;
     public DeviceSnapshot? SelectedDevice
@@ -44,12 +64,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public MainWindowViewModel()
     {
-        _fleet = new FleetService(DeviceStore.Load());
+        _appData = DeviceStore.Load();
+        _fleet = new FleetService(_appData);
         _fleet.Changed += OnFleetChanged;
+
+        Adapters.Add(new ScanChoice("Alle lokalen Netze", ""));
+        foreach (var s in FleetService.LocalSubnets()) Adapters.Add(new ScanChoice($"{s.Adapter} — {s.Cidr}", s.Cidr));
+        SelectedAdapter = Adapters.FirstOrDefault(a => a.Cidr.Length > 0) ?? Adapters[0];
+
         Refresh();
     }
 
-    public void Scan() => _fleet.StartScan();
+    public void Scan() => _fleet.StartScan(string.IsNullOrWhiteSpace(ScanRange) ? null : ScanRange);
 
     /// <summary>The logical topology (Internet → devices) – instant.</summary>
     public TopoLayout BuildLogicalTopology() => _fleet.BuildLogicalTopology();
@@ -89,4 +115,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Raise(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+/// <summary>One entry in the adapter/subnet picker: what to show, and the CIDR to scan ("" = all).</summary>
+public sealed record ScanChoice(string Display, string Cidr)
+{
+    public override string ToString() => Display; // the ComboBox shows this
 }

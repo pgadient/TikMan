@@ -79,16 +79,24 @@ public sealed class FleetService
         return true;
     }
 
-    public void StartScan()
+    private string? _scanTarget; // null = every local subnet; else the CIDR/range the caller picked
+
+    /// <summary>Starts a scan. <paramref name="target"/> is a CIDR ("192.168.8.0/21") or range; empty/null
+    /// means every local subnet (from the real interface masks).</summary>
+    public void StartScan(string? target = null)
     {
         lock (_lock)
         {
             if (_scanning) return;
             _scanning = true; _progress = -1; _phase = "Scanning"; _scanned = 0; _scanTotal = 0;
+            _scanTarget = string.IsNullOrWhiteSpace(target) ? null : target.Trim();
         }
         Changed?.Invoke();
         _ = Task.Run(RunScanAsync);
     }
+
+    /// <summary>The local IPv4 networks (real interface masks) for a UI adapter/subnet picker.</summary>
+    public static IReadOnlyList<LocalSubnet> LocalSubnets() => NetworkInfo.GetLocalSubnets();
 
     // ---- scanning + enrichment -------------------------------------------------------------------
 
@@ -96,7 +104,8 @@ public sealed class FleetService
     {
         try
         {
-            var targets = LocalScanTargets();
+            string? picked; lock (_lock) picked = _scanTarget;
+            var targets = picked ?? LocalScanTargets();
             var onHost = new Progress<int>(_ =>
             {
                 lock (_lock) { _scanned++; if (_scanTotal > 0) _progress = Math.Min(1.0, (double)_scanned / _scanTotal); }
