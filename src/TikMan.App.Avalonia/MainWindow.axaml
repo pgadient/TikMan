@@ -6,31 +6,11 @@
         Icon="/Assets/tikman.png"
         Title="TikMan">
     <Window.Styles>
-        <!-- A classic, clearly-tabbed look instead of Fluent's flat/oversized default: normal-size,
-             bordered tab headers with a raised selected tab, and a framed content area (added on the
-             Border around the TabControl below). -->
+        <!-- Semi styles the tabs; we only give the headers ~30 % more vertical room (easier to hit),
+             without touching the font size. -->
         <Style Selector="TabItem">
-            <Setter Property="FontSize" Value="14" />
-            <Setter Property="MinHeight" Value="30" />
-            <Setter Property="Padding" Value="16,6" />
-            <Setter Property="Margin" Value="2,0,0,0" />
-            <Setter Property="Background" Value="#14808080" />
-            <Setter Property="BorderBrush" Value="#50808080" />
-            <Setter Property="BorderThickness" Value="1,1,1,0" />
-            <Setter Property="CornerRadius" Value="6,6,0,0" />
-        </Style>
-        <Style Selector="TabItem /template/ Border#PART_LayoutRoot">
-            <Setter Property="Background" Value="{TemplateBinding Background}" />
-            <Setter Property="BorderBrush" Value="{TemplateBinding BorderBrush}" />
-            <Setter Property="BorderThickness" Value="{TemplateBinding BorderThickness}" />
-            <Setter Property="CornerRadius" Value="{TemplateBinding CornerRadius}" />
-        </Style>
-        <Style Selector="TabItem:selected">
-            <Setter Property="Background" Value="#3AFFFFFF" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-        </Style>
-        <Style Selector="TabItem:pointerover /template/ Border#PART_LayoutRoot">
-            <Setter Property="Background" Value="#28808080" />
+            <Setter Property="MinHeight" Value="46" />
+            <Setter Property="Padding" Value="18,12" />
         </Style>
     </Window.Styles>
     <DockPanel Margin="16">
@@ -44,8 +24,7 @@
             <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Opacity="0.7" />
         </StackPanel>
 
-        <Border BorderBrush="#50808080" BorderThickness="1" CornerRadius="4" Padding="0">
-        <TabControl x:Name="Tabs" SelectionChanged="OnTabChanged" Background="Transparent">
+        <TabControl x:Name="Tabs" SelectionChanged="OnTabChanged">
             <!-- Geräte -->
             <TabItem Header="Geräte">
                 <Grid ColumnDefinitions="*,Auto">
@@ -141,6 +120,5 @@
                 </ScrollViewer>
             </TabItem>
         </TabControl>
-        </Border>
     </DockPanel>
 </Window>

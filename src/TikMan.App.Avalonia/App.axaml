@@ -1,9 +1,12 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:semi="https://irihi.tech/semi"
              x:Class="TikMan.App.Avalonia.App"
              RequestedThemeVariant="Default">
+    <!-- Semi.Avalonia theme (modern, cross-platform, follows the OS light/dark variant). The DataGrid
+         theme is a separate include; the DataGrid control itself still comes from Avalonia.Controls.DataGrid. -->
     <Application.Styles>
-        <FluentTheme />
-        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
+        <semi:SemiTheme Locale="en-US" />
+        <semi:DataGridSemiTheme />
     </Application.Styles>
 </Application>

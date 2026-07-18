@@ -24,6 +24,8 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.0" />
     <PackageReference Include="Avalonia.Controls.DataGrid" Version="12.1.0" />
+    <PackageReference Include="Semi.Avalonia" Version="12.1.0" />
+    <PackageReference Include="Semi.Avalonia.DataGrid" Version="12.1.0" />
   </ItemGroup>
 
   <ItemGroup>
