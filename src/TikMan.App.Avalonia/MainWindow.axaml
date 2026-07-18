@@ -6,16 +6,35 @@
         Icon="/Assets/tikman.png"
         Title="TikMan">
     <Window.Styles>
-        <!-- Fluent's default tab headers are oversized; bring them down to normal UI text. -->
+        <!-- A classic, clearly-tabbed look instead of Fluent's flat/oversized default: normal-size,
+             bordered tab headers with a raised selected tab, and a framed content area (added on the
+             Border around the TabControl below). -->
         <Style Selector="TabItem">
             <Setter Property="FontSize" Value="14" />
-            <Setter Property="MinHeight" Value="36" />
-            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Padding" Value="16,6" />
+            <Setter Property="Margin" Value="2,0,0,0" />
+            <Setter Property="Background" Value="#14808080" />
+            <Setter Property="BorderBrush" Value="#50808080" />
+            <Setter Property="BorderThickness" Value="1,1,1,0" />
+            <Setter Property="CornerRadius" Value="6,6,0,0" />
+        </Style>
+        <Style Selector="TabItem /template/ Border#PART_LayoutRoot">
+            <Setter Property="Background" Value="{TemplateBinding Background}" />
+            <Setter Property="BorderBrush" Value="{TemplateBinding BorderBrush}" />
+            <Setter Property="BorderThickness" Value="{TemplateBinding BorderThickness}" />
+            <Setter Property="CornerRadius" Value="{TemplateBinding CornerRadius}" />
+        </Style>
+        <Style Selector="TabItem:selected">
+            <Setter Property="Background" Value="#3AFFFFFF" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TabItem:pointerover /template/ Border#PART_LayoutRoot">
+            <Setter Property="Background" Value="#28808080" />
         </Style>
     </Window.Styles>
     <DockPanel Margin="16">
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="10" Margin="0,0,0,12">
-            <Image Source="/Assets/tikman.png" Width="26" Height="26" VerticalAlignment="Center" />
             <ComboBox ItemsSource="{Binding Adapters}" SelectedItem="{Binding SelectedAdapter, Mode=TwoWay}"
                       Width="240" MinWidth="180" VerticalAlignment="Center" />
             <TextBox Text="{Binding ScanRange, Mode=TwoWay}" Watermark="z. B. 192.168.8.0/21"
@@ -25,7 +44,8 @@
             <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Opacity="0.7" />
         </StackPanel>
 
-        <TabControl x:Name="Tabs" SelectionChanged="OnTabChanged">
+        <Border BorderBrush="#50808080" BorderThickness="1" CornerRadius="4" Padding="0">
+        <TabControl x:Name="Tabs" SelectionChanged="OnTabChanged" Background="Transparent">
             <!-- Geräte -->
             <TabItem Header="Geräte">
                 <Grid ColumnDefinitions="*,Auto">
@@ -121,5 +141,6 @@
                 </ScrollViewer>
             </TabItem>
         </TabControl>
+        </Border>
     </DockPanel>
 </Window>
