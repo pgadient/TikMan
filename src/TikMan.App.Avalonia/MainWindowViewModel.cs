@@ -51,6 +51,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public void Scan() => _fleet.StartScan();
 
+    /// <summary>The logical topology (Internet → devices) – instant.</summary>
+    public TopoLayout BuildLogicalTopology() => _fleet.BuildLogicalTopology();
+
+    /// <summary>The physical topology from forwarding tables – slow (reads every bridge), so awaited.</summary>
+    public Task<TopoLayout> BuildPhysicalTopologyAsync() => _fleet.BuildPhysicalTopologyAsync();
+
     /// <summary>Sends a Wake-on-LAN magic packet to the selected device.</summary>
     public void Wake()
     {

@@ -32,6 +32,28 @@ public static class PhysicalTopology
     private const double NodeWidth = 168, NodeHeight = 56, ColGap = 22, RowGap = 18, TierGap = 90;
     private const int MaxCols = 10, PortGroupThreshold = 3;
 
+    /// <summary>The flat logical view: Internet → devices (infrastructure ice-blue, clients green). No
+    /// forwarding tables needed, so it is instant and works on any network.</summary>
+    public static TopoLayout BuildLogical(IReadOnlyList<TopoInputDevice> devices)
+    {
+        var boxes = new List<TopoBox>();
+        var links = new List<TopoLink>();
+        var (nf, nl, nt) = Palette(TopoRole.Internet);
+        boxes.Add(new TopoBox("internet", "", "Internet", "", "", 40, 20, 150, 46, nf, nl, nt));
+        int i = 0;
+        foreach (var d in devices)
+        {
+            var key = "d" + i;
+            var (f, l, t) = Palette(d.IsInfrastructure ? TopoRole.Infrastructure : TopoRole.Client);
+            double x = 40 + i % 8 * (NodeWidth + ColGap);
+            double y = 120 + i / 8 * (NodeHeight + RowGap + 24);
+            boxes.Add(new TopoBox(key, d.Id, d.Title, d.Ip, d.Mac, x, y, NodeWidth, NodeHeight, f, l, t));
+            links.Add(new TopoLink("internet", key));
+            i++;
+        }
+        return new TopoLayout(boxes, links);
+    }
+
     public static TopoLayout Build(
         IReadOnlyList<TopoInputDevice> devices,
         IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> fdb, // bridgeId → (normMAC → port)

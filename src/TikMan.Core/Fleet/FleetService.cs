@@ -289,6 +289,105 @@ public sealed class FleetService
         catch { /* best effort */ }
     }
 
+    // ---- topology (shared by the headless host and the GUI) --------------------------------------
+
+    /// <summary>The flat logical map (Internet → devices) – instant, no forwarding tables needed.</summary>
+    public TopoLayout BuildLogicalTopology() => PhysicalTopology.BuildLogical(TopoInputs());
+
+    /// <summary>The physical map from the bridge forwarding tables (who sees which MAC on which port),
+    /// plus WLAN SSIDs and traced routes. Slow – it talks to every infrastructure device – so only build
+    /// it on demand. Gateway from <see cref="TraceRoute.DefaultGateway"/> (cross-platform).</summary>
+    public async Task<TopoLayout> BuildPhysicalTopologyAsync()
+    {
+        var (fdb, ssids) = await GatherFdbAsync().ConfigureAwait(false);
+        var gatewayIp = TraceRoute.DefaultGateway();
+        var traces = await GatherTracesAsync().ConfigureAwait(false);
+        return PhysicalTopology.Build(TopoInputs(), fdb, gatewayIp, ssids, traces);
+    }
+
+    private List<TopoInputDevice> TopoInputs() =>
+        RawDevices().Select(d => new TopoInputDevice(
+            WebId(d), d.Host, d.MacAddress, Display(d), d.Host,
+            Kind(d) is DeviceKind.Switch or DeviceKind.Router or DeviceKind.AccessPoint or DeviceKind.Firewall
+                || IsMikroTik(d))).ToList();
+
+    private async Task<(Dictionary<string, IReadOnlyDictionary<string, string>> Fdb,
+                        Dictionary<(string, string), string> Ssids)> GatherFdbAsync()
+    {
+        string community;
+        lock (_lock) community = _appData.SnmpCommunity?.Trim() is { Length: > 0 } c ? c : "public";
+        var bridges = RawDevices().Where(d =>
+            Kind(d) is DeviceKind.Switch or DeviceKind.Router or DeviceKind.AccessPoint or DeviceKind.Firewall
+            || IsMikroTik(d)).ToList();
+
+        var fdb = new Dictionary<string, IReadOnlyDictionary<string, string>>();
+        var ssids = new Dictionary<(string, string), string>();
+        foreach (var d in bridges)
+        {
+            var (table, wifi) = await OneFdbAsync(d, community).ConfigureAwait(false);
+            if (table is { Count: > 0 }) fdb[WebId(d)] = table;
+            if (wifi is not null) foreach (var (iface, ssid) in wifi) ssids[(WebId(d), iface)] = ssid;
+        }
+        return (fdb, ssids);
+    }
+
+    private async Task<Dictionary<string, IReadOnlyList<string>>> GatherTracesAsync()
+    {
+        var ips = RawDevices().Select(d => d.Host).Where(h => h.Length > 0).Distinct().ToList();
+        var result = new Dictionary<string, IReadOnlyList<string>>();
+        using var gate = new SemaphoreSlim(24);
+        var tasks = ips.Select(async ip =>
+        {
+            await gate.WaitAsync().ConfigureAwait(false);
+            try { var hops = await TraceRoute.TraceAsync(ip).ConfigureAwait(false); if (hops is { Count: > 0 }) lock (result) result[ip] = hops; }
+            catch { /* trace failed */ }
+            finally { gate.Release(); }
+        });
+        await Task.WhenAll(tasks).ConfigureAwait(false);
+        return result;
+    }
+
+    private static async Task<(Dictionary<string, string>? Fdb, Dictionary<string, string>? Ssids)> OneFdbAsync(
+        Device d, string community)
+    {
+        List<(string Mac, string Port)>? raw = null;
+        Dictionary<string, string>? wifi = null;
+        var password = d.EncryptedPassword.Length > 0 ? CredentialProtector.Unprotect(d.EncryptedPassword) : "";
+        try
+        {
+            if (IsMikroTik(d) && password.Length > 0)
+            {
+                using var client = new RouterOsClient(d.Host, d.Port, d.UseHttps, d.Username, password, ignoreCertErrors: true);
+                raw = await client.GetBridgeHostsAsync().ConfigureAwait(false);
+                try { var neigh = await client.GetNeighborsAsync().ConfigureAwait(false); raw.AddRange(neigh.Select(n => (n.Mac, n.Interface))); }
+                catch { /* older RouterOS */ }
+                try { wifi = await client.GetWifiSsidsAsync().ConfigureAwait(false); }
+                catch { /* no wifi package */ }
+            }
+            else if (IsZyxelSwitch(d) && password.Length > 0)
+            {
+                var zy = await ZyxelSsh.GetFdbAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
+                raw = zy?.Select(kv => (kv.Key, kv.Value)).ToList();
+            }
+        }
+        catch { raw = null; }
+
+        if (raw is null || raw.Count == 0)
+        {
+            try { var snmp = await SnmpFdb.ReadAsync(d.Host, community).ConfigureAwait(false); raw = snmp?.Select(kv => (kv.Key, kv.Value)).ToList(); }
+            catch { /* SNMP off */ }
+        }
+        if (raw is null) return (null, wifi is { Count: > 0 } ? wifi : null);
+
+        var map = new Dictionary<string, string>();
+        foreach (var (mac, port) in raw)
+        {
+            var key = PhysicalTopology.NormalizeMac(mac);
+            if (key.Length == 12 && port.Length > 0 && !map.ContainsKey(key)) map[key] = port;
+        }
+        return (map.Count > 0 ? map : null, wifi is { Count: > 0 } ? wifi : null);
+    }
+
     // ---- reachability ----------------------------------------------------------------------------
 
     private async Task MonitorLoopAsync()

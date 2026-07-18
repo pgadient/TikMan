@@ -5,13 +5,18 @@
         Width="1120" Height="700"
         Title="TikMan">
     <DockPanel Margin="16">
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="14" Margin="0,0,0,12">
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="10" Margin="0,0,0,12">
             <TextBlock Text="TikMan" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" />
             <Button Content="Scannen" Click="OnScanClick" IsEnabled="{Binding CanScan}" />
+            <Border Width="1" Background="#40808080" Margin="4,3" />
+            <Button Content="Liste" Click="OnShowList" />
+            <Button Content="Karte (logisch)" Click="OnShowLogical" />
+            <Button Content="Karte (physisch)" Click="OnShowPhysical" />
             <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Opacity="0.7" />
         </StackPanel>
 
-        <Grid ColumnDefinitions="*,Auto">
+        <Panel>
+        <Grid x:Name="ListView" ColumnDefinitions="*,Auto">
             <DataGrid Grid.Column="0"
                       ItemsSource="{Binding Devices}"
                       SelectedItem="{Binding SelectedDevice, Mode=TwoWay}"
@@ -70,5 +75,11 @@
                 </ScrollViewer>
             </Border>
         </Grid>
+
+        <ScrollViewer x:Name="MapScroller" IsVisible="False"
+                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <Canvas x:Name="MapCanvas" Background="Transparent" />
+        </ScrollViewer>
+        </Panel>
     </DockPanel>
 </Window>
