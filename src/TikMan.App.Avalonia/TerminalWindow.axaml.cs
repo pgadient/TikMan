@@ -37,15 +37,70 @@ public partial class TerminalWindow : Window
     private TextBox? InputBox => this.FindControl<TextBox>("Input");
     private TextBox? OutputBox => this.FindControl<TextBox>("Output");
 
+    // The console so far, kept as completed lines plus the line currently being drawn. Held here (not read
+    // back off the TextBox) so carriage-return redraws can be applied – see Append.
+    private readonly StringBuilder _committed = new();
+    private readonly StringBuilder _line = new();
+    private bool _pendingCr; // a chunk ended on a bare '\r'; whether it's CRLF or a redraw depends on the next
+    private const int MaxChars = 400_000; // cap so a chatty session doesn't grow without bound
+
     private void OnData(byte[] data)
     {
         var text = Clean(Encoding.UTF8.GetString(data));
         Dispatcher.UIThread.Post(() =>
         {
+            Append(text);
             if (OutputBox is not { } box) return;
-            box.Text += text;
-            box.CaretIndex = box.Text?.Length ?? 0; // keeps the newest output in view
+            box.Text = _committed.ToString() + _line;
+            box.CaretIndex = box.Text.Length; // keeps the newest output in view
         });
+    }
+
+    /// <summary>Applies a terminal's carriage-return / newline behaviour to the incoming text.
+    /// <para>⚠️ This is the fix for the prompt showing up twice on one line ("HOST&gt; HOST&gt;"). A device
+    /// redraws its prompt with a bare CR (return to column 0, next characters overwrite); the old code just
+    /// deleted every <c>\r</c>, so the redraw piled up next to the old prompt instead of replacing it. Here a
+    /// bare CR clears the current line so the redraw overwrites it, while CRLF and a lone LF both end the
+    /// line.</para></summary>
+    private void Append(string text)
+    {
+        var i = 0;
+        // Resolve a '\r' that ended the previous chunk now that the next character is known: '\n' after it
+        // makes it a CRLF (one newline), anything else makes it a bare-CR redraw (overwrite the line).
+        if (_pendingCr)
+        {
+            _pendingCr = false;
+            if (text.Length > 0 && text[0] == '\n') { CommitLine(); i = 1; }
+            else _line.Clear();
+        }
+        for (; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (c == '\r')
+            {
+                if (i + 1 < text.Length)
+                {
+                    if (text[i + 1] == '\n') { CommitLine(); i++; } // CRLF = one newline
+                    else _line.Clear();                             // bare CR = overwrite
+                }
+                else _pendingCr = true;                             // CR at the very end: decide next chunk
+            }
+            else if (c == '\n') CommitLine();
+            else _line.Append(c);
+        }
+    }
+
+    private void CommitLine()
+    {
+        _committed.Append(_line).Append('\n');
+        _line.Clear();
+        if (_committed.Length > MaxChars)
+        {
+            // Trim from the front on a line boundary, so nothing reads as cut mid-word.
+            var s = _committed.ToString();
+            var cut = s.IndexOf('\n', s.Length - MaxChars);
+            if (cut >= 0) { _committed.Clear(); _committed.Append(s, cut + 1, s.Length - cut - 1); }
+        }
     }
 
     private void OnInputKey(object? sender, KeyEventArgs e)
@@ -58,8 +113,9 @@ public partial class TerminalWindow : Window
         e.Handled = true;
     }
 
-    /// <summary>Strips ANSI/VT control so the console stays readable: CSI colour/cursor sequences, the
-    /// bracketed-paste toggles, and lone carriage returns (RouterOS redraws its prompt with them).</summary>
+    /// <summary>Strips ANSI/VT control so the console stays readable: CSI colour/cursor sequences and the
+    /// charset/bracketed-paste toggles. ⚠️ Carriage returns are deliberately KEPT now – <see cref="Append"/>
+    /// applies their overwrite semantics, which is what stops a redrawn prompt from doubling up.</summary>
     private static string Clean(string s) =>
-        Regex.Replace(s, @"\x1b\[[0-9;?]*[A-Za-z]|\x1b[()][A-Z0-9]|\x1b[=>]", "").Replace("\r", "");
+        Regex.Replace(s, @"\x1b\[[0-9;?]*[A-Za-z]|\x1b[()][A-Z0-9]|\x1b[=>]", "");
 }

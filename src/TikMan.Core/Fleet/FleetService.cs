@@ -2523,7 +2523,11 @@ public sealed class FleetService
         return new(
         WebId(d), Display(d), v4, d.MacAddress, Vendor(d), Kind(d), KindWithVm(d), Model(d),
         StatusText(d), Gateways().Contains(d.Host), d.EncryptedPassword.Length > 0,
-        VncPort(d), d.Username, d.ExtraInfo.Select(kv => new KeyValuePair<string, string>(kv.Key, kv.Value)).ToList(),
+        VncPort(d), d.Username,
+        // ⚠️ The ExtraInfo keys are German (they double as classifier lookup keys), so localise them here on
+        // the way to the details pane – otherwise "Hersteller/Modell/Bauform/Produkt" show up even when the
+        // UI language is English. Values are device data and stay as-is.
+        d.ExtraInfo.Select(kv => new KeyValuePair<string, string>(InfoKeyLabels.Localize(kv.Key), kv.Value)).ToList(),
         v6.Distinct().ToList(),
         IsMikroTik(d) || IsZyxelSwitch(d) || IsTpLink(d), IsMikroTik(d), IsMikroTik(d), CanReadLogs(d),
         _loginFailure.TryGetValue(WebId(d), out var le) ? le : "",

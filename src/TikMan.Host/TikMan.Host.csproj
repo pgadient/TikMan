@@ -10,7 +10,7 @@
     <RootNamespace>TikMan.Host</RootNamespace>
     <AssemblyName>tikman-host</AssemblyName>
     <!-- Keep in step with the WPF app's <Version> so the headless build reports the same number. -->
-    <Version>2.3.1</Version>
+    <Version>2.3.2</Version>
     <!-- Old distros (the CI/WSL test box is Ubuntu 18.04) ship an ancient ICU; Core parses invariantly. -->
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>

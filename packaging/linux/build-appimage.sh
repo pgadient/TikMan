@@ -47,7 +47,9 @@ echo "AppDir ready: $APPDIR  (run it with: $APPDIR/AppRun)"
 
 TOOL="${APPIMAGETOOL:-appimagetool}"
 if command -v "$TOOL" >/dev/null 2>&1; then
-    ARCH="$ARCH" "$TOOL" "$APPDIR" "$OUT/TikMan-$ARCH.AppImage"
+    # --no-appstream: skip the AppStream metadata step, which aborts the whole pack when appstreamcli
+    # isn't installed (as on a minimal build box / WSL). The AppImage itself doesn't need it.
+    ARCH="$ARCH" "$TOOL" --no-appstream "$APPDIR" "$OUT/TikMan-$ARCH.AppImage"
     echo "built $OUT/TikMan-$ARCH.AppImage"
 else
     echo "appimagetool not found — AppDir is complete; run appimagetool on any Linux box to pack it:" >&2
