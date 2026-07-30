@@ -1,0 +1,26 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:TikMan.App.Avalonia"
+        x:Class="TikMan.App.Avalonia.VendorInfoWindow"
+        x:CompileBindings="False"
+        Width="520" Height="360"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/tikman.png"
+        Title="{loc:Loc Av_VendorInfoTitle}">
+    <DockPanel Margin="20">
+        <TextBlock x:Name="HeaderText" DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,10" />
+
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Spacing="10" Margin="0,12,0,0">
+            <Button Content="{loc:Loc Av_ReportCopy}" Click="OnCopy" Classes="action" />
+            <Button Content="{loc:Loc Av_Close}" Click="OnClose" IsCancel="True" Classes="action" />
+        </StackPanel>
+
+        <!-- Monospace: the IEEE record is column-aligned text, and proportional font makes it unreadable. -->
+        <TextBox x:Name="RecordBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                 FontFamily="Consolas, Menlo, monospace" FontSize="12"
+                 VerticalContentAlignment="Top"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto" />
+    </DockPanel>
+</Window>

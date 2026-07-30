@@ -11,7 +11,7 @@ using TikMan.Core.Api;
 using TikMan.Core.Discovery;
 using TikMan.Core.Models;
 using TikMan.Core.Storage;
-using static TikMan.App.Localization.LocalizationManager;
+using static TikMan.Core.Localization.LocalizationManager;
 
 namespace TikMan.App;
 
@@ -343,56 +343,23 @@ public class DeviceViewModel : INotifyPropertyChanged
         _sharesLoaded = true;
         SharesStatus = T("Sc_SmbLoading");
 
-        // SMB works over IPv4 – but an existing Windows session (mapped drive, stored credentials)
-        // is keyed by the server NAME. \\sr1 answers instantly where \\192.168.13.1 crawls into
-        // access-denied, so we try host names first and only then the bare address.
+        // ⚠️ The candidate logic (names before the bare address, one short timeout each) lives in
+        // SmbShares.ListForHostAsync now, NOT here. It used to sit in this view model, which is exactly why
+        // the Avalonia client and the headless host never got it and showed no shares at all: they went
+        // straight at the IP, which is the one form a real server takes ~47 s to refuse.
         var ip = Ipv4Address.Length > 0 ? Ipv4Address : Host;
-        var candidates = new List<string>();
-        if (Host.Length > 0 && !IPAddress.TryParse(Host, out _)) candidates.Add(Host);
-        try
-        {
-            var dnsName = (await Dns.GetHostEntryAsync(ip)).HostName;
-            if (dnsName.Length > 0)
-            {
-                candidates.Add(dnsName);
-                var shortName = dnsName.Split('.')[0];
-                if (!shortName.Equals(dnsName, StringComparison.OrdinalIgnoreCase)) candidates.Add(shortName);
-            }
-        }
-        catch (System.Net.Sockets.SocketException) { /* no PTR record – the IP still gets tried */ }
-        candidates.Add(ip);
+        var nameHint = Host.Length > 0 && !IPAddress.TryParse(Host, out _) ? Host : "";
+        var result = await SmbShares.ListForHostAsync(ip, nameHint);
 
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        bool denied = false, timedOut = false;
-        foreach (var candidate in candidates.Where(c => c.Length > 0 && seen.Add(c)))
+        if (result.Shares.Count > 0)
         {
-            try
-            {
-                var listTask = SmbShares.ListAsync(candidate);
-                if (await Task.WhenAny(listTask, Task.Delay(TimeSpan.FromSeconds(5))) != listTask)
-                {
-                    timedOut = true; // NetShareEnum keeps blocking its pool thread; just move on
-                    continue;
-                }
-                var result = await listTask;
-                if (result.Status == ShareListStatus.Ok && result.Shares.Count > 0)
-                {
-                    foreach (var name in result.Shares) Shares.Add(new SmbShareVm(candidate, name));
-                    SharesStatus = "";
-                    return;
-                }
-                denied |= result.Status == ShareListStatus.AccessDenied;
-            }
-            catch { /* try the next candidate */ }
-        }
-
-        if (denied) { SharesStatus = T("Sc_SmbDenied"); return; }
-        if (timedOut)
-        {
-            _sharesLoaded = false; // allow a retry on the next expand/selection
-            SharesStatus = T("Sc_SmbTimeout");
+            foreach (var name in result.Shares) Shares.Add(new SmbShareVm(ip, name));
+            SharesStatus = "";
             return;
         }
+
+        if (result.Status == ShareListStatus.AccessDenied) { SharesStatus = T("Sc_SmbDenied"); return; }
+        _sharesLoaded = false;   // nothing came back – allow a retry on the next expand/selection
         SharesStatus = T("Sc_SmbNone");
     }
 
@@ -797,10 +764,12 @@ public class DeviceViewModel : INotifyPropertyChanged
     /// <summary>True for TP-Link switches (SSH connector, firmware page instead of channels).</summary>
     public bool IsTpLink => Model.Vendor == DeviceVendor.TpLink;
 
-    /// <summary>TP-Link: the Omada download page URL for this model/revision ("" otherwise).</summary>
-    public string FirmwarePageUrl => Model.Vendor == DeviceVendor.TpLink
-        ? OmadaSupport.FirmwarePageUrl(Model.Model, Model.HardwareRevision)
-        : "";
+    /// <summary>The vendor's firmware page for this device ("" when none can be derived).
+    /// <para>⚠️ Keyed on <see cref="IdentifiedVendor"/>, not on <c>Model.Vendor</c>: that enum is the
+    /// connector kind, it defaults to MikroTik and nothing ever assigns it – so the old TpLink check here
+    /// could never be true, and this action was dead for every device.</para></summary>
+    public string FirmwarePageUrl =>
+        FirmwarePages.UrlFor(IdentifiedVendor, ModelDisplay, Model.HardwareRevision, Version);
 
     /// <summary>Maps a guessed <see cref="DeviceKind"/> to its localized label ("" when unknown).</summary>
     public static string DeviceKindText(DeviceKind kind) => kind switch
@@ -822,6 +791,7 @@ public class DeviceViewModel : INotifyPropertyChanged
         DeviceKind.Tablet => T("Dev_Tablet"),
         DeviceKind.PaymentTerminal => T("Dev_PaymentTerminal"),
         DeviceKind.Franking => T("Dev_Franking"),
+        DeviceKind.TimeRecording => T("Dev_TimeRecording"),
         DeviceKind.Management => T("Dev_Management"),
         DeviceKind.Smartphone => T("Dev_Smartphone"),
         DeviceKind.Audio => T("Dev_Audio"),
@@ -1198,14 +1168,18 @@ public class DeviceViewModel : INotifyPropertyChanged
         try
         {
             var password = CredentialProtector.Unprotect(Model.EncryptedPassword);
-            var info = await ZyxelSsh.GetInfoAsync(Model.Host, Model.SshPort, Model.Username, password, ct);
+            var detail = "";
+            var info = await ZyxelSsh.GetInfoAsync(Model.Host, Model.SshPort, Model.Username, password,
+                ct, e => detail = e);
             if (info is { } i && (i.Model.Length > 0 || i.Firmware.Length > 0))
             {
                 ApplyZyxelInfo(i);
                 Status = DeviceStatus.Online; LastError = ""; HadTlsError = false;
                 return true;
             }
-            LastError = "SSH read failed";
+            LastError = detail.Length > 0 ? $"SSH read failed: {detail}"
+                : info is not null ? "SSH read failed: answer had no model/firmware (not a ZyNOS switch?)"
+                : "SSH read failed";
             Status = await PingAsync(ct).ConfigureAwait(false) ? DeviceStatus.Online : DeviceStatus.Offline;
             return false;
         }
@@ -1222,9 +1196,36 @@ public class DeviceViewModel : INotifyPropertyChanged
         if (info.Uptime.Length > 0) Uptime = info.Uptime;
         if (info.Serial.Length > 0 && Model.SerialNumber.Length == 0) Model.SerialNumber = info.Serial;
         if (info.Model.Length > 0) Model.ExtraInfo["Modell"] = info.Model;
+        // ⚠️ The OS column. Missing here, so a Zyxel switch showed a firmware and a serial but a blank OS –
+        // and the CSV/HTML export, which reads OsDisplay, carried the same blank. "ZyNOS" is the OS these
+        // switches run; set once the read succeeded (a model came back), so an unreachable box gets nothing.
+        if (info.Model.Length > 0 || info.Firmware.Length > 0) Model.ExtraInfo["OS"] = "ZyNOS";
+        // ⚠️ Serial fallback over SNMP. Older ZyNOS (a GS1920 on V4.50) omits the serial from
+        // show system-information and has no show-serial command, but the web GUI still shows it – it reads
+        // a Zyxel-private OID. Best-effort and fire-and-forget: SNMP may be off, and the serial is a
+        // nice-to-have, so a miss must never disturb the monitoring read that already succeeded.
+        if (Model.SerialNumber.Length == 0)
+            _ = FillSerialViaSnmpAsync();
         // Pin the vendor independently of the MAC OUI, so a VPN scan (no OUI) says "Zyxel" too.
         Model.ExtraInfo["Hersteller (Web)"] = "Zyxel";
         RaiseDetailsChanged();
+    }
+
+    /// <summary>Fills the serial from the Zyxel-private SNMP OID when the CLI didn't provide one. Uses the
+    /// app-wide read community (<see cref="SnmpProbe.DefaultCommunity"/>). Silent on any failure.</summary>
+    private async Task FillSerialViaSnmpAsync()
+    {
+        try
+        {
+            var serial = await ZyxelSsh.GetSerialViaSnmpAsync(Model.Host, SnmpProbe.DefaultCommunity)
+                .ConfigureAwait(true);
+            if (serial.Length > 0 && Model.SerialNumber.Length == 0)
+            {
+                Model.SerialNumber = serial;
+                RaiseDetailsChanged();
+            }
+        }
+        catch { /* best-effort */ }
     }
 
     /// <summary>Refreshes a TP-Link switch over SSH (no REST API): reads firmware + model via
@@ -1238,6 +1239,17 @@ public class DeviceViewModel : INotifyPropertyChanged
                 Model, CredentialProtector.Unprotect(Model.EncryptedPassword), ct);
             Version = facts.FirmwareVersion;
             Board = facts.Model.Length > 0 ? facts.Model : Model.Model;
+            // "JetStream" is TP-Link's managed-switch platform name – the OS-column analogue of ZyNOS. Only
+            // when the switch actually answered, so an unreachable device isn't given a fabricated OS.
+            if (facts.Model.Length > 0) Model.ExtraInfo["System"] = "JetStream";
+
+            // ⚠️ The hardware revision was read and then thrown away, so FirmwarePageUrl – which is keyed on
+            // it – could never build a per-board link. Same for the serial, which the switch prints and the
+            // column had no other source for.
+            var revision = TpLinkSshConnector.HardwareRevision(facts.HardwareVersion);
+            if (revision.Length > 0) Model.HardwareRevision = revision;
+            if (facts.Serial.Length > 0 && Model.SerialNumber.Length == 0) Model.SerialNumber = facts.Serial;
+            if (facts.Name.Length > 0 && Name.Length == 0) Name = facts.Name;
             Status = DeviceStatus.Online;
             LastError = "";
             HadTlsError = false;
@@ -1331,8 +1343,16 @@ public class DeviceViewModel : INotifyPropertyChanged
         // written to the chosen file, never logged.
         if (IsZyxelSwitch)
         {
-            var cfg = await ZyxelSsh.GetRunningConfigAsync(Model.Host, Model.SshPort, Model.Username, password, ct);
-            if (cfg is null) { LastError = "SSH config export failed"; return null; }
+            var detail = "";
+            var cfg = await ZyxelSsh.GetRunningConfigAsync(Model.Host, Model.SshPort, Model.Username, password,
+                ct, e => detail = e);
+            if (cfg is null)
+            {
+                // The reason (auth refused, timeout, "no output", …) comes from ZyxelSsh and never
+                // contains the password – without it a failure here was undebuggable in the field.
+                LastError = detail.Length > 0 ? $"SSH config export failed: {detail}" : "SSH config export failed";
+                return null;
+            }
             LastError = "";
             return (cfg, Name);
         }
@@ -1517,29 +1537,15 @@ public class ProtocolVm
     private static readonly Dictionary<string, Brush> Cache = new();
 
     /// <summary>Badge colour for a service, grouped by kind: secure=green, web=orange, ssh=blue,
-    /// insecure=red, file=teal, MikroTik=dark, api/management=purple, else grey.</summary>
+    /// insecure=red, file=teal, MikroTik=dark, api/management=purple, else grey.
+    ///
+    /// <para>⚠️ The table itself lives in <see cref="ServiceBadges.ColourFor"/>. This used to carry its own
+    /// copy of it, so http was orange here and orange there only for as long as nobody added a service to
+    /// one of the two – and the same device would then have shown different colours in the app, the browser
+    /// and the PDF export. This class only turns the shared hex into a frozen WPF brush.</para></summary>
     public static Brush BrushFor(string service)
     {
-        var hex = service switch
-        {
-            "https" or "imaps" or "ftps" or "smtps" or "api-ssl" or "submission" => "#2E9E44",
-            "http" or "http-alt" => "#E67E22",
-            "ssh" or "sftp" => "#3A5BA0",
-            "telnet" or "ftp" => "#C0392B",
-            "smb" or "netbios" or "rsync" => "#16A085",
-            "winbox" => "#2B3A42",
-            "rdp" or "vnc" => "#6C5CE7", // remote-desktop access
-            "api" => "#8E44AD",
-            "wmi" => "#7A3EA0",
-            "dns" or "snmp" or "syslog" => "#7F8C8D",
-            "smtp" or "imap" => "#2980B9",
-            "jetdirect" or "lpd" or "ipp" => "#A0522D", // printing
-            "sip" => "#C2185B",                          // telephony
-            "rtsp" => "#00838F",                         // camera stream
-            "ipmi" or "amt" => "#5D4037",                // out-of-band management (BMC)
-            "airprint" or "airscan" => "#546E7A",        // mDNS-announced capability, not a port
-            _ => "#95A5A6",
-        };
+        var hex = ServiceBadges.ColourFor(service);
         if (!Cache.TryGetValue(hex, out var brush))
         {
             brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)!);

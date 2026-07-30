@@ -7,7 +7,7 @@ using System.Windows.Media;
 using TikMan.Core.Api;
 using TikMan.Core.Models;
 using TikMan.Core.Storage;
-using static TikMan.App.Localization.LocalizationManager;
+using static TikMan.Core.Localization.LocalizationManager;
 
 namespace TikMan.App;
 

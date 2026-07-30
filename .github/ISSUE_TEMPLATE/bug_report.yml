@@ -1,0 +1,71 @@
+name: Bug report
+description: Something in TikMan did not work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+
+        **Before you paste anything:** the action log below is produced by **Report a problem** inside
+        TikMan. It already replaces addresses, MAC addresses and — with the recommended option left on —
+        device and user names with placeholders (`ip#1`, `name#2`). The window shows you the exact text
+        before you copy it, and you can edit it there. Please read it once; this issue is public.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+      placeholder: |
+        1. Selected a device and clicked "Backup"
+        2. Expected a .rsc file
+        3. Got "Backup failed" after about 30 seconds
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: TikMan version
+      description: Shown in the window title, e.g. "TikMan 2.2.2".
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - Linux
+        - macOS
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Which device was involved?
+      description: >
+        Vendor and model are usually enough (e.g. "MikroTik hAP ax³", "Zyxel XGS1930-52HP").
+        Leave out anything you would rather not publish.
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Action log
+      description: >
+        From TikMan → "Report a problem" → "Copy". This is what makes a report actionable — without it
+        almost every bug turns into a round of questions first.
+      render: text
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: reviewed
+    attributes:
+      label: Before submitting
+      options:
+        - label: I have read the log above and it contains nothing I mind being public.
+          required: true

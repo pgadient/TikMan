@@ -43,7 +43,8 @@ public static class SubnetScanner
         IProgress<int>? onHostScanned = null,
         CancellationToken ct = default,
         int pingTimeoutMs = 600,
-        int pingRetries = 0)
+        int pingRetries = 0,
+        bool scanUnpingable = false)
     {
         var addresses = EnumerateTargets(targets);
         var results = new List<DiscoveredDevice>();
@@ -55,7 +56,8 @@ public static class SubnetScanner
             await limiter.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                var device = await ProbeHostAsync(ip, ct, pingTimeoutMs, pingRetries).ConfigureAwait(false);
+                var device = await ProbeHostAsync(ip, ct, pingTimeoutMs, pingRetries, scanUnpingable)
+                    .ConfigureAwait(false);
                 if (device is not null)
                 {
                     lock (resultLock) results.Add(device);
@@ -77,8 +79,76 @@ public static class SubnetScanner
 
     public static int CountHosts(string targets) => EnumerateTargets(targets).Count;
 
+    /// <summary>Extra ports the user asked for, on top of <see cref="ServicePorts"/>. Set per scan from
+    /// the settings; empty by default.</summary>
+    private static int[] _customPorts = Array.Empty<int>();
+
+    /// <summary>The custom ports currently in force – the badge layer asks so it can tell a user-added
+    /// port from one of the built-in services.</summary>
+    public static IReadOnlyList<int> CustomPorts => _customPorts;
+
+    /// <summary>Parses a comma-separated port list ("8006, 9000, 32400"). Junk entries are dropped rather
+    /// than rejecting the whole list: a stray character should not silently disable the setting.
+    /// <para>Ports already in <see cref="ServicePorts"/> are skipped – scanning them twice would only
+    /// double the traffic, and they already have a proper service badge.</para></summary>
+    public static int[] ParseCustomPorts(string spec)
+    {
+        if (string.IsNullOrWhiteSpace(spec)) return Array.Empty<int>();
+
+        var builtIn = ServicePorts.Select(p => p.Port).ToHashSet();
+        return spec.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => int.TryParse(part.Trim(), out var p) ? p : -1)
+            .Where(p => p is > 0 and <= 65535 && !builtIn.Contains(p))
+            .Distinct()
+            .Take(64)   // a sanity bound: this multiplies every host's probe count
+            .ToArray();
+    }
+
+    public static void SetCustomPorts(string spec) => _customPorts = ParseCustomPorts(spec);
+
+    /// <summary>Ports tried on a host that did not answer a ping, when the user has enabled that. A short
+    /// list on purpose: it only has to establish "something is listening here", after which the full sweep
+    /// runs. Five probes per dead address instead of thirty-one is the difference between a usable option
+    /// and one that floods the network – on a /21 that is ~10k connects instead of ~63k.</summary>
+    private static readonly int[] TripwirePorts = { 80, 443, 22, 445, 3389 };
+
+    /// <summary>Bounds how many TCP connects are in flight <b>across the whole scan</b>.
+    ///
+    /// <para>⚠️ The per-host limiter does not bound this. Each live host fans out to all
+    /// <see cref="ServicePorts"/> at once, so 64 hosts × 31 ports is ~2000 sockets – measured at 827 in
+    /// practice, with 411 simultaneously in SYN_SENT. Four things go wrong at that scale:</para>
+    /// <list type="bullet">
+    /// <item><b>File descriptors.</b> macOS ships a soft limit of 256 open files for GUI apps; a scan that
+    /// wants hundreds of sockets simply starts failing, and the failures look like "host has no open
+    /// ports" rather than like an error.</item>
+    /// <item><b>Ephemeral ports.</b> Every completed connect holds its local port in TIME_WAIT for two
+    /// minutes. The Windows dynamic range is 16384 ports; a large or continuously repeating scan can walk
+    /// through it, after which connects fail with AddressAlreadyInUse – again as silent false negatives.</item>
+    /// <item><b>Intrusion detection.</b> Hundreds of concurrent half-open connections from one host is the
+    /// textbook signature of a port scan, because that is what it is. On a monitored network that gets the
+    /// machine flagged or quarantined.</item>
+    /// <item><b>The far end.</b> Small embedded devices – printers, IoT, old switches – have tiny accept
+    /// backlogs and can drop traffic or wedge under a simultaneous burst.</item>
+    /// </list>
+    /// <para>So the gate counts <i>sockets</i>, not hosts. Default 256, and lower on macOS to stay under
+    /// that descriptor limit.</para></summary>
+    private static SemaphoreSlim _socketGate = new(DefaultSocketLimit);
+
+    private static int DefaultSocketLimit => OperatingSystem.IsMacOS() ? 96 : 256;
+
+    /// <summary>Sets the in-flight connect limit. 0 restores the platform default.</summary>
+    public static void SetSocketLimit(int limit)
+    {
+        var value = limit > 0 ? Math.Clamp(limit, 8, 2048) : DefaultSocketLimit;
+        var old = Interlocked.Exchange(ref _socketGate, new SemaphoreSlim(value));
+        old.Dispose();
+    }
+
+    /// <summary>The current limit, for the settings UI to show what is actually in force.</summary>
+    public static int SocketLimit => _socketGate.CurrentCount;
+
     private static async Task<DiscoveredDevice?> ProbeHostAsync(IPAddress ip, CancellationToken ct,
-        int pingTimeoutMs, int pingRetries)
+        int pingTimeoutMs, int pingRetries, bool scanUnpingable)
     {
         // A single echo is easily lost on a busy segment, which makes the found-host count wobble
         // (52 vs 53). Retry a few times (configurable) before writing the host off. Total attempts =
@@ -93,10 +163,21 @@ public static class SubnetScanner
             try { alive = (await ping.SendPingAsync(ip, timeout).ConfigureAwait(false)).Status == IPStatus.Success; }
             catch (PingException) { /* transient – retry */ }
         }
-        if (!alive) return null;
 
-        // Probe the service ports in parallel (only reached for hosts that answered the ping).
-        var probes = ServicePorts.Select(async sp => (sp.Port, Open: await IsPortOpenAsync(ip, sp.Port, ct).ConfigureAwait(false)));
+        // ⚠️ ICMP is a hard gate by default, and plenty of hosts block it – Windows does out of the box.
+        // Those devices are invisible to this scan unless one of the discovery protocols (MNDP, mDNS,
+        // SSDP, ZON) names them. The option below trades traffic for finding them anyway.
+        if (!alive)
+        {
+            if (!scanUnpingable) return null;
+            alive = await AnyPortOpenAsync(ip, TripwirePorts, ct).ConfigureAwait(false);
+            if (!alive) return null;
+        }
+
+        // Probe the service ports in parallel (only reached for hosts that answered), plus whatever extra
+        // ports the user configured.
+        var wanted = ServicePorts.Select(sp => sp.Port).Concat(_customPorts);
+        var probes = wanted.Select(async port => (Port: port, Open: await IsPortOpenAsync(ip, port, ct).ConfigureAwait(false)));
         var results = await Task.WhenAll(probes).ConfigureAwait(false);
         var openPorts = results.Where(r => r.Open).Select(r => r.Port).OrderBy(p => p).ToList();
 
@@ -136,7 +217,8 @@ public static class SubnetScanner
     /// an active ARP request first, then the OS ARP table (SendARP fails with error 67 while the
     /// neighbour entry is Probe/Stale, but the scan's ping has usually populated the table already).
     /// Linux: the kernel neighbour table (/proc/net/arp) – the ping that preceded this call is what
-    /// fills it. macOS: not yet ("" – the scan itself works, only the MAC/OUI columns stay empty).</summary>
+    /// fills it. macOS: the same table via <c>arp -an</c>, which is the only way to read it without
+    /// linking against the BSD routing socket.</summary>
     public static string ResolveMacAddress(IPAddress ip)
     {
         if (ip.AddressFamily != AddressFamily.InterNetwork) return "";
@@ -146,6 +228,66 @@ public static class SubnetScanner
             return mac.Length > 0 ? mac : ArpTableMac(ip);
         }
         if (OperatingSystem.IsLinux()) return ProcArpMac(ip);
+        if (OperatingSystem.IsMacOS()) return BsdArpMac(ip);
+        return "";
+    }
+
+    /// <summary>macOS neighbour table, read by shelling out to <c>arp -an</c>. There is no /proc, and the
+    /// alternative is P/Invoking the BSD routing socket – far more code for the same answer.</summary>
+    private static string BsdArpMac(IPAddress ip)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("/usr/sbin/arp", "-an")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var proc = System.Diagnostics.Process.Start(psi);
+            if (proc is null) return "";
+            var output = proc.StandardOutput.ReadToEnd();
+            // Bounded: a hung arp must not stall the scan for this one host.
+            if (!proc.WaitForExit(2000)) { try { proc.Kill(); } catch { } return ""; }
+            return ParseBsdArp(output, ip.ToString());
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
+                                      or IOException or UnauthorizedAccessException)
+        {
+            return "";
+        }
+    }
+
+    /// <summary>Picks one host's MAC out of <c>arp -an</c> output. Pure, so it can be pinned by tests.
+    /// <para>Lines look like:
+    /// <code>? (192.168.1.1) at ac:de:48:0:11:22 on en0 ifscope [ethernet]</code></para>
+    /// <para>⚠️ Two traps. BSD <c>arp</c> prints octets <b>without leading zeros</b> – "0:11:22", not
+    /// "00:11:22" – so a fixed-length check (which is what the Linux path uses) rejects every second
+    /// address; each octet has to be padded back. And an entry that never resolved reads
+    /// "<c>at (incomplete) on en0</c>", which is not a MAC at all.</para></summary>
+    public static string ParseBsdArp(string arpOutput, string ip)
+    {
+        var needle = "(" + ip + ")";
+        foreach (var line in arpOutput.Split('\n'))
+        {
+            if (!line.Contains(needle, StringComparison.Ordinal)) continue;
+
+            var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var at = Array.IndexOf(parts, "at");
+            if (at < 0 || at + 1 >= parts.Length) continue;
+
+            var candidate = parts[at + 1];
+            if (candidate.StartsWith("(", StringComparison.Ordinal)) continue;   // "(incomplete)"
+
+            var octets = candidate.Split(':');
+            if (octets.Length != 6) continue;
+            if (!octets.All(o => o.Length is 1 or 2 &&
+                                 o.All(c => Uri.IsHexDigit(c)))) continue;
+
+            var mac = string.Join(":", octets.Select(o => o.PadLeft(2, '0').ToUpperInvariant()));
+            return mac == "00:00:00:00:00:00" ? "" : mac;
+        }
         return "";
     }
 
@@ -231,18 +373,41 @@ public static class SubnetScanner
         catch { return ""; } // timeout / no PTR record / DNS unavailable
     }
 
+    /// <summary>True as soon as any of <paramref name="ports"/> accepts – used as a liveness check for a
+    /// host that did not answer ICMP. Sequential on purpose: most of these addresses are empty, and the
+    /// point is to spend as little as possible confirming that.</summary>
+    private static async Task<bool> AnyPortOpenAsync(IPAddress ip, int[] ports, CancellationToken ct)
+    {
+        foreach (var port in ports)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (await IsPortOpenAsync(ip, port, ct).ConfigureAwait(false)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>One TCP connect attempt. Every socket in the scan passes through
+    /// <see cref="_socketGate"/> – see its remarks for why the count matters.</summary>
     private static async Task<bool> IsPortOpenAsync(IPAddress ip, int port, CancellationToken ct)
     {
-        using var client = new TcpClient();
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(1000); // a busy file server can be slow to accept – 600ms missed some
+        var gate = _socketGate;
+        await gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await client.ConnectAsync(ip, port, cts.Token).ConfigureAwait(false);
-            return true;
+            using var client = new TcpClient();
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(1000); // a busy file server can be slow to accept – 600ms missed some
+            try
+            {
+                await client.ConnectAsync(ip, port, cts.Token).ConfigureAwait(false);
+                return true;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch { return false; }
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch { return false; }
+        // ⚠️ Release the semaphore this call took, not whatever _socketGate points at now – the limit can
+        // be changed mid-scan, and releasing the new one would hand out a permit that was never taken.
+        finally { gate.Release(); }
     }
 
     private const int MaxHosts = 65536;

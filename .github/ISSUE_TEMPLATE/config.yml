@@ -1,0 +1,4 @@
+# ⚠️ Blank issues off on purpose. With them enabled the forms become optional – "Open a blank issue" sits
+# right under them – and a required field is only required for the people who did not take that link. The
+# entire point of the templates is that a report arrives with its log attached.
+blank_issues_enabled: false

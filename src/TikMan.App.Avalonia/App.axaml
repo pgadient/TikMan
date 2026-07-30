@@ -8,5 +8,113 @@
     <Application.Styles>
         <semi:SemiTheme Locale="en-US" />
         <semi:DataGridSemiTheme />
+        <!-- The action button: a light plate with dark ink, readable in both theme variants where the
+             theme's own pale accent was not.
+             ⚠️ Defined once here, application-wide. It used to be copied into each view's own
+             UserControl.Styles, so a window that forgot the copy silently got the default look – which is
+             how the topology, update and MAC-vendor buttons ended up differing from everything else. -->
+        <!-- ⚠️ `:is(Button)`, not `Button`: an Avalonia type selector matches that type EXACTLY, so a plain
+             `Button.action` silently skips ToggleButton (which derives from Button) – the detail-pane
+             chevron would keep the theme's own look while everything beside it changed. -->
+        <Style Selector=":is(Button).action">
+            <Setter Property="Background" Value="#C9CCD1" />
+            <Setter Property="Foreground" Value="#101010" />
+        </Style>
+        <!-- A glyph inside an action button inherits the same ink as its label. -->
+        <Style Selector=":is(Button).action Path">
+            <Setter Property="Fill" Value="#101010" />
+            <Setter Property="Width" Value="13" />
+            <Setter Property="Height" Value="13" />
+            <Setter Property="Stretch" Value="Uniform" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
     </Application.Styles>
+
+    <!-- Two-tone button glyphs: the icon is drawn in the theme's ink (black on light, white on dark) on the
+         button's own pastel fill, so the same markup reads correctly in both variants. -->
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="GlyphBrush" Color="#1A1A1A" />
+                    <!-- Feedback trio: pale pastels on a light background. -->
+                    <SolidColorBrush x:Key="ReportBrush" Color="#FFE2C2" />
+                    <SolidColorBrush x:Key="FeatureBrush" Color="#CFE3F7" />
+                    <SolidColorBrush x:Key="CoffeeBrush" Color="#E6D3BC" />
+                    <SolidColorBrush x:Key="FeedbackInkBrush" Color="#2A2A2A" />
+                    <!-- Sign-in hint: parchment with brown ink, the same palette as the WPF client. -->
+                    <SolidColorBrush x:Key="HintBrush" Color="#FBF3DC" />
+                    <SolidColorBrush x:Key="HintBorderBrush" Color="#EAD9A6" />
+                    <SolidColorBrush x:Key="HintInkBrush" Color="#7A5C10" />
+                    <SolidColorBrush x:Key="HintLinkBrush" Color="#5C6BC0" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="GlyphBrush" Color="#F2F2F2" />
+                    <!-- ⚠️ On dark, a pale pastel glares. These come DOWN from the saturated hue instead:
+                         mid-tone and still unmistakably coloured (never near-black), which keeps the usual
+                         dark-grey ink readable on them – so the trio uses that ink in both variants rather
+                         than flipping to white, which would smear on a mid-tone fill. -->
+                    <SolidColorBrush x:Key="ReportBrush" Color="#C98A45" />
+                    <SolidColorBrush x:Key="FeatureBrush" Color="#5E8FC4" />
+                    <SolidColorBrush x:Key="CoffeeBrush" Color="#A67C52" />
+                    <SolidColorBrush x:Key="FeedbackInkBrush" Color="#2A2A2A" />
+                    <!-- ⚠️ The hint inverts rather than dims. Parchment is a large, bright area – on a dark
+                         window it is the one thing that glares, and it sits above the list the user is
+                         reading. So: deep brown ground with amber ink, the same warm hue at the opposite
+                         end of the scale, keeping the "this is a notice" reading without the flashbang. -->
+                    <SolidColorBrush x:Key="HintBrush" Color="#3A2E14" />
+                    <SolidColorBrush x:Key="HintBorderBrush" Color="#5C4A20" />
+                    <SolidColorBrush x:Key="HintInkBrush" Color="#F0C860" />
+                    <SolidColorBrush x:Key="HintLinkBrush" Color="#9FB3E8" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
+            <!-- Button glyphs as path geometry, not emoji: an emoji is drawn by the OS colour font and can
+                 neither be tinted nor follow the light/dark variant. A Path fills with GlyphBrush, so every
+                 icon is genuinely monochrome and flips black/white with the theme. All drawn on a 14×14 box. -->
+            <StreamGeometry x:Key="IconBug">M7 1.4 C8.6 1.4 9.9 2.7 9.9 4.3 L4.1 4.3 C4.1 2.7 5.4 1.4 7 1.4 Z M3.3 5.5 L10.7 5.5 C11.2 6.5 11.5 7.7 11.5 9 C11.5 11.2 9.5 12.9 7 12.9 C4.5 12.9 2.5 11.2 2.5 9 C2.5 7.7 2.8 6.5 3.3 5.5 Z M0.7 6.6 L2.2 7.2 L1.9 8.3 L0.4 7.8 Z M13.3 6.6 L13.6 7.8 L12.1 8.3 L11.8 7.2 Z M0.9 11.4 L2.3 10.4 L2.9 11.4 L1.5 12.4 Z M13.1 11.4 L12.5 12.4 L11.1 11.4 L11.7 10.4 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconBulb">M7 0.8 C9.5 0.8 11.4 2.7 11.4 5.1 C11.4 6.7 10.6 7.9 9.7 8.9 C9.2 9.4 8.9 9.9 8.8 10.5 L5.2 10.5 C5.1 9.9 4.8 9.4 4.3 8.9 C3.4 7.9 2.6 6.7 2.6 5.1 C2.6 2.7 4.5 0.8 7 0.8 Z M5.3 11.5 L8.7 11.5 L8.7 12.4 L5.3 12.4 Z M5.9 13.2 L8.1 13.2 L7.6 13.9 L6.4 13.9 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconCoffee">M1.8 3.4 L10 3.4 L10 8.6 C10 10.4 8.6 11.8 6.8 11.8 L5 11.8 C3.2 11.8 1.8 10.4 1.8 8.6 Z M10.6 4.6 L11.6 4.6 C12.7 4.6 13.5 5.4 13.5 6.5 C13.5 7.6 12.7 8.4 11.6 8.4 L10.6 8.4 L10.6 7.2 L11.6 7.2 C12 7.2 12.3 6.9 12.3 6.5 C12.3 6.1 12 5.8 11.6 5.8 L10.6 5.8 Z M1.2 12.8 L10.6 12.8 L10.6 13.9 L1.2 13.9 Z M3.6 0.3 L4.5 0.3 L4.5 2.3 L3.6 2.3 Z M6 0.3 L6.9 0.3 L6.9 2.3 L6 2.3 Z M8.4 0.3 L9.3 0.3 L9.3 2.3 L8.4 2.3 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconSearch">M6 0.8 C8.9 0.8 11.2 3.1 11.2 6 C11.2 7.2 10.8 8.3 10.1 9.2 L13.4 12.5 L12.5 13.4 L9.2 10.1 C8.3 10.8 7.2 11.2 6 11.2 C3.1 11.2 0.8 8.9 0.8 6 C0.8 3.1 3.1 0.8 6 0.8 Z M6 2.2 C3.9 2.2 2.2 3.9 2.2 6 C2.2 8.1 3.9 9.8 6 9.8 C8.1 9.8 9.8 8.1 9.8 6 C9.8 3.9 8.1 2.2 6 2.2 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconKey">M9.2 0.8 C11.8 0.8 13.9 2.9 13.9 5.5 C13.9 8.1 11.8 10.2 9.2 10.2 C8.5 10.2 7.9 10.1 7.3 9.8 L6.2 10.9 L4.8 10.9 L4.8 12.3 L3.4 12.3 L3.4 13.7 L0.6 13.7 L0.6 11.4 L4.9 7.1 C4.6 6.6 4.5 6.1 4.5 5.5 C4.5 2.9 6.6 0.8 9.2 0.8 Z M10.2 3 C9.5 3 9 3.5 9 4.2 C9 4.9 9.5 5.4 10.2 5.4 C10.9 5.4 11.4 4.9 11.4 4.2 C11.4 3.5 10.9 3 10.2 3 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconPower">M6.3 0.6 L7.7 0.6 L7.7 7 L6.3 7 Z M3.5 2.4 L4.4 3.5 C3.1 4.4 2.3 5.9 2.3 7.6 C2.3 10.2 4.4 12.3 7 12.3 C9.6 12.3 11.7 10.2 11.7 7.6 C11.7 5.9 10.9 4.4 9.6 3.5 L10.5 2.4 C12.1 3.6 13.1 5.5 13.1 7.6 C13.1 11 10.4 13.7 7 13.7 C3.6 13.7 0.9 11 0.9 7.6 C0.9 5.5 1.9 3.6 3.5 2.4 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconSun">M7 3.6 C8.9 3.6 10.4 5.1 10.4 7 C10.4 8.9 8.9 10.4 7 10.4 C5.1 10.4 3.6 8.9 3.6 7 C3.6 5.1 5.1 3.6 7 3.6 Z M6.4 0.2 L7.6 0.2 L7.6 2.4 L6.4 2.4 Z M6.4 11.6 L7.6 11.6 L7.6 13.8 L6.4 13.8 Z M0.2 6.4 L2.4 6.4 L2.4 7.6 L0.2 7.6 Z M11.6 6.4 L13.8 6.4 L13.8 7.6 L11.6 7.6 Z M2 2.8 L2.8 2 L4.4 3.6 L3.6 4.4 Z M9.6 10.4 L10.4 9.6 L12 11.2 L11.2 12 Z M11.2 2 L12 2.8 L10.4 4.4 L9.6 3.6 Z M2.8 12 L2 11.2 L3.6 9.6 L4.4 10.4 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconMoon">M9.3 0.6 C7.6 1.8 6.5 3.8 6.5 6.1 C6.5 9.8 9.5 12.8 13.2 12.8 C13.4 12.8 13.6 12.8 13.8 12.8 C12.5 13.5 11 13.9 9.4 13.9 C5.1 13.9 1.6 10.4 1.6 6.1 C1.6 3.3 3.1 0.9 5.4 -0.4 C6.6 0 8 0.2 9.3 0.6 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconAuto">M7 0.6 C10.5 0.6 13.4 3.5 13.4 7 C13.4 10.5 10.5 13.4 7 13.4 C3.5 13.4 0.6 10.5 0.6 7 C0.6 3.5 3.5 0.6 7 0.6 Z M7 2 L7 12 C9.8 12 12 9.8 12 7 C12 4.2 9.8 2 7 2 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconTrash">M5.2 0.4 L8.8 0.4 L9.6 1.8 L13.2 1.8 L13.2 3.4 L0.8 3.4 L0.8 1.8 L4.4 1.8 Z M2 4.6 L12 4.6 L11.1 13.6 L2.9 13.6 Z</StreamGeometry>
+            <!-- Menu-bar icons, same minimal 14×14 style as the button glyphs above. -->
+            <!-- Gear: Material Design "settings" outline (Apache-2.0), 24×24 – Stretch=Uniform scales it. -->
+            <StreamGeometry x:Key="IconGear">M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z</StreamGeometry>
+            <!-- Arrow into a tray: export/download. -->
+            <StreamGeometry x:Key="IconExport">M6.4 0.6 L7.6 0.6 L7.6 6.9 L9.7 4.8 L10.6 5.7 L7 9.3 L3.4 5.7 L4.3 4.8 L6.4 6.9 Z M0.6 10.8 L1.8 10.8 L1.8 12.4 L12.2 12.4 L12.2 10.8 L13.4 10.8 L13.4 13.6 L0.6 13.6 Z</StreamGeometry>
+            <!-- Two rack units with a status LED each: a server. Inner squares punch holes (EvenOdd). -->
+            <StreamGeometry x:Key="IconServer">M1 2.2 L13 2.2 L13 6.2 L1 6.2 Z M3 3.6 L4.4 3.6 L4.4 4.8 L3 4.8 Z M1 7.8 L13 7.8 L13 11.8 L1 11.8 Z M3 9.2 L4.4 9.2 L4.4 10.4 L3 10.4 Z</StreamGeometry>
+            <!-- Play triangle / stop square for the web-server toggle. -->
+            <StreamGeometry x:Key="IconPlay">M3 1.5 L12.5 7 L3 12.5 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconStopSquare">M2.4 2.4 L11.6 2.4 L11.6 11.6 L2.4 11.6 Z</StreamGeometry>
+            <!-- 3×3 grid of cells: the support matrix. -->
+            <StreamGeometry x:Key="IconGrid">M1 1 L4.6 1 L4.6 4.6 L1 4.6 Z M5.2 1 L8.8 1 L8.8 4.6 L5.2 4.6 Z M9.4 1 L13 1 L13 4.6 L9.4 4.6 Z M1 5.2 L4.6 5.2 L4.6 8.8 L1 8.8 Z M5.2 5.2 L8.8 5.2 L8.8 8.8 L5.2 8.8 Z M9.4 5.2 L13 5.2 L13 8.8 L9.4 8.8 Z M1 9.4 L4.6 9.4 L4.6 13 L1 13 Z M5.2 9.4 L8.8 9.4 L8.8 13 L5.2 13 Z M9.4 9.4 L13 9.4 L13 13 L9.4 13 Z</StreamGeometry>
+            <!-- Settings-dialog action-button glyphs (same minimal 14×14 style).
+                 ⚠️ The non-square glyphs carry two INVISIBLE anchor specks at (0,0) and (14,14) – degenerate
+                 sub-pixel triangles. Avalonia's Stretch=Uniform does not centre: it scales the geometry's
+                 own bounds and pins them to the TOP-LEFT of the Path's box, so a wide-but-short shape (the
+                 envelope) rode visibly high next to its label. The specks pad the bounds to the full 14×14
+                 square, which makes the drawn shape land exactly where it is drawn – centred. -->
+            <StreamGeometry x:Key="IconCheck">M0 0 L0.02 0 L0 0.02 Z M14 14 L13.98 14 L14 13.98 Z M2 7.4 L5.4 10.8 L12 3.2 L10.8 2.1 L5.4 8.3 L3.1 6 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconClose">M0 0 L0.02 0 L0 0.02 Z M14 14 L13.98 14 L14 13.98 Z M2.6 1.5 L7 5.9 L11.4 1.5 L12.5 2.6 L8.1 7 L12.5 11.4 L11.4 12.5 L7 8.1 L2.6 12.5 L1.5 11.4 L5.9 7 L1.5 2.6 Z</StreamGeometry>
+            <!-- Envelope: outer rectangle plus the flap as a V, drawn centred (body 3.2–10.8). -->
+            <StreamGeometry x:Key="IconMail">M0 0 L0.02 0 L0 0.02 Z M14 14 L13.98 14 L14 13.98 Z M0.8 3.2 L13.2 3.2 L13.2 10.8 L0.8 10.8 Z M0.8 3.2 L7 7.6 L13.2 3.2 L13.2 4.7 L7 9.1 L0.8 4.7 Z</StreamGeometry>
+            <!-- Open folder with a lifted front flap. -->
+            <StreamGeometry x:Key="IconFolder">M0 0 L0.02 0 L0 0.02 Z M14 14 L13.98 14 L14 13.98 Z M1 2.6 L5.4 2.6 L6.6 3.9 L13 3.9 L13 5.4 L1 5.4 Z M1 6 L13.4 6 L11.7 12 L0.8 12 Z</StreamGeometry>
+            <!-- Device context-menu glyphs. Same 14×14 box, EvenOdd holes like IconServer above. -->
+            <!-- Monitor with a stand: a remote desktop session (VNC / RDP). -->
+            <StreamGeometry x:Key="IconMonitor">M0.8 2 L13.2 2 L13.2 10.4 L0.8 10.4 Z M2 3.2 L12 3.2 L12 9.2 L2 9.2 Z M6.2 10.6 L7.8 10.6 L7.8 12.2 L6.2 12.2 Z M4 12.4 L10 12.4 L10 13.4 L4 13.4 Z</StreamGeometry>
+            <!-- Console window with a prompt chevron and a cursor bar: a shell session (SSH / telnet). -->
+            <StreamGeometry x:Key="IconTerminal">M0.8 2 L13.2 2 L13.2 12 L0.8 12 Z M2 3.2 L12 3.2 L12 10.8 L2 10.8 Z M3.2 5 L4 4.2 L6.6 6.8 L4 9.4 L3.2 8.6 L5 6.8 Z M7.4 8.6 L10.6 8.6 L10.6 9.4 L7.4 9.4 Z</StreamGeometry>
+            <!-- A page with an arrow leaving it: opens somewhere outside the app (the vendor's website). -->
+            <StreamGeometry x:Key="IconExternal">M0.8 3.2 L7.4 3.2 L7.4 4.6 L2.2 4.6 L2.2 11.8 L9.4 11.8 L9.4 6.6 L10.8 6.6 L10.8 13.2 L0.8 13.2 Z M8 0.8 L13.2 0.8 L13.2 6 L11.8 6 L11.8 3.2 L7.2 7.8 L6.2 6.8 L10.8 2.2 L8 2.2 Z</StreamGeometry>
+            <!-- Circular arrow: undo / restore defaults, and (same shape, same meaning) "read this again". -->
+            <StreamGeometry x:Key="IconUndo">M7 1.6 C10 1.6 12.4 4 12.4 7 C12.4 10 10 12.4 7 12.4 C4.6 12.4 2.6 10.9 1.9 8.7 L3.4 8.2 C3.9 9.7 5.3 10.8 7 10.8 C9.1 10.8 10.8 9.1 10.8 7 C10.8 4.9 9.1 3.2 7 3.2 C5.7 3.2 4.6 3.8 3.9 4.8 L5.6 4.8 L5.6 6.3 L1.4 6.3 L1.4 2.1 L2.9 2.1 L2.9 3.5 C3.9 2.3 5.4 1.6 7 1.6 Z</StreamGeometry>
+        </ResourceDictionary>
+    </Application.Resources>
 </Application>

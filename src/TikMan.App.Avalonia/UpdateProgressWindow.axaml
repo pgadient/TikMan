@@ -1,0 +1,18 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="using:TikMan.App.Avalonia"
+        x:Class="TikMan.App.Avalonia.UpdateProgressWindow"
+        x:CompileBindings="False"
+        Width="460" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        WindowDecorations="BorderOnly"
+        Icon="/Assets/tikman.png"
+        Title="{loc:Loc Av_UpdateRestart}">
+    <StackPanel Margin="26" Spacing="14">
+        <TextBlock Text="{loc:Loc Upd_Downloading}" FontSize="16" FontWeight="SemiBold" />
+        <TextBlock x:Name="Detail" Opacity="0.75" TextWrapping="Wrap" />
+        <ProgressBar x:Name="Bar" Height="10" Minimum="0" Maximum="1" />
+        <TextBlock Text="{loc:Loc Upd_ThankYou}" TextWrapping="Wrap" Opacity="0.85" />
+    </StackPanel>
+</Window>

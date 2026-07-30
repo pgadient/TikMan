@@ -1,6 +1,7 @@
 using System;
 using System.Windows.Data;
 using System.Windows.Markup;
+using TikMan.Core.Localization; // LocalizationManager moved to Core (shared with Avalonia/Web); this WPF markup stays here
 
 namespace TikMan.App.Localization;
 

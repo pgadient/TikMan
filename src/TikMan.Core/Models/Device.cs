@@ -23,6 +23,10 @@ public class Device
     /// <summary>Further addresses of the same physical device (matched by MAC): the other-family
     /// address(es), including a device's multiple IPv6 addresses (global, ULA, link-local, privacy).</summary>
     public List<string> AltAddresses { get; set; } = new();
+
+    /// <summary>SMB share names offered by this device (empty when it has no SMB, or the platform can't
+    /// enumerate them). Filled opportunistically during probing so the UI can offer them as shortcuts.</summary>
+    public List<string> Shares { get; set; } = new();
     public int Port { get; set; } = 443;
     public bool UseHttps { get; set; } = true;
     public bool IgnoreCertErrors { get; set; } = true;
@@ -48,4 +52,23 @@ public class Device
     /// <summary>Preferred RouterOS update channel for this device. Empty = use the global default
     /// (<see cref="Storage.AppData.DefaultUpdateChannel"/>). Only meaningful for MikroTik devices.</summary>
     public string UpdateChannel { get; set; } = "";
+
+    /// <summary>A detached copy, with its own collections. Hand this out to readers instead of the live
+    /// instance: the fleet's lock protects the device <i>list</i>, not the objects in it, so a caller that
+    /// walks <see cref="ExtraInfo"/> or <see cref="OpenPorts"/> outside the lock would be reading a
+    /// dictionary that a background probe is resizing underneath it – a corrupt read or a hang, not an
+    /// exception you would notice.</summary>
+    public Device Clone() => new()
+    {
+        Id = Id, Vendor = Vendor, Model = Model, HardwareRevision = HardwareRevision,
+        Name = Name, Host = Host, Port = Port, UseHttps = UseHttps,
+        IgnoreCertErrors = IgnoreCertErrors, SshPort = SshPort, Username = Username,
+        EncryptedPassword = EncryptedPassword, MonitoringEnabled = MonitoringEnabled,
+        HasSmb = HasSmb, SerialNumber = SerialNumber, MacAddress = MacAddress,
+        Notes = Notes, UpdateChannel = UpdateChannel,
+        AltAddresses = new List<string>(AltAddresses),
+        Shares = new List<string>(Shares),
+        OpenPorts = new List<int>(OpenPorts),
+        ExtraInfo = new Dictionary<string, string>(ExtraInfo),
+    };
 }

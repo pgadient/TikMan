@@ -76,7 +76,7 @@ public class HistoryChart : FrameworkElement
         }
         else
         {
-            var hint = new FormattedText(Localization.LocalizationManager.T("Chart_NoData"),
+            var hint = new FormattedText(LocalizationManager.T("Chart_NoData"),
                 CultureInfo.InvariantCulture, FlowDirection.LeftToRight, LabelFont, 11, LabelBrush, dpi);
             dc.DrawText(hint, new Point(marginLeft + 8, marginTop + 8));
         }

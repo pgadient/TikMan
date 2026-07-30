@@ -1,0 +1,19 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:TikMan.App.Avalonia"
+        x:Class="TikMan.App.Avalonia.ConfirmWindow"
+        x:CompileBindings="False"
+        Width="420" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Icon="/Assets/tikman.png"
+        Title="TikMan">
+    <StackPanel Margin="22" Spacing="16">
+        <TextBlock x:Name="MessageText" TextWrapping="Wrap" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+            <!-- Cancel is the default so a stray Enter never confirms a destructive action. -->
+            <Button x:Name="ConfirmButton" Click="OnConfirm" Classes="action" />
+            <Button Content="{loc:Loc Av_Cancel}" Click="OnCancel" IsCancel="True" Classes="action" />
+        </StackPanel>
+    </StackPanel>
+</Window>

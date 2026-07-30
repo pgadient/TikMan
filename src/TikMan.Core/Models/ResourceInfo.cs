@@ -14,8 +14,13 @@ public class ResourceInfo
     public long FreeHddSpace { get; set; }
     public long TotalHddSpace { get; set; }
 
+    /// <summary>Memory usage as a plain percentage, for devices that report only that and not byte totals
+    /// (a TP-Link switch gives "19%", never used/total). Null when byte figures are available – then
+    /// <see cref="MemoryUsedPercent"/> computes it from them.</summary>
+    public double? MemoryPercent { get; set; }
+
     public double MemoryUsedPercent =>
-        TotalMemory > 0 ? 100.0 * (TotalMemory - FreeMemory) / TotalMemory : 0;
+        MemoryPercent ?? (TotalMemory > 0 ? 100.0 * (TotalMemory - FreeMemory) / TotalMemory : 0);
 }
 
 /// <summary>A single data point for the monitoring history.</summary>

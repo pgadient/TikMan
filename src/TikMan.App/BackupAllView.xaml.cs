@@ -6,7 +6,7 @@ using System.Windows.Controls;
 using Microsoft.Win32;
 using TikMan.Core.Models;
 using TikMan.Core.Storage;
-using static TikMan.App.Localization.LocalizationManager;
+using static TikMan.Core.Localization.LocalizationManager;
 
 namespace TikMan.App;
 

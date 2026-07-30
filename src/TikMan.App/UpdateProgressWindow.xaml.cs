@@ -1,6 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
-using static TikMan.App.Localization.LocalizationManager;
+using static TikMan.Core.Localization.LocalizationManager;
 
 namespace TikMan.App;
 

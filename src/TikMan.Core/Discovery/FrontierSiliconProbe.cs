@@ -49,7 +49,7 @@ public static partial class FrontierSiliconProbe
             // no UPnP description – name/firmware are enough
         }
 
-        // "Teufel Radio 3sixty 305890626ef8" → drop the MAC suffix; the brand is the first word.
+        // "Teufel Radio 3sixty 305890aabbcc" → drop the MAC suffix; the brand is the first word.
         name = Regex.Replace(name, @"\s*[0-9a-fA-F]{12}\s*$", "").Trim();
         var vendor = name.Contains(' ') ? name[..name.IndexOf(' ')] : "";
 

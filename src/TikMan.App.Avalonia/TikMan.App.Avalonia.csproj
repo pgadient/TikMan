@@ -12,12 +12,27 @@
     <AssemblyName>TikMan.Avalonia</AssemblyName>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationIcon>tikman-red.ico</ApplicationIcon>
+    <Version>2.3.1</Version>
+    <Product>TikMan</Product>
+    <Company>Pascal Montico-Gadient</Company>
+    <!-- Build date stamped into the informational version ("2.2.2+build.2026-07-18") so the window title can
+         say when this binary was produced. Read back via AssemblyInformationalVersionAttribute. -->
+    <InformationalVersion>$(Version)+build.$([System.DateTime]::UtcNow.ToString("yyyy-MM-dd"))</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>
     <AvaloniaResource Include="Assets/**" />
   </ItemGroup>
 
+  <!-- Avalonia 12.1.0 – keep all Avalonia.* + Semi in lockstep, bump together. -->
+  <!-- ⚠️ VNC: the UI-free core (Community.MarcusW.VncClient) is referenced as a package, but the Avalonia
+       ADAPTER (VncView / RfbRenderTarget / input) is VENDORED under src/…/Vnc/ instead of taking the
+       Community.MarcusW.VncClient.Avalonia package. Reason: that package (every version, up to 2.0.7) is
+       built against Avalonia 11.3, and its precompiled render path calls Avalonia methods whose tokens no
+       longer resolve on 12 – so the framebuffer silently never painted and the VNC pane stayed white after
+       the password. Compiling the same adapter source against Avalonia 12 rebinds those calls and fixes it
+       (the one real break was DrawingContext.DrawImage's single-Rect overload; see RfbRenderTarget.cs).
+       Source: github.com/karbonbaron/MarcusW.VncClient (adapter under src/MarcusW.VncClient.Avalonia). -->
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.0" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.0" />
@@ -26,10 +41,20 @@
     <PackageReference Include="Avalonia.Controls.DataGrid" Version="12.1.0" />
     <PackageReference Include="Semi.Avalonia" Version="12.1.0" />
     <PackageReference Include="Semi.Avalonia.DataGrid" Version="12.1.0" />
+    <PackageReference Include="Community.MarcusW.VncClient" Version="2.0.5" />
+    <!-- Used by the vendored VNC adapter's throttled auto-resize (VncView.Sizing.cs). Was a transitive
+         dependency of the adapter package we dropped, so it is now referenced directly. -->
+    <PackageReference Include="System.Reactive" Version="6.0.1" />
+    <!-- Vector PDF export of the topology graphs (same as the WPF client). MIT, pure managed, ships no
+         fonts – PdfExportFonts resolves system fonts cross-platform (Windows/Linux/macOS). -->
+    <PackageReference Include="PdfSharp" Version="6.2.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\TikMan.Core\TikMan.Core.csproj" />
+    <!-- The built-in web server (UI-free, shared with the headless host): lets this GUI serve the same
+         dashboard over HTTP/S, backed by the very fleet shown on screen. -->
+    <ProjectReference Include="..\TikMan.Web\TikMan.Web.csproj" />
   </ItemGroup>
 
 </Project>

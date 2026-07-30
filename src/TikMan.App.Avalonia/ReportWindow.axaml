@@ -1,0 +1,50 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:TikMan.App.Avalonia"
+        x:Class="TikMan.App.Avalonia.ReportWindow"
+        x:CompileBindings="False"
+        Width="640" Height="520"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/tikman.png"
+        Title="{loc:Loc Av_ReportTitle}">
+    <DockPanel Margin="20">
+        <TextBlock DockPanel.Dock="Top" Text="{loc:Loc Av_ReportIntro}" TextWrapping="Wrap" Margin="0,0,0,10" />
+
+        <!-- The warning sits ABOVE the log, not below it: it has to be read before the log is copied,
+             not after. Amber rather than red – this is a "please check", not a failure. -->
+        <Border DockPanel.Dock="Top" CornerRadius="5" Padding="10,8" Margin="0,0,0,10"
+                Background="#33EF6C00" BorderBrush="#EF6C00" BorderThickness="1">
+            <TextBlock Text="{loc:Loc Av_ReportPrivacy}" TextWrapping="Wrap" />
+        </Border>
+
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Spacing="10" Margin="0,12,0,0">
+            <Button Content="{loc:Loc Av_ReportOpenFolder}" Click="OnOpenFolder" />
+            <Button Content="{loc:Loc Av_ReportCopy}" Click="OnCopy" />
+            <Button Content="{loc:Loc Av_ReportOpenIssue}" Click="OnOpenIssue" />
+            <Button Content="{loc:Loc Av_Close}" Click="OnClose" IsCancel="True" />
+        </StackPanel>
+
+        <TextBlock x:Name="PathText" DockPanel.Dock="Bottom" Opacity="0.6" FontSize="11"
+                   TextWrapping="Wrap" Margin="0,8,0,0" />
+
+        <!-- The stronger scrub, on by default: the button next to it opens a PUBLIC issue tracker, so the
+             safe setting has to be the one you get without thinking about it. Turning it off is a decision;
+             leaving it on is not. -->
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <CheckBox x:Name="ScrubNames" IsChecked="True" Click="OnScrubChanged"
+                      Content="{loc:Loc Av_ReportScrubNames}" />
+            <TextBlock Text="{loc:Loc Av_ReportScrubNamesTip}" TextWrapping="Wrap" Opacity="0.7"
+                       FontSize="12" Margin="26,2,0,0" />
+        </StackPanel>
+
+        <!-- Shown, not just referenced: a log nobody can see is a log nobody reviews. Editable, too – the
+             scrub covers what TikMan knows about; anything else the user can simply delete here, and what
+             is on screen is exactly what the copy button copies. -->
+        <TextBox x:Name="LogBox" AcceptsReturn="True" TextWrapping="NoWrap"
+                 FontFamily="Consolas, Menlo, monospace" FontSize="12"
+                 VerticalContentAlignment="Top"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto" />
+    </DockPanel>
+</Window>

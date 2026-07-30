@@ -13,7 +13,42 @@ public sealed record DeviceDto(
     string Model,
     string Status,
     bool IsGateway,
-    bool HasLogin);
+    bool HasLogin,
+    // ⚠️ The dashboard used to stop at the fields above, so the browser view was a much poorer table than
+    // the app's – the same scan had already collected all of this. These are the remaining GUI columns.
+    string MacVendor,
+    string Ipv6Summary,
+    string Serial,
+    string Os,
+    string Firmware,
+    string Cpu,
+    string Memory,
+    string Uptime,
+    string LatestVersion,
+    bool UpdateAvailable,
+    IReadOnlyList<BadgeDto> Badges);
+
+/// <summary>One service badge ("http", "ssh", …) with the URL to open, mirroring the GUI's row badges.
+/// <see cref="Url"/> is empty for services that are not clickable.</summary>
+/// <param name="Colour">The chip's background, as the hex string <see cref="ServiceBadge"/> already assigns
+/// per service – so http is the same colour in the browser as it is in the app. ⚠️ Carried in the payload
+/// rather than mapped again in JavaScript: a second colour table drifts from the first the moment a service
+/// is added, and then the same device looks different depending on where you look at it.</param>
+/// <param name="Tooltip">What the chip says on hover (the URL, or the service name when there is none).</param>
+public sealed record BadgeDto(string Name, string Url, string Colour = "", string Tooltip = "");
+
+/// <summary>One row of the IPv6 view: an address in its own right, with the facts that belong to the
+/// device it sits on. Mirrors the app's per-address IPv6 tab – the point being that two addresses of one
+/// device can behave differently, so each is probed and listed separately.</summary>
+public sealed record Ipv6RowDto(
+    string Id, int Group, string Name, string Type, string Ip, string Address, string Scope,
+    string Mac, string MacVendor, string Vendor, string Model, string Status,
+    IReadOnlyList<BadgeDto> Badges,
+    // ⚠️ Name/Vendor/Model/Serial/Os/Shares are what THIS address answered where it answered – the device's
+    // IPv4 facts only fill the gaps. Substituting them wholesale would describe an address that says nothing.
+    string Serial, string Os, string Shares,
+    string Firmware, string LatestVersion, string InstalledRelease, string UpdateRelease,
+    string Cpu, string Memory, string Uptime);
 
 /// <summary>One label/value line for the device-detail panel (the same rows the GUI shows).</summary>
 public sealed record KeyVal(string Key, string Value);
@@ -35,7 +70,8 @@ public sealed record ActionResult(bool Ok, string Message);
 /// GUI draws. <see cref="DeviceId"/> is set for real devices (empty for the "Internet"/range pseudo-
 /// nodes), so a click can open the device's detail panel. Colours are CSS-ready hex strings.</summary>
 public sealed record TopoNodeDto(string Key, string DeviceId, string Title, string Detail, string Mac,
-    double X, double Y, double W, double H, string Fill, string Line, string Text);
+    double X, double Y, double W, double H, string Fill, string Line, string Text,
+    string Vendor = "", string Model = "", string Kind = "");
 
 public sealed record TopoEdgeDto(string From, string To);
 
@@ -60,6 +96,9 @@ public interface IWebBackend
 {
     /// <summary>A snapshot of the current device list (as shown in the GUI right now).</summary>
     IReadOnlyList<DeviceDto> GetDevices();
+
+    /// <summary>The IPv6 view's rows – one per address, not one per device.</summary>
+    IReadOnlyList<Ipv6RowDto> GetIpv6Rows();
 
     /// <summary>Full detail for one device by its <see cref="DeviceDto.Id"/>, or null if it's gone.</summary>
     DeviceDetail? GetDevice(string id);
@@ -88,10 +127,14 @@ public interface IWebBackend
     /// <summary>Starts a discovery scan if one isn't already running (same as the GUI's Scan button).</summary>
     void StartScan();
 
-    /// <summary>Opens an interactive SSH shell to the device with the stored login, at the given
-    /// terminal size. Returns null if the device is unknown, has no login, or the connection fails.
-    /// The web server only ever calls this over HTTPS. The password is never logged.</summary>
-    Task<TikMan.Core.Api.ITerminalSession?> OpenSshShellAsync(string id, uint cols, uint rows);
+    /// <summary>Opens an interactive SSH shell to the device at the given terminal size. Returns null if
+    /// the device is unknown or the connection fails. The web server only ever calls this over HTTPS.
+    /// <para><paramref name="user"/>/<paramref name="password"/> override the stored login when supplied –
+    /// that is how a device <b>without</b> a saved login is reached: the terminal asks for them the way any
+    /// SSH client does. They are used only to authenticate this one session, never stored, never
+    /// logged.</para></summary>
+    Task<TikMan.Core.Api.ITerminalSession?> OpenSshShellAsync(string id, uint cols, uint rows,
+        string? user = null, string? password = null);
 
     /// <summary>The device's VNC endpoint (its host + detected VNC port), or null if it has none. The
     /// host is resolved from the device id server-side so the WebSocket proxy can only reach a known

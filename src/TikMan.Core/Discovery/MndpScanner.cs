@@ -12,20 +12,25 @@ public static class MndpScanner
 {
     private const int MndpPort = 5678;
 
+    /// <param name="onlyLocalAddress">This machine's IPv4 on the interface to probe, or null/empty for all.
+    /// The socket is bound to that address too, so replies from other segments aren't picked up.</param>
     public static async Task<List<DiscoveredDevice>> DiscoverAsync(
         TimeSpan timeout,
         IProgress<DiscoveredDevice>? onFound = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? onlyLocalAddress = null)
     {
         var results = new Dictionary<string, DiscoveredDevice>(); // Key: MAC or IP
 
         using var udp = new UdpClient();
         udp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
         udp.EnableBroadcast = true;
-        udp.Client.Bind(new IPEndPoint(IPAddress.Any, MndpPort));
+        var bindTo = onlyLocalAddress is { Length: > 0 } && IPAddress.TryParse(onlyLocalAddress, out var only)
+            ? only : IPAddress.Any;
+        udp.Client.Bind(new IPEndPoint(bindTo, MndpPort));
 
         var trigger = new byte[] { 0, 0, 0, 0 };
-        foreach (var target in GetBroadcastTargets())
+        foreach (var target in GetBroadcastTargets(onlyLocalAddress))
         {
             try { await udp.SendAsync(trigger, trigger.Length, new IPEndPoint(target, MndpPort)).ConfigureAwait(false); }
             catch (SocketException) { /* interface without broadcast support - ignore */ }
@@ -110,12 +115,17 @@ public static class MndpScanner
         Encoding.UTF8.GetString(data, offset, len).Trim('\0');
 
     /// <summary>Global broadcast plus directed broadcasts per interface -
-    /// otherwise 255.255.255.255 only goes out via the default interface.</summary>
-    private static List<IPAddress> GetBroadcastTargets()
+    /// otherwise 255.255.255.255 only goes out via the default interface.
+    /// <para><paramref name="only"/> narrows this to one interface: just that subnet's directed broadcast,
+    /// and <b>no</b> global broadcast – 255.255.255.255 leaves via the default route, which is exactly the
+    /// other interface the user didn't pick.</para></summary>
+    private static List<IPAddress> GetBroadcastTargets(string? only = null)
     {
-        var targets = new List<IPAddress> { IPAddress.Broadcast };
+        bool single = only is { Length: > 0 };
+        var targets = single ? new List<IPAddress>() : new List<IPAddress> { IPAddress.Broadcast };
         foreach (var (address, mask) in GetLocalIPv4WithMasks())
         {
+            if (single && address.ToString() != only) continue;
             var addrBytes = address.GetAddressBytes();
             var maskBytes = mask.GetAddressBytes();
             var bcast = new byte[4];

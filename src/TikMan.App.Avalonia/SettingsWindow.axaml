@@ -1,70 +1,364 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="using:TikMan.App.Avalonia"
         x:Class="TikMan.App.Avalonia.SettingsWindow"
         x:CompileBindings="False"
-        Width="520" SizeToContent="Height"
+        Width="676" SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
         Icon="/Assets/tikman.png"
-        Title="Einstellungen">
+        Title="{loc:Loc Av_SettingsTitle}">
+    <!-- Button.action and its glyph style live in App.axaml – one definition for every window. -->
     <StackPanel Margin="20" Spacing="14">
-        <TextBlock Text="Einstellungen" FontSize="18" FontWeight="SemiBold" />
-
         <TabControl>
-            <TabItem Header="Allgemein">
+            <TabItem Header="{loc:Loc Av_TabGeneral}">
                 <StackPanel Spacing="10" Margin="0,10,0,0">
-                    <Grid ColumnDefinitions="200,*" RowDefinitions="Auto">
-                        <TextBlock Grid.Column="0" Text="Standard-Benutzername" VerticalAlignment="Center" />
-                        <TextBox Grid.Column="1" Text="{Binding DefaultUsername, Mode=TwoWay}" />
+                    <!-- Backup method used to have a row here. Gone: the backup transport is chosen per
+                         device at backup time (the assistant picks it), never once globally – a global
+                         setting only pretended to. -->
+                    <Grid ColumnDefinitions="200,*" RowDefinitions="Auto,Auto">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Loc Av_DefaultUser}" VerticalAlignment="Center" />
+                        <TextBox   Grid.Row="0" Grid.Column="1" Text="{Binding DefaultUsername, Mode=TwoWay}" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Loc Av_Language}" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <ComboBox  Grid.Row="1" Grid.Column="1" x:Name="LanguageBox" HorizontalAlignment="Stretch"
+                                   SelectedItem="{Binding Language, Mode=TwoWay}" Margin="0,8,0,0">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Converter={x:Static loc:EnumLabel.Instance}}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
                     </Grid>
-                    <CheckBox Content="Geräteliste über Neustarts behalten" IsChecked="{Binding PersistDeviceList, Mode=TwoWay}" />
-                    <CheckBox Content="Beim Start nicht automatisch scannen" IsChecked="{Binding NoInitialScan, Mode=TwoWay}" />
-                    <CheckBox Content="Beim Start auf App-Updates prüfen" IsChecked="{Binding CheckForUpdates, Mode=TwoWay}" />
-                    <CheckBox Content="Zeilen standardmässig ausgeklappt" IsChecked="{Binding ExpandRowsByDefault, Mode=TwoWay}" />
-                    <CheckBox Content="Kombinierter Fortschrittsbalken" IsChecked="{Binding SingleProgressBar, Mode=TwoWay}" />
+                    <CheckBox Content="{loc:Loc Av_SetPersist}" IsChecked="{Binding PersistDeviceList, Mode=TwoWay}" />
+                    <CheckBox Content="{loc:Loc Av_SetNoScan}" IsChecked="{Binding NoInitialScan, Mode=TwoWay}" />
+                    <CheckBox Content="{loc:Loc Av_SetCheckUpd}" IsChecked="{Binding CheckForUpdates, Mode=TwoWay}" />
+                    <CheckBox Content="{loc:Loc Av_SetExpand}" IsChecked="{Binding ExpandRowsByDefault, Mode=TwoWay}" />
+                    <!-- The "combined progress bar" switch used to sit here. There is only one progress
+                         display now – one bar 0→100 % with the protocol row under it – so it had nothing
+                         left to switch between. AppData keeps the field for the WPF client. -->
+                    <!-- "Show IPv6 view" removed: it was never wired to anything – the IPv6 tab is always
+                         shown regardless. A checkbox that toggles nothing is worse than no checkbox. -->
+                    <CheckBox Content="{loc:Loc Menu_ListInfo}" IsChecked="{Binding ShowListInfo, Mode=TwoWay}" />
+                    <CheckBox Content="{loc:Loc Set_ShowContact}" IsChecked="{Binding ShowContactButtons, Mode=TwoWay}" />
+                    <CheckBox Content="{loc:Loc Set_VncNotice}" IsChecked="{Binding ShowVncNotice, Mode=TwoWay}" />
+                    <!-- ⚠️ "Combine addresses" is deliberately not offered. The setting exists in AppData and
+                         has a checkbox in the WPF client, but nothing anywhere reads it – it has never done
+                         anything in either client. Showing a control that does nothing is worse than not
+                         showing it; the property stays so old config files still load. -->
+                    <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,6,0,0">
+                        <Button x:Name="CheckUpdateButton" Click="OnCheckUpdate" Classes="action">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <Path Data="{StaticResource IconSearch}" />
+                                <TextBlock Text="{loc:Loc Av_CheckNow}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="ApplyUpdateButton" Click="OnApplyUpdate" Classes="action" IsVisible="False">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <Path Data="{StaticResource IconPower}" />
+                                <TextBlock Text="{loc:Loc Av_UpdateRestart}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <TextBlock x:Name="UpdateStatus" Opacity="0.75" TextWrapping="Wrap" />
+
+                    <!-- Belongs here, next to the general prefs, not floating under every tab: it is a
+                         one-time reassurance about where credentials live, and the General tab is where a
+                         user looks first. -->
+                    <TextBlock Opacity="0.6" TextWrapping="Wrap" FontSize="12" Margin="0,6,0,0"
+                               Text="{loc:Loc Av_SettingsShared}" />
                 </StackPanel>
             </TabItem>
 
-            <TabItem Header="Scan">
+            <TabItem Header="{loc:Loc Av_TabScan}">
                 <StackPanel Spacing="10" Margin="0,10,0,0">
-                    <Grid ColumnDefinitions="200,*" RowDefinitions="Auto,Auto,Auto">
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="SNMP-Community" VerticalAlignment="Center" />
-                        <TextBox   Grid.Row="0" Grid.Column="1" Text="{Binding SnmpCommunity, Mode=TwoWay}" />
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Ping-Timeout (ms)" VerticalAlignment="Center" Margin="0,8,0,0" />
+                    <Grid ColumnDefinitions="200,*" RowDefinitions="Auto,Auto,Auto,Auto">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Loc Av_SnmpCommunity}" VerticalAlignment="Center" />
+                        <TextBox   Grid.Row="0" Grid.Column="1" Text="{Binding SnmpCommunity, Mode=TwoWay}"
+                                   ToolTip.Tip="{loc:Loc Av_SnmpCommunityTip}"
+                                   PlaceholderText="{loc:Loc Av_SnmpOff}" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Loc Av_PingTimeout}" VerticalAlignment="Center" Margin="0,8,0,0" />
                         <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding PingTimeoutMs, Mode=TwoWay}" Minimum="50" Maximum="5000" Increment="50" Margin="0,8,0,0" />
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Ping-Wiederholungen" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="{loc:Loc Av_PingRetries}" VerticalAlignment="Center" Margin="0,8,0,0" />
                         <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding PingRetries, Mode=TwoWay}" Minimum="0" Maximum="5" Increment="1" Margin="0,8,0,0" />
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="{loc:Loc Av_PollInterval}" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding PollIntervalSeconds, Mode=TwoWay}" Minimum="5" Maximum="3600" Increment="5" FormatString="0" Margin="0,8,0,0" />
                     </Grid>
-                    <CheckBox Content="Einfacher Scan-Modus (weniger Proben)" IsChecked="{Binding SimpleScanMode, Mode=TwoWay}" />
+                    <!-- Simple scan mode has its own checkbox on the main screen (and it persists from
+                         there); a second copy here was just a duplicate. -->
+
+                    <!-- Costs a lot more traffic and looks like a port scan to an IDS, so it says so. -->
+                    <CheckBox Content="{loc:Loc Av_ScanUnpingable}" IsChecked="{Binding ScanUnpingableHosts, Mode=TwoWay}" />
+                    <Border CornerRadius="5" Padding="10,7" Margin="26,0,0,0"
+                            Background="#33EF6C00" BorderBrush="#EF6C00" BorderThickness="1">
+                        <TextBlock Text="{loc:Loc Av_ScanUnpingableWarn}" TextWrapping="Wrap" FontSize="12" />
+                    </Border>
+
+                    <Grid ColumnDefinitions="200,*" Margin="0,6,0,0">
+                        <TextBlock Grid.Column="0" Text="{loc:Loc Av_CustomPorts}" VerticalAlignment="Center" />
+                        <TextBox Grid.Column="1" Text="{Binding CustomPorts, Mode=TwoWay}"
+                                 PlaceholderText="8006, 9000, 32400" />
+                    </Grid>
+                    <TextBlock Text="{loc:Loc Av_CustomPortsTip}" TextWrapping="Wrap" Opacity="0.7" FontSize="12" />
+
+                    <Grid ColumnDefinitions="200,*" Margin="0,6,0,0">
+                        <TextBlock Grid.Column="0" Text="{loc:Loc Av_MaxProbes}" VerticalAlignment="Center" />
+                        <NumericUpDown Grid.Column="1" Value="{Binding MaxConcurrentProbes, Mode=TwoWay}"
+                                       Minimum="0" Maximum="2048" Increment="32" FormatString="0" />
+                    </Grid>
+                    <TextBlock Text="{loc:Loc Av_MaxProbesTip}" TextWrapping="Wrap" Opacity="0.7"
+                               FontSize="12" Margin="0,0,0,0" />
+
+                    <!-- How many devices a targeted re-read (rescan / after saving credentials) talks to
+                         at once. Separate from the scan's probe count above: that one is a port sweep of a
+                         whole subnet, this one is a handful of logins to named devices. -->
+                    <Grid ColumnDefinitions="200,*" Margin="0,6,0,0">
+                        <TextBlock Grid.Column="0" Text="{loc:Loc Av_ParallelReads}" VerticalAlignment="Center" />
+                        <NumericUpDown Grid.Column="1" Value="{Binding ParallelDeviceReads, Mode=TwoWay}"
+                                       Minimum="1" Maximum="32" Increment="1" FormatString="0" />
+                    </Grid>
+                    <TextBlock Text="{loc:Loc Av_ParallelReadsTip}" TextWrapping="Wrap" Opacity="0.7"
+                               FontSize="12" />
+
+                    <!-- Raw-capture status: ZON (Zyxel layer 2) only runs when Npcap/libpcap is there. -->
+                    <Grid ColumnDefinitions="200,*" Margin="0,6,0,0">
+                        <TextBlock Grid.Column="0" Text="{loc:Loc Av_Capture}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1" x:Name="CaptureStatus" VerticalAlignment="Center"
+                                   Opacity="0.75" TextWrapping="Wrap" />
+                    </Grid>
+
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button x:Name="OuiButton" Click="OnDownloadOui" Classes="action">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <Path Data="{StaticResource IconExport}" />
+                                <TextBlock Text="{loc:Loc Av_DownloadOui}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <!-- Where the list comes from. Worth naming: it decides which vendor a MAC maps to,
+                             and IEEE is the registry that answer is only ever as good as. -->
+                        <TextBlock Text="{loc:Loc Av_OuiSource}" Cursor="Hand" VerticalAlignment="Center"
+                                   Foreground="#3A7BD5" TextDecorations="Underline"
+                                   PointerPressed="OnOpenOuiSource" ToolTip.Tip="https://standards-oui.ieee.org/" />
+                        <TextBlock x:Name="OuiStatus" VerticalAlignment="Center" Opacity="0.75" TextWrapping="Wrap" />
+                    </StackPanel>
                 </StackPanel>
             </TabItem>
 
-            <TabItem Header="Verbindungen">
+            <TabItem Header="{loc:Loc Av_TabConnections}">
                 <StackPanel Spacing="10" Margin="0,10,0,0">
-                    <CheckBox Content="Unsicheren HTTP-Rückfall erlauben (Klartext!)" IsChecked="{Binding AllowHttpFallback, Mode=TwoWay}" />
-                    <CheckBox Content="Zertifikatsfehler ignorieren (Standard)" IsChecked="{Binding DefaultIgnoreCertErrors, Mode=TwoWay}" />
+                    <CheckBox Content="{loc:Loc Av_SetAllowHttp}" IsChecked="{Binding AllowHttpFallback, Mode=TwoWay}" />
+                    <CheckBox Content="{loc:Loc Av_SetIgnoreCert}" IsChecked="{Binding DefaultIgnoreCertErrors, Mode=TwoWay}" />
+                    <!-- The default update channel used to sit here. It belongs on the Update tab, where the
+                         channel is actually chosen per device – a second place to set it only invited the
+                         two to disagree. -->
+
+                    <!-- TikMan's own SSH terminal: a real SSH connection made by the app (the same code the
+                         web terminal uses), so it behaves identically on every platform and needs nothing
+                         installed. It wins over the external client below – hence that block greys out. -->
+                    <!-- ⚠️ One dropdown, not two checkboxes. The old pair could both be ticked, so the
+                         setting needed a written precedence rule to say which one won – and the user still
+                         had to know it. Three mutually exclusive choices cannot contradict each other. -->
                     <Grid ColumnDefinitions="200,*" RowDefinitions="Auto">
-                        <TextBlock Grid.Column="0" Text="Update-Kanal (Standard)" VerticalAlignment="Center" />
-                        <TextBox Grid.Column="1" Text="{Binding DefaultUpdateChannel, Mode=TwoWay}" Watermark="stable" />
+                        <TextBlock Grid.Column="0" Text="{loc:Loc Av_SshClient}" VerticalAlignment="Center" />
+                        <ComboBox  Grid.Column="1" x:Name="SshClientBox" HorizontalAlignment="Stretch"
+                                   SelectionChanged="OnSshClientChanged"
+                                   ToolTip.Tip="{loc:Loc Av_SetBuiltInSshTip}" />
                     </Grid>
-                    <CheckBox Content="Externen SSH-Client verwenden" IsChecked="{Binding UseExternalSshClient, Mode=TwoWay}" />
-                    <Grid ColumnDefinitions="200,*" RowDefinitions="Auto,Auto,Auto">
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="SSH-Client-Pfad" VerticalAlignment="Center" />
-                        <TextBox   Grid.Row="0" Grid.Column="1" Text="{Binding ExternalSshClientPath, Mode=TwoWay}" />
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="VLC-Pfad (für VNC/RTSP)" VerticalAlignment="Center" Margin="0,8,0,0" />
-                        <TextBox   Grid.Row="1" Grid.Column="1" Text="{Binding VlcPath, Mode=TwoWay}" Margin="0,8,0,0" />
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="WinSCP-Pfad" VerticalAlignment="Center" Margin="0,8,0,0" />
-                        <TextBox   Grid.Row="2" Grid.Column="1" Text="{Binding WinScpPath, Mode=TwoWay}" Margin="0,8,0,0" />
+                    <!-- Each path gets a picker: absolute paths to executables are miserable to type, and a
+                         typo shows up much later as "the launcher does nothing".
+                         ⚠️ The SSH path row is enabled only for the third-party choice – driven from
+                         OnSshClientChanged rather than a binding, because AppData isn't observable and the
+                         source here is a selected enum value rather than a checkbox. VLC and the SFTP client
+                         are deliberately NOT gated: SFTP/RTSP use those regardless of the SSH choice.
+                         All three boxes are prefilled from what is actually installed, so they show what
+                         would otherwise be launched implicitly – and what you are replacing. -->
+                    <Grid ColumnDefinitions="200,*,Auto" RowDefinitions="Auto,Auto,Auto">
+                        <TextBlock Grid.Row="0" Grid.Column="0" x:Name="SshPathLabel" Text="{loc:Loc Av_SshClientPath}" VerticalAlignment="Center" />
+                        <TextBox   Grid.Row="0" Grid.Column="1" x:Name="SshPathBox" Text="{Binding ExternalSshClientPath, Mode=TwoWay}" />
+                        <Button    Grid.Row="0" Grid.Column="2" x:Name="SshPathPick" Content="…" Click="OnPickPath" Tag="SshPathBox" Margin="6,0,0,0"
+                                   Classes="action" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Loc Av_VlcPath}" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <TextBox   Grid.Row="1" Grid.Column="1" x:Name="VlcPathBox" Text="{Binding VlcPath, Mode=TwoWay}" Margin="0,8,0,0" />
+                        <Button    Grid.Row="1" Grid.Column="2" Content="…" Click="OnPickPath" Tag="VlcPathBox" Margin="6,8,0,0" Classes="action" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="{loc:Loc Av_WinScpPath}" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <TextBox   Grid.Row="2" Grid.Column="1" x:Name="WinScpPathBox" Text="{Binding WinScpPath, Mode=TwoWay}" Margin="0,8,0,0" />
+                        <Button    Grid.Row="2" Grid.Column="2" Content="…" Click="OnPickPath" Tag="WinScpPathBox" Margin="6,8,0,0" Classes="action" />
                     </Grid>
+                    <!-- Off by default: the password would ride on the child process's command line. -->
+                    <CheckBox Content="{loc:Loc Av_SetPassToExt}" Margin="0,8,0,0"
+                              IsChecked="{Binding PassPasswordToExternalClients, Mode=TwoWay}"
+                              ToolTip.Tip="{loc:Loc Av_SetPassToExtTip}" />
+                    <TextBlock Text="{loc:Loc Av_SetPassToExtTip}" TextWrapping="Wrap" Opacity="0.7"
+                               FontSize="12" Margin="26,2,0,0" />
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="{loc:Loc Av_TabWeb}">
+                <StackPanel Spacing="10" Margin="0,10,0,0">
+                    <CheckBox Content="{loc:Loc Av_WebAutoStart}" IsChecked="{Binding WebServerAutoStart, Mode=TwoWay}" />
+                    <CheckBox Content="{loc:Loc Av_WebHttps}" IsChecked="{Binding WebServerUseHttps, Mode=TwoWay}" />
+                    <Grid ColumnDefinitions="200,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Loc Av_Port}" VerticalAlignment="Center" />
+                        <NumericUpDown Grid.Row="0" Grid.Column="1" Value="{Binding WebServerPort, Mode=TwoWay}" Minimum="1" Maximum="65535" Increment="1" FormatString="0" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Loc Av_User}" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <TextBox   Grid.Row="1" Grid.Column="1" Text="{Binding WebServerUser, Mode=TwoWay}" Margin="0,8,0,0" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="{loc:Loc Av_Password}" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <!-- ⚠️ The real stored password, decrypted, not a stand-in – with a reveal toggle.
+                             This is a password the user has to be able to READ BACK (it is what they type
+                             into a browser on another machine), and "*****" makes a forgotten one
+                             unrecoverable without resetting it. -->
+                        <DockPanel Grid.Row="2" Grid.Column="1" Margin="0,8,0,0">
+                            <CheckBox DockPanel.Dock="Right" x:Name="WebPwReveal" Margin="10,0,0,0"
+                                      Content="{loc:Loc Av_ShowPassword}" VerticalAlignment="Center" />
+                            <TextBox x:Name="WebPwBox" PasswordChar="•"
+                                     RevealPassword="{Binding #WebPwReveal.IsChecked}"
+                                     PlaceholderText="{loc:Loc Av_PwUnchanged}" />
+                        </DockPanel>
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="{loc:Loc Av_CertPath}" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <TextBox   Grid.Row="3" Grid.Column="1" Text="{Binding WebServerCertPath, Mode=TwoWay}" Margin="0,8,0,0"
+                                   PlaceholderText="{loc:Loc Av_CertSelfSigned}" />
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="{loc:Loc Av_CertPassword}" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <!-- ⚠️ NOT databound: WebServerCertPassword is stored DPAPI/AES-encrypted (the host
+                             and the WPF client both Unprotect it). Binding it would write plaintext. -->
+                        <TextBox   Grid.Row="4" Grid.Column="1" x:Name="CertPwBox" PasswordChar="•" Margin="0,8,0,0"
+                                   PlaceholderText="{loc:Loc Av_PwUnchanged}" />
+                    </Grid>
+                    <TextBlock Opacity="0.6" TextWrapping="Wrap" FontSize="12" Text="{loc:Loc Av_WebHint}" />
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="{loc:Loc Av_TabMail}">
+                <StackPanel Spacing="10" Margin="0,10,0,0">
+                    <CheckBox Content="{loc:Loc Av_AutoCheck}" IsChecked="{Binding AutoCheckEnabled, Mode=TwoWay}" />
+                    <Grid ColumnDefinitions="200,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Loc Av_Time}" VerticalAlignment="Center" />
+                        <TextBox   Grid.Row="0" Grid.Column="1" Text="{Binding AutoCheckTime, Mode=TwoWay}" PlaceholderText="03:00" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Loc Av_SmtpHost}" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <TextBox   Grid.Row="1" Grid.Column="1" Text="{Binding SmtpHost, Mode=TwoWay}" Margin="0,8,0,0" />
+                        <!-- ⚠️ STARTTLS sits directly ABOVE the port, because it is what decides which port
+                             is right: 587 with STARTTLS is the ordinary submission pair. Below the whole
+                             block it read as an afterthought to a number the user had already typed. -->
+                        <CheckBox  Grid.Row="2" Grid.Column="1" Content="{loc:Loc Av_Starttls}" Margin="0,8,0,0"
+                                   IsChecked="{Binding SmtpUseTls, Mode=TwoWay}" />
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="{loc:Loc Av_SmtpPort}" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding SmtpPort, Mode=TwoWay}" Minimum="1" Maximum="65535" Increment="1" FormatString="0" Margin="0,8,0,0" />
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="{loc:Loc Av_SmtpUser}" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <TextBox   Grid.Row="4" Grid.Column="1" Text="{Binding SmtpUser, Mode=TwoWay}" Margin="0,8,0,0" />
+                        <TextBlock Grid.Row="5" Grid.Column="0" Text="{loc:Loc Av_SmtpPassword}" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <TextBox   Grid.Row="5" Grid.Column="1" x:Name="SmtpPwBox" PasswordChar="•" Margin="0,8,0,0"
+                                   PlaceholderText="{loc:Loc Av_PwUnchanged}" />
+                        <TextBlock Grid.Row="6" Grid.Column="0" Text="{loc:Loc Av_MailFrom}" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <TextBox   Grid.Row="6" Grid.Column="1" Text="{Binding MailFrom, Mode=TwoWay}" Margin="0,8,0,0" />
+                        <TextBlock Grid.Row="7" Grid.Column="0" Text="{loc:Loc Av_MailTo}" VerticalAlignment="Center" Margin="0,8,0,0" />
+                        <TextBox   Grid.Row="7" Grid.Column="1" Text="{Binding MailTo, Mode=TwoWay}" Margin="0,8,0,0" />
+                    </Grid>
+
+                    <!-- ⚠️ This decides WHEN a mail is sent, not how much is in it – the mail is the same
+                         report either way. "Errors only" still includes available updates: an update waiting
+                         is the news, and a mail that only ever arrived when TikMan itself broke would be a
+                         strange definition of a report.
+                         The options are filled in code: the enum names ("Info", "ErrorsOnly") were shown
+                         raw, which is a name for a value, not an answer to a question. -->
+                    <Grid ColumnDefinitions="200,*" RowDefinitions="Auto" Margin="0,4,0,0">
+                        <TextBlock Grid.Column="0" Text="{loc:Loc Av_NotifyLevel}" VerticalAlignment="Center" />
+                        <ComboBox Grid.Column="1" x:Name="NotifyLevelBox" HorizontalAlignment="Stretch"
+                                  SelectionChanged="OnNotifyLevelChanged"
+                                  ToolTip.Tip="{loc:Loc Av_NotifyLevelTip}" />
+                    </Grid>
+
+                    <!-- ⚠️ Without this the user can only find out whether the SMTP settings work by waiting
+                         for 03:00 and seeing whether a mail arrives. -->
+                    <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,4,0,0">
+                        <Button x:Name="TestMailButton" Click="OnSendTestMail" Classes="action">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <Path Data="{StaticResource IconMail}" />
+                                <TextBlock Text="{loc:Loc Av_SendTestMail}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <TextBlock x:Name="TestMailStatus" VerticalAlignment="Center" TextWrapping="Wrap"
+                                   FontSize="12" Opacity="0.85" />
+                    </StackPanel>
+
+                    <TextBlock Opacity="0.6" TextWrapping="Wrap" FontSize="12" Text="{loc:Loc Av_MailHint}" />
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="{loc:Loc Av_TabTrouble}">
+                <StackPanel Margin="0,12,0,0" Spacing="10">
+                    <CheckBox Content="{loc:Loc Av_SoftwareRender}"
+                              IsChecked="{Binding SoftwareRendering, Mode=TwoWay}" />
+                    <TextBlock Text="{loc:Loc Av_SoftwareRenderTip}" TextWrapping="Wrap" Opacity="0.7"
+                               FontSize="12" Margin="26,0,0,0" />
+                    <!-- The renderer is picked once, when the app builds its platform options – there is no
+                         way to swap it under a running window. -->
+                    <TextBlock Text="{loc:Loc Av_NeedsRestart}" TextWrapping="Wrap" FontWeight="SemiBold"
+                               FontSize="12" Margin="26,0,0,0" />
+
+                    <Separator Margin="0,8" />
+
+                    <CheckBox Content="{loc:Loc Av_DisableActionLog}"
+                              IsChecked="{Binding DisableActionLog, Mode=TwoWay}" />
+                    <TextBlock Text="{loc:Loc Av_DisableActionLogTip}" TextWrapping="Wrap" Opacity="0.7"
+                               FontSize="12" Margin="26,0,0,0" />
+
+                    <Separator Margin="0,8" />
+
+                    <!-- Where the settings, the log and the cached certificate live. Support questions
+                         start here far more often than anywhere else. -->
+                    <TextBlock Text="{loc:Loc Av_ConfigFolder}" FontWeight="SemiBold" />
+                    <TextBlock x:Name="ConfigPathText" TextWrapping="Wrap" Opacity="0.75" FontSize="12"
+                               FontFamily="Consolas, Menlo, monospace" />
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button Click="OnOpenConfigFolder" Classes="action">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <Path Data="{StaticResource IconFolder}" />
+                                <TextBlock Text="{loc:Loc Av_OpenConfigFolder}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Click="OnResetDefaults" Classes="action">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <Path Data="{StaticResource IconUndo}" />
+                                <TextBlock Text="{loc:Loc Av_ResetDefaults}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
+                    <Separator Margin="0,8" />
+
+                    <!-- Kept apart from «reset to defaults» above: that one restores preferences, this one
+                         deletes the device list, the stored logins and the certificate. Same-looking buttons
+                         side by side would make the destructive one an easy misclick. -->
+                    <Button Click="OnFactoryReset" Classes="action" HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <Path Data="{StaticResource IconTrash}" />
+                            <TextBlock Text="{loc:Loc Av_FactoryReset}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <TextBlock Text="{loc:Loc Av_FactoryResetTip}" TextWrapping="Wrap" Opacity="0.7"
+                               FontSize="12" />
+                    <TextBlock x:Name="FactoryResetStatus" TextWrapping="Wrap" FontSize="12"
+                               Foreground="#C62828" IsVisible="False" />
                 </StackPanel>
             </TabItem>
         </TabControl>
 
-        <TextBlock Opacity="0.6" TextWrapping="Wrap" FontSize="12"
-                   Text="Diese Einstellungen teilen sich die Avalonia- und die Windows-App (dieselbe Konfigurationsdatei). Zugangsdaten werden pro Gerät gesetzt und lokal verschlüsselt gespeichert." />
+        <!-- The "credentials are set per device" note moved onto the General tab (it belongs where the
+             other credential-adjacent settings are, not floating under every tab). -->
+        <!-- Shown only when writing the settings file actually failed – see OnSave. -->
+        <TextBlock x:Name="SaveError" IsVisible="False" TextWrapping="Wrap" FontSize="12"
+                   Foreground="#C62828" />
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
-            <Button Content="Abbrechen" Click="OnCancel" />
-            <Button Content="Speichern" Click="OnSave" />
+            <Button Click="OnCancel" Classes="action">
+                <StackPanel Orientation="Horizontal" Spacing="7">
+                    <Path Data="{StaticResource IconClose}" />
+                    <TextBlock Text="{loc:Loc Av_Cancel}" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+            <Button Click="OnSave" Classes="action">
+                <StackPanel Orientation="Horizontal" Spacing="7">
+                    <Path Data="{StaticResource IconCheck}" />
+                    <TextBlock Text="{loc:Loc Av_Save}" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
         </StackPanel>
     </StackPanel>
 </Window>

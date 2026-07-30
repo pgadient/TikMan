@@ -1,16 +1,16 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 
 namespace TikMan.Core.Storage;
 
-/// <summary>Encrypts passwords so devices.json never contains them in plaintext.
+/// <summary>Encrypts passwords so settings.json never contains them in plaintext.
 /// <para><b>Windows:</b> DPAPI bound to the user account – unchanged since 1.0, so every blob that is
 /// already out there keeps decrypting. <b>Linux/macOS:</b> AES-256-GCM with a random key in a
-/// user-only file (<c>chmod 600</c>) next to devices.json; those blobs carry the "u1:" prefix so the
+/// user-only file (<c>chmod 600</c>) next to settings.json; those blobs carry the "u1:" prefix so the
 /// two formats can never be confused. Honest caveat: the Unix key file is protected by file
 /// permissions, not by the OS keyring – Keychain/libsecret can replace it later without a format
 /// change (new prefix, old one stays readable).</para>
-/// <para>Either way, a blob is bound to this user on this machine: a devices.json copied elsewhere
+/// <para>Either way, a blob is bound to this user on this machine: a settings.json copied elsewhere
 /// yields "" (same graceful behaviour DPAPI always had), and the app asks for the password again.</para></summary>
 public static class CredentialProtector
 {
@@ -68,11 +68,11 @@ public static class CredentialProtector
         catch (Exception ex) when (ex is CryptographicException or FormatException or IOException
             or UnauthorizedAccessException)
         {
-            return null; // e.g. devices.json copied from another user/PC, or the key file is gone
+            return null; // e.g. settings.json copied from another user/PC, or the key file is gone
         }
     }
 
-    /// <summary>The per-user AES key, created on first use. Lives beside devices.json; the file is
+    /// <summary>The per-user AES key, created on first use. Lives beside settings.json; the file is
     /// owner-read/write only. Deleting it orphans every "u1:" blob – exactly like a lost DPAPI
     /// profile, the stored logins silently become "enter the password again".</summary>
     private static byte[] UnixKey()
@@ -80,21 +80,79 @@ public static class CredentialProtector
         lock (KeyLock)
         {
             if (_unixKey is not null) return _unixKey;
-            var folder = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TikMan");
+            // ⚠️ DeviceStore.StorageDirectory, never Environment.GetFolderPath directly: on single-file
+            // Linux/macOS builds that call returns "", which turns this into the *relative* path
+            // "TikMan/credential.key" – a different folder for every working directory the app is started
+            // from. The settings file resolves correctly through the same helper, so the symptom was not
+            // "TikMan lost its config" but the far more confusing "TikMan forgot every password": a fresh
+            // key gets generated and every stored blob fails to decrypt.
+            var folder = DeviceStore.StorageDirectory;
             Directory.CreateDirectory(folder);
             var path = Path.Combine(folder, "credential.key");
+            AdoptStrayKey(path);
             if (File.Exists(path))
             {
                 var existing = File.ReadAllBytes(path);
-                if (existing.Length == 32) return _unixKey = existing;
-                // wrong size = truncated/corrupt – fall through and start fresh
+                if (existing.Length == 32)
+                {
+                    // Re-assert the permissions every time, not just on creation: a key restored from a
+                    // backup, copied between machines or written by an older build can be world-readable,
+                    // and this file protects every stored password.
+                    HardenKeyFile(path);
+                    return _unixKey = existing;
+                }
+                // Wrong size = truncated or corrupt. Keep it instead of overwriting: it is the only thing
+                // that could ever decrypt the existing blobs, and destroying it turns "maybe recoverable"
+                // into "certainly gone".
+                TryMoveAside(path);
             }
             var key = RandomNumberGenerator.GetBytes(32);
             File.WriteAllBytes(path, key);
-            if (!OperatingSystem.IsWindows())
-                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            HardenKeyFile(path);
             return _unixKey = key;
         }
+    }
+
+    /// <summary>Drops the cached key after the key file has been deleted, so nothing gets encrypted with a
+    /// key that no longer exists on disk (those blobs would be unreadable on the next start).</summary>
+    public static void ForgetCachedKey()
+    {
+        lock (KeyLock) _unixKey = null;
+    }
+
+    /// <summary>Rescues a key an earlier build wrote to the relative "TikMan/credential.key" (the empty
+    /// <c>GetFolderPath</c> bug). Only adopted when the real location has none – it can never overwrite a
+    /// good key, and it means the fix for that bug does not itself cost anyone their stored passwords.</summary>
+    private static void AdoptStrayKey(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) return;
+            var stray = Path.Combine("TikMan", "credential.key");   // relative to the working directory
+            if (!File.Exists(stray) || new FileInfo(stray).Length != 32) return;
+            if (Path.GetFullPath(stray) == Path.GetFullPath(path)) return;
+            File.Move(stray, path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Nothing to rescue, or not allowed to – fall through and generate a fresh key.
+        }
+    }
+
+    private static void HardenKeyFile(string path)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        try { File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
+    private static void TryMoveAside(string path)
+    {
+        try
+        {
+            var bad = path + ".bad";
+            if (!File.Exists(bad)) File.Move(path, bad); else File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 }

@@ -41,13 +41,19 @@ not run there). End user: `chmod +x TikMan-x86_64.AppImage` then double-click (o
 packaging/macos/build-app.sh dist/host-osx/tikman-host dist/macos-app 2.2.2
 ```
 
-Produces `dist/macos-app/TikMan.app`. **Run the script on a Unix host** (macOS/Linux/WSL), not plain
-Windows: the inner binary needs its executable bit, which a Windows zip would drop. Ship it as a
-`.tar.gz` (or zip made on Unix) so the bit survives. End user: unpack, then double-click `TikMan.app`.
+Produces `dist/macos-app/TikMan.app` **and packs `dist/macos-app/TikMan-<ver>-macos.tar.gz`** containing
+the app plus two end-user helpers: `install.command` and `README-macos.txt` (both live in
+`packaging/macos/`). **Run the script on a Unix host** (macOS/Linux/WSL), not plain Windows: the inner
+binary and `install.command` need their executable bit, which a Windows zip would drop — `tar` on Unix
+preserves it. End user: unpack, then run `bash install.command`.
 
-⚠️ **Unsigned.** Without an Apple Developer signature Gatekeeper blocks the first launch — right-click →
-Open, or `xattr -d com.apple.quarantine TikMan.app`. Signing/notarising needs a paid Apple Developer
-account; wire it in later (`codesign` + `xcrun notarytool`).
+⚠️ **Unsigned.** Without an Apple Developer signature Gatekeeper blocks the first launch with "TikMan is
+damaged and can't be opened". **`tar`/Finder do NOT clear the quarantine flag** on modern macOS — it is
+propagated to the extracted app (provenance). The fix is `xattr -dr com.apple.quarantine TikMan.app`,
+which is exactly what the bundled `install.command` runs (plus optional move to /Applications + launch).
+Starting it as `bash install.command` is never Gatekeeper-blocked, even if the script file itself was
+quarantined. Signing/notarising needs a paid Apple Developer account; wire it in later (`codesign` +
+`xcrun notarytool`).
 
 ## Stopping it
 

@@ -11,12 +11,26 @@ dist/
 memory/
 
 # Versehentlich im Repo abgelegte Geräte-Backups (könnten Konfig/Passwörter enthalten)
+# .cfg = Zyxel/TP-Link running-config – trägt "admin-password cipher …", darf nie ins Git
 *.rsc
 *.backup
+*.cfg
 
-# App-Konfig, falls jemand sie hierher kopiert (Passwörter, DPAPI-verschlüsselt)
+# App-Konfig / lokale Geheimnisse, falls jemand sie hierher kopiert
 devices.json
+webserver.pfx
+credential.key
+tikman-login.txt
+tikman-actions.log
+
+# Stray editor/build backups
+*.bak
+*.orig
+*~
 
 # Interner Arbeits-/Kontextvermerk für Claude Code – rein lokal, NIE veröffentlichen
 CLAUDE.md
 claude.md
+
+# Interne Review-/Audit-Notizen (Gerätedetails, offene Befunde) – rein lokal
+REVIEW-*.md

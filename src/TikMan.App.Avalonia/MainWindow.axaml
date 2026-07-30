@@ -1,126 +1,1442 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="using:TikMan.App.Avalonia"
         x:Class="TikMan.App.Avalonia.MainWindow"
         x:CompileBindings="False"
-        Width="1120" Height="720"
+        Width="1240" Height="830"
+        MinHeight="830"
         Icon="/Assets/tikman.png"
         Title="TikMan">
-    <Window.Styles>
-        <!-- Semi styles the tabs; we only give the headers ~30 % more vertical room (easier to hit),
-             without touching the font size. -->
-        <Style Selector="TabItem">
-            <Setter Property="MinHeight" Value="46" />
-            <Setter Property="Padding" Value="18,12" />
-        </Style>
-    </Window.Styles>
-    <DockPanel Margin="16">
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="10" Margin="0,0,0,12">
-            <ComboBox ItemsSource="{Binding Adapters}" SelectedItem="{Binding SelectedAdapter, Mode=TwoWay}"
-                      Width="240" MinWidth="180" VerticalAlignment="Center" />
-            <TextBox Text="{Binding ScanRange, Mode=TwoWay}" Watermark="z. B. 192.168.8.0/21"
-                     Width="180" VerticalAlignment="Center" />
-            <Button Content="Scannen" Click="OnScanClick" IsEnabled="{Binding CanScan}" />
-            <Button Content="⚙" Click="OnSettingsClick" ToolTip.Tip="Einstellungen" />
-            <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Opacity="0.7" />
+    <!-- ⚠️ MinWidth is not set here: it is measured from the toolbar after the first layout pass
+         (ApplyMinimumWidth), because the toolbar's width depends on the label lengths and those change with
+         the language. A constant would fit one language and clip a button in the rest. -->
+    <!-- Panel, so the toast can float over the whole window instead of taking part in the layout. -->
+    <Panel>
+    <DockPanel x:Name="RootPanel">
+        <!-- Menu bar, same shape as the WPF client. Tinted so it reads as a bar rather than floating text. -->
+        <Menu DockPanel.Dock="Top" Background="#14808080" Padding="4,2">
+            <!-- Settings and Export sit at the top level rather than under a "File" menu: with two entries
+                 to its name, "File" was a lid over a nearly empty box, and both of these are reached often
+                 enough to deserve one click. Settings leads – it is the most-visited menu item.
+                 ⚠️ Icons live in the Header (glyph beside label), not in MenuItem.Icon: top-level items
+                 render only their header, the icon column exists in dropdowns. All vector Paths on
+                 GlyphBrush, so they tint with the theme – the old ⚙️ emoji could not. The gear stays a step
+                 larger than the rest, as asked for earlier. -->
+            <MenuItem Click="OnSettingsClick">
+                <MenuItem.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <Path Data="{StaticResource IconGear}" Fill="{DynamicResource GlyphBrush}"
+                              Width="16" Height="16" Stretch="Uniform" VerticalAlignment="Center" />
+                        <TextBlock Text="{loc:Loc Tb_Settings, NoIcon=True}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </MenuItem.Header>
+            </MenuItem>
+            <MenuItem>
+                <MenuItem.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <Path Data="{StaticResource IconExport}" Fill="{DynamicResource GlyphBrush}"
+                              Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center" />
+                        <TextBlock Text="{loc:Loc Menu_Export}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </MenuItem.Header>
+                <MenuItem Header="{loc:Loc Exp_Ipv4Csv}" Click="OnExportIpv4Csv" />
+                <MenuItem Header="{loc:Loc Exp_Ipv4Html}" Click="OnExportIpv4Html" />
+                <Separator />
+                <MenuItem Header="{loc:Loc Exp_Ipv6Csv}" Click="OnExportIpv6Csv" />
+                <MenuItem Header="{loc:Loc Exp_Ipv6Html}" Click="OnExportIpv6Html" />
+            </MenuItem>
+            <!-- Appearance: auto follows the OS, the other two pin it. -->
+            <MenuItem>
+                <MenuItem.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <Path Data="{StaticResource IconAuto}" Fill="{DynamicResource GlyphBrush}"
+                              Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center" />
+                        <TextBlock Text="{loc:Loc Av_MenuTheme}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </MenuItem.Header>
+                <MenuItem x:Name="ThemeAutoItem" Header="{loc:Loc Av_ThemeAuto}" Click="OnThemeAuto" ToggleType="Radio">
+                    <MenuItem.Icon>
+                        <Path Data="{StaticResource IconAuto}" Fill="{DynamicResource GlyphBrush}"
+                              Width="14" Height="14" Stretch="Uniform" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem x:Name="ThemeLightItem" Header="{loc:Loc Av_ThemeLight}" Click="OnThemeLight" ToggleType="Radio">
+                    <MenuItem.Icon>
+                        <Path Data="{StaticResource IconSun}" Fill="{DynamicResource GlyphBrush}"
+                              Width="14" Height="14" Stretch="Uniform" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem x:Name="ThemeDarkItem" Header="{loc:Loc Av_ThemeDark}" Click="OnThemeDark" ToggleType="Radio">
+                    <MenuItem.Icon>
+                        <Path Data="{StaticResource IconMoon}" Fill="{DynamicResource GlyphBrush}"
+                              Width="14" Height="14" Stretch="Uniform" />
+                    </MenuItem.Icon>
+                </MenuItem>
+            </MenuItem>
+            <MenuItem>
+                <MenuItem.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <Path Data="{StaticResource IconServer}" Fill="{DynamicResource GlyphBrush}"
+                              Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center" />
+                        <TextBlock Text="{loc:Loc Menu_WebServer}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </MenuItem.Header>
+                <!-- Checkable: the running state is a state, and a tick shows it at a glance instead of
+                     making the user read the verb in the label to work out which way round it is. -->
+                <MenuItem x:Name="WebToggleItem" Header="{loc:Loc Web_Enable}" Click="OnWebToggleClick"
+                          ToggleType="CheckBox" IsChecked="{Binding WebRunning, Mode=OneWay}" />
+                <Separator />
+                <MenuItem x:Name="WebStatusItem" Header="{loc:Loc Web_Stopped}" IsEnabled="False" />
+                <MenuItem x:Name="WebOpenItem" Header="{loc:Loc Web_OpenBrowser}" Click="OnWebOpenClick"
+                          IsEnabled="{Binding WebRunning}" />
+            </MenuItem>
+            <!-- Also reachable from the login banner, but that banner disappears as soon as one device has
+                 credentials – and "what can TikMan do with this vendor" stays a question after that. -->
+            <MenuItem Click="OnMatrixMenuClick">
+                <MenuItem.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <Path Data="{StaticResource IconGrid}" Fill="{DynamicResource GlyphBrush}"
+                              Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center" />
+                        <TextBlock Text="{loc:Loc Av_MatrixTitle}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </MenuItem.Header>
+            </MenuItem>
+        </Menu>
+
+        <!-- Toolbar: each input carries a small caption so it is obvious what it holds -->
+        <StackPanel DockPanel.Dock="Top" Margin="16,10,16,8" Spacing="8">
+          <!-- Both rows in a block that is only as wide as its widest child (the scan row). That is what
+               lets the feedback trio right-align to the Clear button instead of to the window edge. -->
+          <StackPanel x:Name="ToolbarBlock" HorizontalAlignment="Left" Spacing="8">
+            <!-- Scan controls: the button leads, then what it acts on. -->
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <!-- One button, two verbs: Scan when idle, Stop while a sweep runs. It used to be disabled
+                     during a scan, which left no way to abort a long /21 sweep at all. -->
+                <Button Click="OnScanClick"
+                        VerticalAlignment="Bottom" MinWidth="110"
+                        Foreground="{DynamicResource GlyphBrush}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Path Data="{StaticResource IconSearch}" Fill="{DynamicResource GlyphBrush}"
+                              Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center"
+                              IsVisible="{Binding CanScan}" />
+                        <Path Data="{StaticResource IconStopSquare}" Fill="{DynamicResource GlyphBrush}"
+                              Width="12" Height="12" Stretch="Uniform" VerticalAlignment="Center"
+                              IsVisible="{Binding !CanScan}" />
+                        <TextBlock Text="{Binding ScanButtonText}" />
+                    </StackPanel>
+                </Button>
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc Av_LblAdapter}" FontSize="11" Opacity="0.6" Margin="2,0,0,2" />
+                    <ComboBox ItemsSource="{Binding Adapters}" SelectedItem="{Binding SelectedAdapter, Mode=TwoWay}"
+                              Width="250" MinWidth="180" ToolTip.Tip="{loc:Loc Av_AdapterTip}" />
+                </StackPanel>
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc Av_LblRange}" FontSize="11" Opacity="0.6" Margin="2,0,0,2" />
+                    <TextBox x:Name="RangeBox" Text="{Binding ScanRange, Mode=TwoWay}"
+                             PlaceholderText="{Binding RangeHint}" Width="180"
+                             ToolTip.Tip="{loc:Loc Av_RangeTip}"
+                             IsEnabled="{Binding CanEditRange}" KeyDown="OnBoxKeyDown" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom">
+                    <Button Click="OnLoginClick" IsEnabled="{Binding CanSetCredentials}"
+                            ToolTip.Tip="{loc:Loc Av_CredsNotSupportedTip}"
+                            Foreground="{DynamicResource GlyphBrush}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Path Data="{StaticResource IconKey}" Fill="{DynamicResource GlyphBrush}"
+                                  Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Loc Av_BtnSetCreds}" />
+                        </StackPanel>
+                    </Button>
+                    <!-- ⚠️ Not bound to a selection: a machine that is switched off is not in the list, which
+                         is the whole point of Wake-on-LAN. The dialog takes a MAC (or an IP it can resolve
+                         to one from the last scan) instead. -->
+                    <Button Click="OnWakeMacClick" ToolTip.Tip="{loc:Loc Av_WakeDialogTip}"
+                            Foreground="{DynamicResource GlyphBrush}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Path Data="{StaticResource IconPower}" Fill="{DynamicResource GlyphBrush}"
+                                  Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Loc Tb_Wake, NoIcon=True, NoEllipsis=True}" />
+                        </StackPanel>
+                    </Button>
+                    <Button Click="OnClearList" ToolTip.Tip="{loc:Loc Av_ClearTip}"
+                            Foreground="{DynamicResource GlyphBrush}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Path Data="{StaticResource IconTrash}" Fill="{DynamicResource GlyphBrush}"
+                                  Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Loc Av_Clear}" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Feedback trio on its own row: they are one topic (reaching the developer), so they stay a
+                 group rather than being spread across the width, which would read as three unrelated
+                 actions. The row break alone separates them from the scan controls above.
+                 Each keeps its own pastel; the ink stays dark grey in both themes because these sit on a
+                 mid-tone fill, unlike the other buttons which follow GlyphBrush. -->
+            <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right" Margin="0,2,0,0"
+                        IsVisible="{Binding ShowContactButtons}">
+                    <Button Click="OnReportProblem" ToolTip.Tip="{loc:Loc Av_ReportTip}"
+                            Background="{DynamicResource ReportBrush}"
+                            Foreground="{DynamicResource FeedbackInkBrush}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Path Data="{StaticResource IconBug}" Fill="{DynamicResource FeedbackInkBrush}"
+                                  Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Loc Tb_ReportProblem, NoIcon=True}" />
+                        </StackPanel>
+                    </Button>
+                    <Button Click="OnRequestFeature" ToolTip.Tip="{loc:Loc Av_RequestTip}"
+                            Background="{DynamicResource FeatureBrush}"
+                            Foreground="{DynamicResource FeedbackInkBrush}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Path Data="{StaticResource IconBulb}" Fill="{DynamicResource FeedbackInkBrush}"
+                                  Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Loc Tb_RequestFeature, NoIcon=True}" />
+                        </StackPanel>
+                    </Button>
+                    <Button Click="OnBuyCoffee" ToolTip.Tip="{loc:Loc Av_CoffeeTip}"
+                            Background="{DynamicResource CoffeeBrush}"
+                            Foreground="{DynamicResource FeedbackInkBrush}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Path Data="{StaticResource IconCoffee}" Fill="{DynamicResource FeedbackInkBrush}"
+                                  Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Loc Tb_BuyCoffee, NoIcon=True}" />
+                        </StackPanel>
+                    </Button>
+            </StackPanel>
+          </StackPanel>
+
+            <!-- Scan progress: the labelled bar plus the discovery protocols underneath it. Shown only
+                 while a scan runs – when it ends the whole block disappears rather than sitting at 100 %.
+                 ⚠️ Pinned to the toolbar's width, so the bar ends exactly under the Clear button rather
+                 than running to the window edge. Width, not MaxWidth: it should fill that span even when
+                 the window is wider. -->
+            <StackPanel IsVisible="{Binding ShowProgress}" Margin="0,2,0,0" Spacing="5"
+                        HorizontalAlignment="Left" Width="{Binding #ToolbarBlock.Bounds.Width}">
+                <DockPanel>
+                    <!-- ⚠️ Fixed width. The label alternates between "Discovery" and "Meta data retrieval",
+                         and letting it size to its content would resize the bar mid-scan – the bar would
+                         visibly jump the moment the second pass began. -->
+                    <TextBlock DockPanel.Dock="Left" Text="{Binding MainPhase.Label}"
+                               Width="132"
+                               FontSize="12" Opacity="0.8" VerticalAlignment="Center" Margin="0,0,10,0" />
+                    <!-- ⚠️ The combined progress, not the phase's own: this is ONE bar running 0 → 100 %
+                         across the whole scan (65 % sweep + 10 % protocols = 75 % discovery, then 25 %
+                         metas). Binding the phase's own progress made it restart from zero when the meta
+                         pass began. The label still switches – the bar does not. -->
+                    <ProgressBar Height="5" Minimum="0" Maximum="1"
+                                 Value="{Binding ScanProgress}"
+                                 IsIndeterminate="{Binding ScanIndeterminate}"
+                                 Foreground="{Binding ScanProgressBrush}"
+                                 VerticalAlignment="Center" />
+                </DockPanel>
+
+                <ItemsControl ItemsSource="{Binding Phases}">
+                <ItemsControl.Styles>
+                    <!-- The pulse: running (green) and waiting (red) dots breathe, so "in progress" and
+                         "queued" are visibly alive against the steady tick of a finished phase. Keyed on a
+                         class rather than the state directly, so the same animation serves both colours.
+                         ⚠️ Only works because the PhaseVm items are updated in place (see RefreshPhases) –
+                         recreated items restart the animation on every refresh and never visibly pulse. -->
+                    <Style Selector="TextBlock.pulse">
+                        <Style.Animations>
+                            <Animation Duration="0:0:1.2" IterationCount="INFINITE">
+                                <KeyFrame Cue="0%"><Setter Property="Opacity" Value="1" /></KeyFrame>
+                                <KeyFrame Cue="50%"><Setter Property="Opacity" Value="0.25" /></KeyFrame>
+                                <KeyFrame Cue="100%"><Setter Property="Opacity" Value="1" /></KeyFrame>
+                            </Animation>
+                        </Style.Animations>
+                    </Style>
+                </ItemsControl.Styles>
+                <!-- One row, equal columns: the four protocols carry the same weight, so they get the same
+                     share of the width instead of bunching up on the left. -->
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                            <TextBlock Text="{Binding Glyph}" Foreground="{Binding Colour}" FontSize="12"
+                                       Classes.pulse="{Binding Pulses}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding Label}" FontSize="12" Opacity="0.8"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
+            <!-- The targeted re-read after saving a login (or "rescan devices"): its own bar, below the
+                 scan's, shown only while it runs. ⚠️ Outside the ShowProgress block above – a re-read is
+                 normally triggered when no scan is running at all, and inside that block it would have been
+                 invisible in exactly the case it exists for. -->
+            <DockPanel IsVisible="{Binding RescanRunning}" Margin="0,4,0,0"
+                       HorizontalAlignment="Left" Width="{Binding #ToolbarBlock.Bounds.Width}">
+                <TextBlock DockPanel.Dock="Left" Text="{loc:Loc Av_RescanProgress}"
+                           Width="132" FontSize="12" Opacity="0.8"
+                           VerticalAlignment="Center" Margin="0,0,10,0" />
+                <ProgressBar Height="5" Minimum="0" Maximum="1" Value="{Binding RescanProgress}"
+                             VerticalAlignment="Center" />
+            </DockPanel>
         </StackPanel>
 
-        <TabControl x:Name="Tabs" SelectionChanged="OnTabChanged">
-            <!-- Geräte -->
-            <TabItem Header="Geräte">
-                <Grid ColumnDefinitions="*,Auto">
-                    <DataGrid Grid.Column="0"
-                              ItemsSource="{Binding Devices}"
-                              SelectedItem="{Binding SelectedDevice, Mode=TwoWay}"
-                              IsReadOnly="True"
-                              CanUserResizeColumns="True"
-                              GridLinesVisibility="Horizontal">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="2*" />
-                            <DataGridTextColumn Header="IP" Binding="{Binding Ip}" Width="Auto" />
-                            <DataGridTextColumn Header="Typ" Binding="{Binding KindText}" Width="Auto" />
-                            <DataGridTextColumn Header="Hersteller" Binding="{Binding Vendor}" Width="1.4*" />
-                            <DataGridTextColumn Header="Modell" Binding="{Binding Model}" Width="1.6*" />
-                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="Auto" />
-                        </DataGrid.Columns>
-                    </DataGrid>
+        <!-- Gentle hint while no device has credentials – disappears as soon as one has.
+             Same parchment/brown palette and key glyph as the WPF client, so the two look like one product.
+             ⚠️ Left-aligned with a MaxWidth rather than stretched: the toolbar above ends at the coffee
+             button, and a banner running the full window width read as a different, wider layer. It wraps
+             inside that width instead of growing. -->
+        <!-- ⚠️ The link click/hover handlers sit HERE, not on the text block. The Border has a real
+             background, so it is unconditionally hit-testable; the handlers translate the pointer into the
+             text block's coordinates and hit-test the character position there (IsOnBannerLink). Putting the
+             handlers on the TextBlock itself kept failing quietly – this way the events cannot not arrive. -->
+        <Border DockPanel.Dock="Top" Margin="16,0,16,8" Padding="12,10" CornerRadius="8"
+                HorizontalAlignment="Left" MaxWidth="{Binding #ToolbarBlock.Bounds.Width}"
+                Background="{DynamicResource HintBrush}" BorderBrush="{DynamicResource HintBorderBrush}"
+                BorderThickness="1" IsVisible="{Binding ShowNoLoginBanner}"
+                PointerPressed="OnBannerClick" PointerMoved="OnBannerHover">
+            <DockPanel>
+                <!-- ⚠️ The same vector key as the button, not the 🔑 emoji. An emoji is drawn by the OS
+                     colour font at a fixed dark palette, so on the dark variant it disappeared into the
+                     brown. A Path takes the theme's ink like everything else. Double size and centred
+                     against the two text lines. -->
+                <Path DockPanel.Dock="Left" Data="{StaticResource IconKey}"
+                      Fill="{DynamicResource HintInkBrush}"
+                      Width="28" Height="28" Stretch="Uniform"
+                      VerticalAlignment="Center" Margin="2,0,12,0" />
+                <!-- Same construction as the toolbar button above: glyph beside label, GlyphBrush ink. -->
+                <!-- Button plus the reason it is greyed out. The button needs a device to act on, and
+                     "nothing happens when I click it" is otherwise the user's only clue. -->
+                <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12,0,0,0">
+                    <Button Click="OnLoginClick" IsEnabled="{Binding CanSetCredentials}"
+                            ToolTip.Tip="{loc:Loc Av_CredsNotSupportedTip}"
+                            HorizontalAlignment="Center"
+                            Foreground="{DynamicResource GlyphBrush}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Path Data="{StaticResource IconKey}" Fill="{DynamicResource GlyphBrush}"
+                                  Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Loc Av_BtnSetCreds}" />
+                        </StackPanel>
+                    </Button>
+                    <TextBlock Text="{loc:Loc Av_BannerPickDevice}" FontSize="11" Margin="0,3,0,0"
+                               HorizontalAlignment="Center" Opacity="0.8"
+                               Foreground="{DynamicResource HintInkBrush}" />
+                </StackPanel>
+                <!-- ⚠️ One continuous flow – no explicit line break, and the link is a Run rather than an
+                     embedded control.
+                     No break: forcing one after the first sentence pushed the second onto line 3 as soon as
+                     the first wrapped. Left to flow, the second sentence continues on the same line the
+                     first ends on, which is where it belongs.
+                     A Run, not an InlineUIContainer: an embedded TextBlock is laid out as a box and sat
+                     visibly off the surrounding baseline. A Run is real text, so it aligns exactly. The
+                     price is that a Run cannot carry a click handler – hence the hit test in OnBannerClick,
+                     which reacts only for the characters of the link itself. -->
+                <!-- ⚠️ Background="Transparent": with a null background the TextBlock is not hit-testable,
+                     so OnBannerClick/OnBannerHover never fired at all – the character-position hit test
+                     below them was fine, it just never ran. Same trap as the tooltip glyphs. -->
+                <TextBlock x:Name="BannerText" VerticalAlignment="Center" TextWrapping="Wrap"
+                           Background="Transparent"
+                           Foreground="{DynamicResource HintInkBrush}">
+                    <Run Text="{loc:Loc Av_BannerSignIn}" />
+                    <Run Text=" " />
+                    <Run Text="{loc:Loc Av_BannerSignIn2}" />
+                    <Run Text=" " />
+                    <Run x:Name="BannerLink" Text="{loc:Loc Av_BannerMatrixLink}"
+                         Foreground="{DynamicResource HintLinkBrush}" TextDecorations="Underline" />
+                </TextBlock>
+            </DockPanel>
+        </Border>
 
-                    <Border Grid.Column="1" Width="340" Margin="16,0,0,0" Padding="16"
-                            IsVisible="{Binding HasSelection}"
-                            Background="#14808080" CornerRadius="10">
-                        <ScrollViewer>
-                            <StackPanel Spacing="10">
-                                <TextBlock Text="{Binding SelectedDevice.Name}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                <TextBlock Text="{Binding SelectedDevice.KindText}" Opacity="0.7" />
+        <!-- The activity ticker that used to sit here is gone. It never carried anything the rest of the
+             window did not already say better: the progress bar shows how far a scan is, the phase row
+             shows what it is doing, and failures live on the Connection errors tab where they persist.
+             A strip repeating that was noise. Action outcomes now go exactly two places – a failure to the
+             Connection errors tab, and the few worth interrupting for to a toast. -->
 
-                                <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="0,6,0,0">
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="IP" Opacity="0.6" />
-                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding SelectedDevice.Ip}" TextWrapping="Wrap" />
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="MAC" Opacity="0.6" />
-                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedDevice.Mac}" TextWrapping="Wrap" />
-                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Hersteller" Opacity="0.6" />
-                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedDevice.Vendor}" TextWrapping="Wrap" />
-                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Modell" Opacity="0.6" />
-                                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SelectedDevice.Model}" TextWrapping="Wrap" />
-                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Status" Opacity="0.6" />
-                                    <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding SelectedDevice.Status}" />
-                                </Grid>
+        <!-- Status bar: counts bottom-left, public IP on the right. -->
+        <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="#22808080" Padding="16,6">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Left" Text="{Binding CountsText}" Opacity="0.7"
+                           VerticalAlignment="Center" Margin="0,0,18,0" />
+                <!-- Two separate click targets: the IPv4 copies only the IPv4, the IPv6 only the IPv6. -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
+                    <TextBlock x:Name="PublicIpV4Text" Opacity="0.7" VerticalAlignment="Center"
+                               Background="Transparent" Cursor="Hand"
+                               PointerPressed="OnPublicV4Click" ToolTip.Tip="{loc:Loc Pub_Tooltip}" />
+                    <TextBlock x:Name="PublicIpSep" Opacity="0.7" VerticalAlignment="Center" />
+                    <TextBlock x:Name="PublicIpV6Text" Opacity="0.7" VerticalAlignment="Center"
+                               Background="Transparent" Cursor="Hand"
+                               PointerPressed="OnPublicV6Click" ToolTip.Tip="{loc:Loc Pub_Tooltip}" />
+                </StackPanel>
+                <!-- Without a packet-capture driver the Zyxel ZON discovery simply finds nothing, and there
+                     is otherwise no way for the user to learn why. Clickable: it leads to the installer. -->
+                <TextBlock DockPanel.Dock="Right" x:Name="CaptureWarning" IsVisible="False"
+                           Text="{loc:Loc Av_NpcapMissingShort}" Foreground="#EF6C00" FontWeight="SemiBold"
+                           VerticalAlignment="Center" Margin="0,0,18,0" Cursor="Hand"
+                           PointerPressed="OnNpcapClick" ToolTip.Tip="{loc:Loc Av_NpcapMissingTip}" />
+            </DockPanel>
+        </Border>
 
-                                <!-- IPv6-Adressen (falls vorhanden). -->
-                                <StackPanel IsVisible="{Binding SelectedDevice.HasIpv6}" Margin="0,4,0,0">
-                                    <TextBlock Text="IPv6" Opacity="0.6" />
-                                    <ItemsControl ItemsSource="{Binding SelectedDevice.Ipv6}">
+        <!-- The dashboard is reachable from outside this window, and that is worth saying continuously
+             rather than once. ⚠️ A STATE, not a message: it is bound to WebRunning, so it appears when the
+             server starts and is gone the moment it stops. The old one-off "web server running" line stayed
+             put after the server had been stopped again, which said the opposite of the truth.
+             ⚠️ Declared AFTER the status bar: in a DockPanel the first Bottom child sits lowest, so this is
+             what puts the banner ABOVE it. -->
+        <Border DockPanel.Dock="Bottom" IsVisible="{Binding WebRunning}"
+                Background="{DynamicResource HintBrush}" BorderBrush="{DynamicResource HintBorderBrush}"
+                BorderThickness="0,1,0,1" Padding="16,6">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Path Data="{StaticResource IconServer}" Fill="{DynamicResource HintInkBrush}"
+                      Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center" />
+                <TextBlock Text="{loc:Loc Av_WebBannerRunning}" Foreground="{DynamicResource HintInkBrush}"
+                           VerticalAlignment="Center" />
+                <!-- The URL opens the dashboard. Border, not a bare TextBlock: an element without a
+                     background is not hit-testable in Avalonia (the trap that has caught this window
+                     three times now). -->
+                <Border Background="Transparent" Cursor="Hand" VerticalAlignment="Center"
+                        PointerPressed="OnWebBannerClick" ToolTip.Tip="{loc:Loc Web_OpenBrowser}">
+                    <TextBlock Text="{Binding WebUrl}" Foreground="{DynamicResource HintLinkBrush}"
+                               TextDecorations="Underline" VerticalAlignment="Center" />
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <!-- ⚠️ Declared AFTER the pane and the handle, and that is deliberate: a DockPanel stacks docked
+             children in declaration order, so this ends up directly above whichever of them is visible.
+             With the pane open it sits on top of it pointing down (hide); with the pane closed the pane
+             and handle take no space and it drops to just above the status bar pointing up (show). One
+             control, both positions, no code deciding where it goes. -->
+        <!-- ⚠️ Content comes from styles for BOTH states, never as an attribute here. In Avalonia a local
+             value outranks any style setter, so `Content="▲"` on the element would win permanently and the
+             :checked setter below could never take effect – the arrow would keep pointing up with the pane
+             open. Two styles of differing specificity is the only way this switches. -->
+        <ToggleButton DockPanel.Dock="Bottom" IsChecked="{Binding ShowDetailPane, Mode=TwoWay}"
+                      Classes="action"
+                      HorizontalAlignment="Center" Margin="0,2,0,4"
+                      Width="46" Height="18" MinWidth="46" MinHeight="18"
+                      Padding="0" FontSize="10" CornerRadius="4" Cursor="Hand"
+                      HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+            <ToggleButton.Styles>
+                <Style Selector="ToggleButton">
+                    <Setter Property="Content" Value="▲" />
+                    <Setter Property="ToolTip.Tip" Value="{loc:Loc Av_DetailPaneShow}" />
+                </Style>
+                <Style Selector="ToggleButton:checked">
+                    <Setter Property="Content" Value="▼" />
+                    <Setter Property="ToolTip.Tip" Value="{loc:Loc Av_DetailPaneHide}" />
+                </Style>
+            </ToggleButton.Styles>
+        </ToggleButton>
+
+        <!-- Drag handle for the detail pane. Docked directly above it so the two move together; the pane's
+             height is what the drag changes. -->
+        <!-- ⚠️ A Thumb, not a GridSplitter. GridSplitter resizes the rows of a Grid; docked in a DockPanel
+             it has no row to work on, so it rendered as a strip that could be grabbed but changed nothing.
+             A Thumb just reports the drag and we set the height ourselves. -->
+        <Thumb DockPanel.Dock="Bottom" Height="8" HorizontalAlignment="Stretch" Margin="16,0"
+               Cursor="SizeNorthSouth" IsVisible="{Binding ShowDetailPane}"
+               ToolTip.Tip="{loc:Loc Av_DetailResizeTip}"
+               DragDelta="OnDetailSplitterDrag">
+            <Thumb.Template>
+                <ControlTemplate>
+                    <!-- Transparent grab area with a visible grip line, so it reads as draggable. -->
+                    <Border Background="Transparent" Padding="0,3">
+                        <Border Height="2" CornerRadius="1" Background="#33808080" />
+                    </Border>
+                </ControlTemplate>
+            </Thumb.Template>
+        </Thumb>
+
+        <!-- Device detail. Hidden together with its splitter when switched off, so the list gets the room. -->
+        <Border x:Name="DetailPane" DockPanel.Dock="Bottom" Height="270" Margin="16,0,16,10" Padding="14"
+                Background="#14808080" CornerRadius="10" IsVisible="{Binding ShowDetailPane}">
+            <ScrollViewer>
+                <StackPanel Spacing="8">
+                    <TextBlock Text="{loc:Loc Av_NoSelection}" Opacity="0.6"
+                               IsVisible="{Binding !HasSelection}" />
+                    <!-- ⚠️ Several devices marked: the pane describes exactly one device, so showing the
+                         first of them would quietly misattribute its facts to the whole selection. -->
+                    <TextBlock Text="{loc:Loc Av_DetailMultiSelect}" Opacity="0.6" TextWrapping="Wrap"
+                               IsVisible="{Binding HasMultipleMarked}" />
+                    <StackPanel Spacing="8" IsVisible="{Binding ShowDeviceDetail}">
+
+                        <!-- Same four sections as the WPF client. Logs load on demand (an SSH round trip),
+                             the rest is already in the snapshot. -->
+                        <!-- Details and Connection errors are the two constants and lead; the rest appear
+                             only when the device supports them (see the IsVisible on each) – a tab whose
+                             only content is "not supported" was one click to learn nothing. -->
+                        <TabControl x:Name="DetailTabs" Margin="0,4,0,0" SelectionChanged="OnDetailTabChanged">
+                            <TabItem Header="{loc:Loc Tab_Details}">
+                              <Panel Margin="0,8,0,0">
+                                <TextBlock Text="{loc:Loc Av_DetailNotSupported}" Opacity="0.6" TextWrapping="Wrap"
+                                           IsVisible="{Binding !HasDetailFacts}" />
+                                <ItemsControl ItemsSource="{Binding SelectedDevice.Info}"
+                                              IsVisible="{Binding HasDetailFacts}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,18,4">
+                                                <TextBlock Text="{Binding Key}" Opacity="0.6" />
+                                                <TextBlock Text="{Binding Value}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                              </Panel>
+                            </TabItem>
+
+                            <TabItem Header="{loc:Loc Col_LastError}">
+                                <Panel Margin="0,8,0,0">
+                                    <!-- No error is good news, and worth saying so rather than showing a blank. -->
+                                    <TextBlock Text="{loc:Loc Av_NoErrors}" Opacity="0.6" TextWrapping="Wrap"
+                                               IsVisible="{Binding !HasLastError}" />
+                                    <TextBlock TextWrapping="Wrap" Text="{Binding LastError}"
+                                               IsVisible="{Binding HasLastError}" />
+                                </Panel>
+                            </TabItem>
+
+                            <TabItem Header="{loc:Loc Tab_Monitoring}" IsVisible="{Binding HasMonitoring}">
+                                <DockPanel Margin="0,8,0,0">
+                                    <!-- How often the background monitor re-reads CPU/RAM/uptime. A global
+                                         setting (the monitor loop is one), so it reads the same on every
+                                         device's tab. -->
+                                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8"
+                                                Margin="0,0,0,8" VerticalAlignment="Center">
+                                        <TextBlock Text="{loc:Loc Av_MonInterval}" Opacity="0.6"
+                                                   VerticalAlignment="Center" />
+                                        <ComboBox x:Name="MonitorInterval" SelectionChanged="OnMonitorIntervalChanged"
+                                                  MinWidth="70" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <Grid DockPanel.Dock="Top" ColumnDefinitions="110,*,110,*,110,*"
+                                          IsVisible="{Binding HasMonitoring}" Margin="0,0,0,8">
+                                        <TextBlock Grid.Column="0" Text="{loc:Loc Col_Cpu}" Opacity="0.6" />
+                                        <TextBlock Grid.Column="1" Text="{Binding SelectedDevice.Cpu}" />
+                                        <TextBlock Grid.Column="2" Text="{loc:Loc Col_Ram}" Opacity="0.6" />
+                                        <TextBlock Grid.Column="3" Text="{Binding SelectedDevice.Memory}" />
+                                        <TextBlock Grid.Column="4" Text="{loc:Loc Col_Uptime}" Opacity="0.6" />
+                                        <TextBlock Grid.Column="5" Text="{Binding SelectedDevice.Uptime}" />
+                                    </Grid>
+                                    <!-- Fills the rest of the tab: the trend is the point, the numbers above
+                                         are just the current reading. -->
+                                    <loc:HistoryChart x:Name="MonitorChart" MinHeight="90"
+                                                      IsVisible="{Binding HasMonitoring}" />
+                                </DockPanel>
+                            </TabItem>
+
+                            <!-- Logs are a RouterOS-with-login feature; anything else hides the tab. -->
+                            <TabItem x:Name="LogTab" Header="{loc:Loc Tab_Logs}" IsVisible="{Binding CanReadLogs}">
+                              <Panel Margin="0,8,0,0">
+                                <DockPanel IsVisible="{Binding CanReadLogs}">
+                                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="10"
+                                                Margin="0,0,0,6">
+                                        <Button Content="{loc:Loc Av_LogReload}" Click="OnReloadLogs" />
+                                        <!-- Bound, so the choice survives a restart. Unbound it defaulted to
+                                             off every launch while the setting quietly said otherwise. -->
+                                        <CheckBox x:Name="LogAutoRefresh" IsChecked="{Binding LogAutoRefresh, Mode=TwoWay}"
+                                                  Content="{loc:Loc Av_LogAutoRefresh}"
+                                                  VerticalAlignment="Center" />
+                                        <!-- How often auto-refresh refetches. Beside the checkbox it turns on,
+                                             so the interval reads as part of that one decision. -->
+                                        <ComboBox x:Name="LogInterval" SelectionChanged="OnLogIntervalChanged"
+                                                  MinWidth="70" VerticalAlignment="Center"
+                                                  ToolTip.Tip="{loc:Loc Av_LogIntervalHint}" />
+                                        <TextBlock Text="{loc:Loc Av_LogEntries}" VerticalAlignment="Center"
+                                                   Margin="8,0,0,0" />
+                                        <ComboBox x:Name="LogCount" SelectionChanged="OnLogCountChanged"
+                                                  MinWidth="110" VerticalAlignment="Center" />
+                                        <!-- Same shape as the device filter above: label beside the box, the
+                                             explanation on an info glyph that stays put while you type.
+                                             Border for the same hit-testing reason as there. -->
+                                        <Border Background="Transparent" Padding="2,0" Cursor="Help"
+                                                VerticalAlignment="Center"
+                                                ToolTip.Tip="{loc:Loc Av_LogFilterHint}">
+                                            <TextBlock Text="ⓘ" FontSize="17" Opacity="0.65" />
+                                        </Border>
+                                        <TextBlock Text="{loc:Loc Av_FilterLabel}" VerticalAlignment="Center"
+                                                   Margin="-6,0,0,0" />
+                                        <TextBox x:Name="LogFilter" Width="200" KeyDown="OnLogFilterKey"
+                                                 ToolTip.Tip="{loc:Loc Av_LogFilterHint}"
+                                                 TextChanged="OnLogFilterChanged" />
+                                    </StackPanel>
+                                    <!-- Columns are user-resizable: a device that packs its log into columns
+                                         (the TP-Link does) needs the Topics/Time columns widened by hand to
+                                         read them without truncation. -->
+                                    <DataGrid x:Name="LogGrid" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                              HeadersVisibility="Column" CanUserResizeColumns="True">
+                                        <DataGrid.Columns>
+                                            <!-- Wide enough for the longest vendor timestamp without a
+                                                 tooltip or a drag: the TP-Link prints a full
+                                                 "2006-05-14 02:35:50" (19 chars), where the old 150 cut off
+                                                 the seconds. Still user-resizable for anything longer. -->
+                                            <DataGridTextColumn Header="{loc:Loc Col_Time}" Binding="{Binding Time}" Width="180" />
+                                            <DataGridTextColumn Header="{loc:Loc Col_Topics}" Binding="{Binding Topics}" Width="180" />
+                                            <DataGridTextColumn Header="{loc:Loc Col_Message}" Binding="{Binding Message}" Width="*" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </DockPanel>
+                                <!-- Centred "reading the log…" notice over the grid while the SSH fetch runs.
+                                     IsHitTestVisible=False so it never eats a click; the grid stays usable the
+                                     instant the data lands and this hides. -->
+                                <Border IsVisible="{Binding LogLoading}" IsHitTestVisible="False"
+                                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                                        Background="#14808080" CornerRadius="10" Padding="22,18">
+                                    <StackPanel Spacing="10" HorizontalAlignment="Center">
+                                        <TextBlock Text="{loc:Loc Av_LogLoading}" FontWeight="SemiBold"
+                                                   HorizontalAlignment="Center" />
+                                        <ProgressBar IsIndeterminate="True" Height="5" Width="220" />
+                                    </StackPanel>
+                                </Border>
+                              </Panel>
+                            </TabItem>
+
+                        </TabControl>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Filter + scan options: above the tabs, so they stay put whichever view is open. -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="14" Margin="16,4,16,12">
+            <!-- How the list itself is operated (multi-select, drag-select, what the orange row means).
+                 Leads the toolbar because it explains the thing below it, not the control beside it.
+                 Switchable off: once you know it, a permanent hint is just clutter.
+                 ⚠️ Background="Transparent", not omitted. A null background is not hit-testable in Avalonia,
+                 so the pointer passes straight through the glyph and the tooltip never opens – it looks like
+                 the tooltip was never set. (WPF hit-tests the glyph itself, which is why this worked there.)
+                 The border also gives the pointer a slightly larger target than the glyph outline. -->
+            <Border Background="Transparent" Padding="2,0" Cursor="Help" VerticalAlignment="Center"
+                    IsVisible="{Binding ShowListInfo}" ToolTip.Tip="{loc:Loc List_InfoTip}">
+                <TextBlock Text="ⓘ" FontSize="17" Foreground="#2266CC" FontWeight="Bold" />
+            </Border>
+            <!-- The filter rule ("every entered word must match") stays on the box itself – it is read while
+                 typing, so it belongs where the pointer already is. -->
+            <TextBlock Text="{loc:Loc Av_FilterLabel}" VerticalAlignment="Center" />
+            <TextBox x:Name="FilterBox" Text="{Binding Filter, Mode=TwoWay}"
+                     Width="240" KeyDown="OnBoxKeyDown" ToolTip.Tip="{loc:Loc Filter_Tip}" />
+            <CheckBox Content="{loc:Loc Tb_ContinuousScan}" IsChecked="{Binding ContinuousScan, Mode=TwoWay}"
+                      ToolTip.Tip="{loc:Loc Tb_ContinuousScanTip}" VerticalAlignment="Center" />
+            <!-- The alive check (in the spot the old auto-refresh switch had): one TCP connect per device
+                 to a known-open port, feeding the traffic-light column. Unchecked = genuinely no
+                 background probing, and the interval is dead weight then, so it greys out. -->
+            <CheckBox Content="{loc:Loc Av_AliveCheck}" IsChecked="{Binding AliveCheck, Mode=TwoWay}"
+                      ToolTip.Tip="{loc:Loc Av_AliveCheckTip}" VerticalAlignment="Center" />
+            <ComboBox ItemsSource="{Binding AliveChoices}"
+                      SelectedItem="{Binding AliveCheckSeconds, Mode=TwoWay}"
+                      IsEnabled="{Binding AliveCheck}" MinWidth="80" VerticalAlignment="Center"
+                      ToolTip.Tip="{loc:Loc Av_AliveCheckTip}" />
+            <!-- The unit belongs next to the number: "5" alone could be minutes just as easily. -->
+            <TextBlock Text="{loc:Loc Av_Seconds}" VerticalAlignment="Center" Margin="-8,0,0,0"
+                       IsEnabled="{Binding AliveCheck}" Opacity="0.75" />
+            <CheckBox Content="{loc:Loc Tb_SimpleMode}" IsChecked="{Binding SimpleScanMode, Mode=TwoWay}"
+                      ToolTip.Tip="{loc:Loc Tb_SimpleModeTip}" VerticalAlignment="Center" />
+            <!-- The device counts used to sit here; they live in the status bar now, where a count belongs.
+                 The detail-pane switch used to sit here too – it is now a chevron directly above the pane,
+                 which is where the thing it opens actually appears. -->
+        </StackPanel>
+
+        <TabControl x:Name="Tabs" Margin="16,0,16,0" SelectionChanged="OnTabChanged">
+            <!-- IPv4 device list -->
+            <TabItem Header="IPv4" Tag="ipv4">
+                <!-- Extended selection: Ctrl/Shift-click and click-drag mark several devices, which is what
+                     the bulk actions (set login for N, wake N) operate on. SelectionChanged keeps the view
+                     model's Marked list in step – DataGrid.SelectedItems is not bindable in Avalonia.
+
+                     ⚠️ HorizontalScrollBarVisibility is the DataGrid's OWN property, not the attached
+                     ScrollViewer one. The grid keeps its scroll viewer inside its template and never reads
+                     ScrollViewer.HorizontalScrollBarVisibility from the outside: setting that attached
+                     property compiles, applies to nothing, and silently does nothing – which is why the
+                     list stayed unscrollable through several attempts to fix it. -->
+                <DataGrid x:Name="DeviceGrid"
+                          ItemsSource="{Binding Devices}"
+                          SelectedItem="{Binding SelectedDevice, Mode=TwoWay}"
+                          SelectionMode="Extended"
+                          SelectionChanged="OnDeviceSelectionChanged"
+                          DoubleTapped="OnGridDoubleTapped"
+                          IsReadOnly="True" CanUserResizeColumns="True" CanUserSortColumns="True"
+                          CanUserReorderColumns="True"
+                          GridLinesVisibility="Horizontal"
+                          HorizontalScrollBarVisibility="Auto"
+                          RowDetailsVisibilityMode="Collapsed">
+                    <!-- Row states as style classes: the gateway gets a translucent orange wash (a solid
+                         fill fights the text colour in dark mode), unreachable devices get red text. -->
+                    <!-- ⚠️ Selection colour via the theme's OWN resource keys, not via a style on the row
+                         template. Naming template parts means guessing at the theme's internals, and a
+                         selector that names a part the theme does not have matches nothing and fails
+                         silently – which is what happened here: the rows kept Semi's pale blue while the
+                         XAML claimed to paint them dark blue. These four keys are the ones the theme reads,
+                         so overriding them cannot miss. The Windows selection blue (#0078D7) with white
+                         text – Semi's own pale blue was too faint to see the selected row. -->
+                    <DataGrid.Resources>
+                        <SolidColorBrush x:Key="DataGridRowSelectedBackground" Color="#0078D7" />
+                        <SolidColorBrush x:Key="DataGridRowSelectedPointeroverBackground" Color="#0078D7" />
+                        <SolidColorBrush x:Key="DataGridRowPointeroverBackground" Color="#22808080" />
+                    </DataGrid.Resources>
+                    <DataGrid.Styles>
+                        <!-- ⚠️ Selection here is a row concept – every action operates on devices, never on
+                             a field. The cell focus box contradicted that: it framed whichever cell was
+                             clicked, which reads as "this value is selected".
+                             Two names, because the Semi DataGridCell template carries both a FocusVisual
+                             and a CurrencyVisual (the "current cell" marker) – hiding only one leaves the
+                             other drawing the box. Matched by name without an element type: the type is an
+                             implementation detail of the theme and a wrong guess silently matches nothing,
+                             which is what happened on the first attempt. -->
+                        <!-- x:SetterTargetType because the selector names the part without giving its type;
+                             the compiler needs to know which type the properties belong to, and Control is
+                             the safe common base (Avalonia's Shape derives from it too). -->
+                        <Style Selector="DataGridCell /template/ #FocusVisual" x:SetterTargetType="Control">
+                            <Setter Property="IsVisible" Value="False" />
+                            <Setter Property="Opacity" Value="0" />
+                        </Style>
+                        <Style Selector="DataGridCell /template/ #CurrencyVisual" x:SetterTargetType="Control">
+                            <Setter Property="IsVisible" Value="False" />
+                            <Setter Property="Opacity" Value="0" />
+                        </Style>
+                        <!-- ⚠️ Background="Transparent", not left unset. A null background is not hit-testable
+                             in Avalonia, so every part of a row that no cell covers – the strip between the
+                             cells and the row edge – swallowed the click silently. This is the same trap the
+                             tooltip glyphs hit; here it looked like "the list ignores clicks". -->
+                        <Style Selector="DataGridRow">
+                            <Setter Property="MinHeight" Value="30" />
+                            <Setter Property="Background" Value="Transparent" />
+                        </Style>
+
+                        <!-- ⚠️ The Semi theme insets and rounds the row's background, which leaves a white
+                             gap between a selected row and its neighbours – on a pale selection colour the
+                             selection is then barely visible at all. Flattened here: the selection has to
+                             read as one solid band across the row, as it does in the WPF client.
+                             Both the Border and the Rectangle are addressed because the theme carries both
+                             and only one of them paints; a selector that matches nothing is harmless, a
+                             missing one is a half-painted row. -->
+                        <Style Selector="DataGridRow /template/ Border#BackgroundBorder">
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="CornerRadius" Value="0" />
+                        </Style>
+                        <Style Selector="DataGridRow /template/ Border#RowBorder">
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="CornerRadius" Value="0" />
+                        </Style>
+                        <Style Selector="DataGridRow /template/ Rectangle#BackgroundRectangle">
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="RadiusX" Value="0" />
+                            <Setter Property="RadiusY" Value="0" />
+                        </Style>
+
+                        <Style Selector="DataGridRow.gateway">
+                            <Setter Property="Background" Value="#33F68500" />
+                        </Style>
+                        <Style Selector="DataGridRow.offline TextBlock">
+                            <Setter Property="Foreground" Value="#C0392B" />
+                        </Style>
+                        <!-- A pending update is worth spotting without reading the version numbers. -->
+                        <Style Selector="TextBlock.pending">
+                            <Setter Property="Foreground" Value="#EF6C00" />
+                            <Setter Property="FontWeight" Value="SemiBold" />
+                        </Style>
+                        <!-- The Latest cell is a link (parsed version or "manual search") – underline it so it
+                             reads as clickable, the same affordance the hand cursor gives. -->
+                        <Style Selector="TextBlock.latestlink">
+                            <Setter Property="TextDecorations" Value="Underline" />
+                        </Style>
+                        <!-- ⚠️ Last, on purpose. Avalonia resolves equally specific setters in declaration
+                             order, so this has to come after the offline/pending colours – otherwise a
+                             selected offline row keeps its red text on the dark blue fill. -->
+                        <Style Selector="DataGridRow:selected TextBlock">
+                            <Setter Property="Foreground" Value="White" />
+                        </Style>
+                    </DataGrid.Styles>
+                    <DataGrid.RowTheme>
+                        <ControlTheme TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+                            <Setter Property="Classes.gateway" Value="{Binding IsGateway}" />
+                            <Setter Property="Classes.offline" Value="{Binding IsOffline}" />
+                        </ControlTheme>
+                    </DataGrid.RowTheme>
+                    <!-- Row details: everything too long for a cell – all IPv6 addresses, the collected
+                         facts, and the SMB shares as one-click shortcuts. -->
+                    <DataGrid.RowDetailsTemplate>
+                        <DataTemplate>
+                            <!-- The open/closed state lives on the item and is pushed onto the row from
+                                 code-behind (see WireRowDetails) – the grid's own visibility mode is
+                                 Collapsed so that no row reserves details height it does not use. IsVisible
+                                 stays bound as well, so a row whose details were opened and then collapsed
+                                 again takes up no space in the frame before the row is re-realized. -->
+                            <StackPanel Margin="34,6,10,10" Spacing="6" IsVisible="{Binding IsExpanded}">
+                                <StackPanel IsVisible="{Binding HasIpv6}">
+                                    <TextBlock Text="IPv6" FontWeight="SemiBold" Opacity="0.6" />
+                                    <ItemsControl ItemsSource="{Binding Ipv6Entries}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <TextBlock Text="{Binding}" TextWrapping="Wrap" FontFamily="Consolas,monospace" FontSize="12" />
+                                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,1">
+                                                    <TextBlock Text="{Binding Address}" FontFamily="Consolas, Menlo, monospace"
+                                                               FontSize="12" VerticalAlignment="Center" />
+                                                    <Border CornerRadius="3" Background="{Binding Tag.Colour}" Padding="5,1"
+                                                            VerticalAlignment="Center" ToolTip.Tip="{Binding Tag.Tooltip}">
+                                                        <TextBlock Text="{Binding Tag.Text}" Foreground="White"
+                                                                   FontSize="10" FontWeight="SemiBold" />
+                                                    </Border>
+                                                </StackPanel>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </StackPanel>
 
-                                <Grid ColumnDefinitions="90,*" Margin="0,2,0,0">
-                                    <TextBlock Grid.Column="0" Text="Anmeldung" Opacity="0.6" />
-                                    <TextBlock Grid.Column="1" Text="{Binding SelectedDevice.User}" />
-                                </Grid>
-
-                                <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,4,0,0">
-                                    <Button Content="Anmelden…" Click="OnLoginClick" />
-                                    <Button Content="Terminal…" Click="OnTerminalClick" IsEnabled="{Binding CanBackup}"
-                                            ToolTip.Tip="SSH-Konsole öffnen (benötigt Login)" />
-                                    <Button Content="Backup…" Click="OnBackupClick" IsEnabled="{Binding CanBackup}"
-                                            ToolTip.Tip="Konfiguration sichern (RouterOS/Zyxel-Switch, benötigt Login)" />
-                                    <Button Content="Wake-on-LAN" Click="OnWakeClick" IsEnabled="{Binding CanWake}" />
+                                <!-- A server that refuses to list its shares says so, rather than leaving an
+                                     empty spot that reads as "TikMan never asked". -->
+                                <StackPanel IsVisible="{Binding SharesDenied}">
+                                    <TextBlock Text="{loc:Loc Sc_SmbHeader}" FontWeight="SemiBold" Opacity="0.6" />
+                                    <TextBlock Text="{loc:Loc Sc_SmbDenied}" Opacity="0.6" TextWrapping="Wrap"
+                                               Margin="0,4,0,0" />
                                 </StackPanel>
-                                <TextBlock Text="{Binding ActionResult}" Opacity="0.7" TextWrapping="Wrap" Margin="0,2,0,0" />
 
-                                <ItemsControl ItemsSource="{Binding SelectedDevice.Info}" Margin="0,6,0,0">
+                                <StackPanel IsVisible="{Binding HasShares}">
+                                    <TextBlock Text="{loc:Loc Sc_SmbHeader}" FontWeight="SemiBold" Opacity="0.6" />
+                                    <ItemsControl ItemsSource="{Binding ShareLinks}" Margin="0,4,0,0">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <!-- Dark text on a mid-grey fill: the theme's default button
+                                                     is a pale plate with pale ink and all but vanished on a
+                                                     cheap panel. Fixed colours on purpose – these read on
+                                                     both light and dark, which a theme brush would not. -->
+                                                <Button Content="{Binding Name}" Tag="{Binding UncPath}"
+                                                        ToolTip.Tip="{Binding UncPath}" Click="OnShareClick"
+                                                        Background="#C9CCD1" Foreground="#101010"
+                                                        Margin="0,0,8,4" Padding="9,3" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+
+                                <ItemsControl ItemsSource="{Binding Info}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Grid ColumnDefinitions="130,*" Margin="0,2">
-                                                <TextBlock Grid.Column="0" Text="{Binding Key}" Opacity="0.6" TextWrapping="Wrap" />
-                                                <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" />
-                                            </Grid>
+                                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,18,4">
+                                                <TextBlock Text="{Binding Key}" Opacity="0.6" />
+                                                <TextBlock Text="{Binding Value}" />
+                                            </StackPanel>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                             </StackPanel>
-                        </ScrollViewer>
+                        </DataTemplate>
+                    </DataGrid.RowDetailsTemplate>
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <!-- Section titles: disabled (non-clickable) menu items, so the menu reads in two
+                                 groups – what acts on the selection, and what acts on the whole list. -->
+                            <MenuItem Header="{loc:Loc Ctx_TitleSelected}" IsEnabled="False" FontWeight="SemiBold" />
+                            <!-- Every action carries its glyph, drawn on GlyphBrush so it flips with the
+                                 theme. Icons only on some entries reads as "these are the special ones". -->
+                            <MenuItem Header="{loc:Loc Ctx_SetCredsSel, NoIcon=True}" Click="OnLoginClick"
+                                      IsEnabled="{Binding CanSetCredentials}">
+                                <MenuItem.Icon>
+                                    <Path Data="{StaticResource IconKey}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="14" Height="14" Stretch="Uniform" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <!-- Targeted refresh for the selection – the replacement for the old global
+                                 auto-refresh switch, and the same pass that runs after saving credentials. -->
+                            <MenuItem Header="{loc:Loc Av_CtxRescan, NoIcon=True}" Click="OnRescanClick">
+                                <MenuItem.Icon>
+                                    <Path Data="{StaticResource IconUndo}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="14" Height="14" Stretch="Uniform" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="{loc:Loc Ctx_SshTerminal, NoIcon=True}" Click="OnTerminalClick" IsEnabled="{Binding CanSsh}">
+                                <MenuItem.Icon>
+                                    <Path Data="{StaticResource IconTerminal}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="14" Height="14" Stretch="Uniform" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="{loc:Loc Av_BtnVnc, NoIcon=True}" Click="OnVncClick" IsEnabled="{Binding CanVnc}">
+                                <MenuItem.Icon>
+                                    <Path Data="{StaticResource IconMonitor}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="14" Height="14" Stretch="Uniform" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="{loc:Loc Av_CtxRdp, NoIcon=True}" Click="OnRdpClick" IsEnabled="{Binding CanRdp}">
+                                <MenuItem.Icon>
+                                    <Path Data="{StaticResource IconMonitor}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="14" Height="14" Stretch="Uniform" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="{loc:Loc Av_CtxSftp, NoIcon=True}" Click="OnSftpClick" IsEnabled="{Binding CanSftp}">
+                                <MenuItem.Icon>
+                                    <Path Data="{StaticResource IconFolder}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="14" Height="14" Stretch="Uniform" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="{loc:Loc Av_CtxTelnet, NoIcon=True}" Click="OnTelnetClick" IsEnabled="{Binding CanTelnet}">
+                                <MenuItem.Icon>
+                                    <Path Data="{StaticResource IconTerminal}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="14" Height="14" Stretch="Uniform" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="{loc:Loc Ctx_WakeOnLan, NoIcon=True}" Click="OnWakeClick" IsEnabled="{Binding CanWake}">
+                                <MenuItem.Icon>
+                                    <Path Data="{StaticResource IconPower}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="14" Height="14" Stretch="Uniform" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="{loc:Loc Av_FirmwarePage, NoIcon=True}" Click="OnFirmwarePage"
+                                      IsEnabled="{Binding CanOpenFirmware}"
+                                      ToolTip.Tip="{loc:Loc Av_FirmwarePageTip}">
+                                <MenuItem.Icon>
+                                    <Path Data="{StaticResource IconExternal}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="14" Height="14" Stretch="Uniform" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <!-- Backup / check-for-updates / copy-vendor removed: the Backup and Update tabs
+                                 do those properly (per device, with progress), and the vendor record has its
+                                 own ⓘ button in the row. -->
+                            <MenuItem Header="{loc:Loc Tb_Remove, NoIcon=True}" Click="OnRemoveDevice">
+                                <MenuItem.Icon>
+                                    <Path Data="{StaticResource IconTrash}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="14" Height="14" Stretch="Uniform" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <Separator />
+                            <!-- The export writes the whole list, not the selection – hence its own group. -->
+                            <MenuItem Header="{loc:Loc Ctx_TitleAll}" IsEnabled="False" FontWeight="SemiBold" />
+                            <MenuItem Header="{loc:Loc Ctx_ExportCsv, NoIcon=True}" Click="OnExportIpv4Csv">
+                                <MenuItem.Icon>
+                                    <Path Data="{StaticResource IconExport}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="14" Height="14" Stretch="Uniform" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="{loc:Loc Ctx_ExportHtml, NoIcon=True}" Click="OnExportIpv4Html">
+                                <MenuItem.Icon>
+                                    <Path Data="{StaticResource IconExport}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="14" Height="14" Stretch="Uniform" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.Columns>
+                        <!-- Order: expander, key (has credentials), status dot – the expander first because
+                             it is the one the user clicks. -->
+                        <DataGridTemplateColumn Width="26" CanUserResize="False" CanUserSort="False">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <!-- Square and centred: equal width/height, no corner rounding, and
+                                         MinWidth/MinHeight cleared so the theme cannot stretch it back into
+                                         a rectangle. -->
+                                    <ToggleButton IsChecked="{Binding IsExpanded, Mode=TwoWay}"
+                                                  IsVisible="{Binding HasRowDetails}"
+                                                  ToolTip.Tip="{loc:Loc Av_RowDetailsTip}"
+                                                  Width="18" Height="18" MinWidth="18" MinHeight="18"
+                                                  Padding="0" FontSize="12" CornerRadius="3"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                                  Cursor="Hand">
+                                        <!-- ⚠️ Same trap as the detail-pane chevron: a local Content would
+                                             outrank the :checked setter and the sign would never change
+                                             from + to −. Both states are styles. -->
+                                        <ToggleButton.Styles>
+                                            <Style Selector="ToggleButton">
+                                                <Setter Property="Content" Value="+" />
+                                            </Style>
+                                            <Style Selector="ToggleButton:checked">
+                                                <Setter Property="Content" Value="−" />
+                                            </Style>
+                                        </ToggleButton.Styles>
+                                    </ToggleButton>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <!-- The same vector key as the login banner and the credentials button – one key
+                             everywhere. (A Path, not the 🔑 emoji: the emoji rendered blank in the header
+                             row on Windows and cannot take the theme's ink anyway.) -->
+                        <DataGridTemplateColumn Width="30" CanUserResize="False" CanUserSort="False">
+                            <DataGridTemplateColumn.Header>
+                                <!-- Background="Transparent" so the pointer can actually hit it (see the
+                                     filter glyph): an element with no background is not hit-testable. -->
+                                <Border Background="Transparent" ToolTip.Tip="{loc:Loc Col_HasLoginTip}">
+                                    <Path Data="{StaticResource IconKey}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="13" Height="13" Stretch="Uniform" />
+                                </Border>
+                            </DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <!-- A stored login that WORKS shows the key; one that was rejected shows
+                                         a cross with the device's own reason on hover. Two elements rather
+                                         than one recoloured glyph: the shape has to differ, because colour
+                                         alone is not something everyone can read.
+                                         ⚠️ The cross takes the theme ink (GlyphBrush), same as the key – a
+                                         fixed red was nearly invisible on the dark-blue of a selected row,
+                                         and since the key is already black/white the cross should match. The
+                                         differing shape (✗ vs 🔑), not colour, is what carries the meaning. -->
+                                    <Panel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Border Background="Transparent"
+                                                IsVisible="{Binding !LoginBroken}"
+                                                ToolTip.Tip="{loc:Loc Col_HasLoginTip}">
+                                            <Path Data="{StaticResource IconKey}" Fill="{DynamicResource GlyphBrush}"
+                                                  Width="13" Height="13" Stretch="Uniform"
+                                                  IsVisible="{Binding HasLogin}" />
+                                        </Border>
+                                        <Border Background="Transparent" IsVisible="{Binding LoginBroken}"
+                                                ToolTip.Tip="{Binding LoginErrorTip}">
+                                            <Path Data="{StaticResource IconClose}" Fill="{DynamicResource GlyphBrush}"
+                                                  Width="12" Height="12" Stretch="Uniform" />
+                                        </Border>
+                                    </Panel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="" Width="30" CanUserResize="False" CanUserSort="False">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Ellipse Width="11" Height="11" Fill="{Binding StatusColour}"
+                                             HorizontalAlignment="Center" VerticalAlignment="Center"
+                                             ToolTip.Tip="{Binding Status}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <!-- ⚠️ Fixed and Auto widths only – no star sizing. Star columns always divide the
+                             viewport, so the grid could never be wider than the window and the columns kept
+                             squeezing themselves instead of letting the user scroll. -->
+                        <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding KindText}" Width="Auto" MinWidth="90" MaxWidth="900" Tag="rich" />
+                        <DataGridTextColumn Header="{loc:Loc Col_Name}" Binding="{Binding Name}" Width="Auto" MinWidth="140" MaxWidth="900" />
+                        <DataGridTextColumn Header="IPv4" Binding="{Binding Ip}" Width="Auto" MinWidth="110" MaxWidth="900" />
+                        <DataGridTextColumn Header="IPv6" Binding="{Binding Ipv6Summary}" Width="Auto" MinWidth="120" MaxWidth="900" />
+                        <!-- ⚠️ MinWidth is not cosmetic here. Without a floor Avalonia collapses this Auto
+                             column very narrow, and the badge WrapPanel then wraps into a tall stack whose
+                             height is computed at one width and arranged at another – so the badges spill
+                             over the row's horizontal divider. A stable minimum width (matching the IPv6
+                             tab's protocol column, which does not have the bug) makes the wrap consistent so
+                             the row grows to fit it. The small vertical margin keeps the outermost badges off
+                             the grid line. -->
+                        <DataGridTemplateColumn Header="{loc:Loc Col_Protocol}" Width="Auto" MinWidth="150" MaxWidth="900" Tag="rich">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Panel VerticalAlignment="Center" Margin="0,3">
+                                        <ItemsControl ItemsSource="{Binding Badges}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border CornerRadius="3" Background="{Binding Colour}" Margin="0,1,4,1"
+                                                            Padding="5,1" ToolTip.Tip="{Binding Tooltip}"
+                                                            Tag="{Binding Url}" PointerPressed="OnBadgeClick"
+                                                            Cursor="{Binding Converter={x:Static loc:BadgeCursor.Instance}}">
+                                                        <TextBlock Text="{Binding Name}" Foreground="White"
+                                                                   FontSize="11" FontWeight="SemiBold" />
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <!-- Same wording as the IPv6 tab: an empty cell reads as "not looked
+                                             at", when in fact the scan asked and the device offered nothing. -->
+                                        <TextBlock Text="{loc:Loc Av_Ipv6NoAnswer}" Opacity="0.5" FontSize="11"
+                                                   IsVisible="{Binding NothingAnswered}"
+                                                   ToolTip.Tip="{loc:Loc Av_NoAnswerTip}" />
+                                    </Panel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="{loc:Loc Col_Mac}" Binding="{Binding Mac}" Width="Auto" />
+                        <!-- MAC vendor (OUI registrant) before Vendor, so Vendor and Model sit side by side.
+                             The two part company on ODM-built gear, which reports its own brand but carries
+                             the builder's MAC block; the ⓘ opens the full IEEE record. -->
+                        <DataGridTemplateColumn Header="{loc:Loc Col_MacVendor}" Width="Auto" MinWidth="140" MaxWidth="900">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                        <!-- No ellipsis: a clipped value can still be read by widening the
+                                             column or copied from the row, where "Realtek Semiconduct…"
+                                             is simply lost text. -->
+                                        <TextBlock Text="{Binding MacVendor}" VerticalAlignment="Center" />
+                                        <!-- ⚠️ A TextBlock in a Border, not a Button: a Button brings its own
+                                             Foreground from the theme, so the glyph kept its dark ink when
+                                             the row went to the blue selection and became unreadable. A
+                                             TextBlock inherits the row's foreground, so it flips to white
+                                             with the text beside it. The Border needs a Background to be
+                                             hit-testable at all – transparent counts, absent does not. -->
+                                        <Border Background="Transparent" Padding="4,0" Cursor="Hand"
+                                                VerticalAlignment="Center"
+                                                PointerPressed="OnVendorInfoTap"
+                                                ToolTip.Tip="{loc:Loc Ctx_CopyVendorFull}"
+                                                IsVisible="{Binding MacVendor.Length}">
+                                            <TextBlock Text="ⓘ" FontSize="12" VerticalAlignment="Center" />
+                                        </Border>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding Vendor}" Width="Auto" MinWidth="110" MaxWidth="900" Tag="rich" />
+                        <DataGridTextColumn Header="{loc:Loc Col_Board}" Binding="{Binding Model}" Width="Auto" MinWidth="140" MaxWidth="900" Tag="rich" />
+                        <DataGridTextColumn Header="{loc:Loc Col_Serial}" Binding="{Binding Serial}" Width="Auto" Tag="rich" />
+                        <DataGridTextColumn Header="{loc:Loc Col_Os}" Binding="{Binding Os}" Width="Auto" Tag="rich" />
+                        <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Firmware}" Width="Auto" Tag="rich" />
+                        <!-- Update columns. Empty until a check has run – empty means "not checked", not
+                             "up to date", so they are deliberately not filled by the scan. -->
+                        <!-- Latest: for MikroTik the version from the update check; for TP-Link/Zyxel the
+                             version parsed off the vendor's download page, or a "manual search" link when it
+                             couldn't be parsed. Clickable when there's a page behind it. -->
+                        <DataGridTemplateColumn Header="{loc:Loc Col_Latest}" Width="Auto" Tag="rich">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding LatestDisplay}" VerticalAlignment="Center"
+                                               Classes.pending="{Binding UpdateAvailable}"
+                                               Classes.latestlink="{Binding HasLatestLink}"
+                                               Background="Transparent"
+                                               Tag="{Binding LatestVersionUrl}" PointerPressed="OnLatestClick"
+                                               Cursor="{Binding HasLatestLink, Converter={x:Static loc:BadgeCursor.Instance}}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <!-- "Installed release" and "Update release" were dropped: the installed one only
+                             repeats what Version already shows, and the update one repeats Latest. Two columns
+                             of duplicate text is worse than none. -->
+                        <!-- Monitoring: filled only for RouterOS devices with a stored login, blank otherwise. -->
+                        <DataGridTextColumn Header="{loc:Loc Col_Cpu}" Binding="{Binding Cpu}" Width="Auto" />
+                        <DataGridTextColumn Header="{loc:Loc Col_Ram}" Binding="{Binding Memory}" Width="Auto" />
+                        <DataGridTextColumn Header="{loc:Loc Col_Uptime}" Binding="{Binding Uptime}" Width="Auto" />
+                        <DataGridTextColumn Header="{loc:Loc St_Online}" Binding="{Binding Status}" Width="Auto" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <!-- IPv6 device list: same columns, IPv6 in place of IPv4 -->
+            <TabItem Header="IPv6" Tag="ipv6">
+                <!-- ⚠️ One row per ADDRESS, not per device (ItemsSource is Ipv6Rows). A device usually has a
+                     global, a ULA, a link-local and one or two privacy addresses at once, and they differ in
+                     exactly the way this tab exists to show. Rows of one device share a tint and a group
+                     number, so they still read as one block. -->
+                <DataGrid x:Name="Ipv6Grid" ItemsSource="{Binding Ipv6Rows}"
+                          SelectionChanged="OnIpv6SelectionChanged"
+                          IsReadOnly="True" CanUserResizeColumns="True" CanUserSortColumns="True"
+                          CanUserReorderColumns="True"
+                          HorizontalScrollBarVisibility="Auto"
+                          GridLinesVisibility="Horizontal"
+                          RowDetailsVisibilityMode="Collapsed">
+                    <DataGrid.Styles>
+                        <!-- Same reasoning as the IPv4 grid: selection is a row concept, not a cell one. -->
+                        <Style Selector="DataGridCell /template/ #FocusVisual" x:SetterTargetType="Control">
+                            <Setter Property="IsVisible" Value="False" />
+                        </Style>
+                        <Style Selector="DataGridCell /template/ #CurrencyVisual" x:SetterTargetType="Control">
+                            <Setter Property="IsVisible" Value="False" />
+                        </Style>
+                        <Style Selector="DataGridRow.offline TextBlock">
+                            <Setter Property="Foreground" Value="#C0392B" />
+                        </Style>
+                        <Style Selector="TextBlock.pending">
+                            <Setter Property="Foreground" Value="#EF6C00" />
+                            <Setter Property="FontWeight" Value="SemiBold" />
+                        </Style>
+                        <Style Selector="TextBlock.latestlink">
+                            <Setter Property="TextDecorations" Value="Underline" />
+                        </Style>
+                    </DataGrid.Styles>
+                    <DataGrid.RowTheme>
+                        <ControlTheme TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+                            <Setter Property="Background" Value="{Binding RowBackground}" />
+                            <Setter Property="Classes.offline" Value="{Binding IsOffline}" />
+                        </ControlTheme>
+                    </DataGrid.RowTheme>
+                    <!-- Row details: the SMB shares THIS address served, as one-click shortcuts. Same
+                         Collapsed-mode + code-behind wiring as the IPv4 grid (see WireRowDetails). -->
+                    <DataGrid.RowDetailsTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="34,6,10,10" Spacing="6" IsVisible="{Binding IsExpanded}">
+                                <!-- A host that refuses to list its shares says so, rather than leaving a
+                                     blank that reads as "TikMan never asked". -->
+                                <StackPanel IsVisible="{Binding Facts.SharesDenied}">
+                                    <TextBlock Text="{loc:Loc Sc_SmbHeader}" FontWeight="SemiBold" Opacity="0.6" />
+                                    <TextBlock Text="{loc:Loc Sc_SmbDenied}" Opacity="0.6" TextWrapping="Wrap"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                                <StackPanel IsVisible="{Binding Facts.HasShares}">
+                                    <TextBlock Text="{loc:Loc Sc_SmbHeader}" FontWeight="SemiBold" Opacity="0.6" />
+                                    <ItemsControl ItemsSource="{Binding Facts.ShareLinks}" Margin="0,4,0,0">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Content="{Binding Name}" Tag="{Binding UncPath}"
+                                                        ToolTip.Tip="{Binding UncPath}" Click="OnShareClick"
+                                                        Background="#C9CCD1" Foreground="#101010"
+                                                        Margin="0,0,8,4" Padding="9,3" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </StackPanel>
+                        </DataTemplate>
+                    </DataGrid.RowDetailsTemplate>
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="{loc:Loc Ctx_TitleSelected}" IsEnabled="False" FontWeight="SemiBold" />
+                            <MenuItem Header="{loc:Loc Ctx_SetCredsSel, NoIcon=True}" Click="OnLoginClick"
+                                      IsEnabled="{Binding CanSetCredentials}">
+                                <MenuItem.Icon>
+                                    <Path Data="{StaticResource IconKey}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="14" Height="14" Stretch="Uniform" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <!-- Targeted refresh for the selection – the replacement for the old global
+                                 auto-refresh switch, and the same pass that runs after saving credentials. -->
+                            <MenuItem Header="{loc:Loc Av_CtxRescan, NoIcon=True}" Click="OnRescanClick">
+                                <MenuItem.Icon>
+                                    <Path Data="{StaticResource IconUndo}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="14" Height="14" Stretch="Uniform" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="{loc:Loc Ctx_SshTerminal, NoIcon=True}" Click="OnTerminalClick" IsEnabled="{Binding CanSsh}">
+                                <MenuItem.Icon>
+                                    <Path Data="{StaticResource IconTerminal}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="14" Height="14" Stretch="Uniform" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="{loc:Loc Ctx_WakeOnLan, NoIcon=True}" Click="OnWakeClick" IsEnabled="{Binding CanWake}">
+                                <MenuItem.Icon>
+                                    <Path Data="{StaticResource IconPower}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="14" Height="14" Stretch="Uniform" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <Separator />
+                            <MenuItem Header="{loc:Loc Ctx_TitleAll}" IsEnabled="False" FontWeight="SemiBold" />
+                            <MenuItem Header="{loc:Loc Ctx_ExportCsv, NoIcon=True}" Click="OnExportIpv6Csv">
+                                <MenuItem.Icon>
+                                    <Path Data="{StaticResource IconExport}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="14" Height="14" Stretch="Uniform" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="{loc:Loc Ctx_ExportHtml, NoIcon=True}" Click="OnExportIpv6Html">
+                                <MenuItem.Icon>
+                                    <Path Data="{StaticResource IconExport}" Fill="{DynamicResource GlyphBrush}"
+                                          Width="14" Height="14" Stretch="Uniform" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.Columns>
+                        <!-- Expander: shows this address's SMB shares. Only on rows that actually have
+                             something to show (HasRowDetails), same as the IPv4 grid. -->
+                        <DataGridTemplateColumn Width="26" CanUserResize="False" CanUserSort="False">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <ToggleButton IsChecked="{Binding IsExpanded, Mode=TwoWay}"
+                                                  IsVisible="{Binding HasRowDetails}"
+                                                  ToolTip.Tip="{loc:Loc Av_RowDetailsTip}"
+                                                  Width="18" Height="18" MinWidth="18" MinHeight="18"
+                                                  Padding="0" FontSize="12" CornerRadius="3"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                                  Cursor="Hand">
+                                        <ToggleButton.Styles>
+                                            <Style Selector="ToggleButton">
+                                                <Setter Property="Content" Value="+" />
+                                            </Style>
+                                            <Style Selector="ToggleButton:checked">
+                                                <Setter Property="Content" Value="−" />
+                                            </Style>
+                                        </ToggleButton.Styles>
+                                    </ToggleButton>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <!-- The group number: all rows of one device share it, so one click on this header
+                             puts the list back into "grouped by device" after any other sort. -->
+                        <DataGridTextColumn Header="{loc:Loc Col_Ipv6Group}" Binding="{Binding Group}"
+                                            SortMemberPath="GroupSortKey" Width="Auto" MinWidth="50" MaxWidth="900" />
+                        <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding KindText}" Width="Auto" />
+                        <DataGridTextColumn Header="{loc:Loc Col_Name}" Binding="{Binding Name}" Width="Auto" MinWidth="140" MaxWidth="900" />
+                        <!-- The address itself, monospaced: v6 addresses are compared by eye, digit by digit. -->
+                        <DataGridTextColumn Header="IPv6" Binding="{Binding Address}" Width="Auto" MinWidth="240" MaxWidth="900"
+                                            FontFamily="Consolas, Menlo, monospace" />
+                        <!-- One scope badge, for THIS address – that is the difference between the rows. -->
+                        <DataGridTemplateColumn Header="{loc:Loc Col_Ipv6Scope}" Width="Auto"
+                                                SortMemberPath="Tag.Text">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Border CornerRadius="3" Background="{Binding Tag.Colour}" Margin="0,1,4,1"
+                                            Padding="5,1" VerticalAlignment="Center"
+                                            HorizontalAlignment="Left" ToolTip.Tip="{Binding Tag.Tooltip}">
+                                        <TextBlock Text="{Binding Tag.Text}" Foreground="White"
+                                                   FontSize="11" FontWeight="SemiBold" />
+                                    </Border>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="IPv4" Binding="{Binding Ip}" Width="Auto" />
+                        <!-- ⚠️ Measured on THIS address, not copied from the device's IPv4 result – and the
+                             empty cases are told apart: "nothing answered" is a finding, "not tested" is
+                             not, and showing both as a blank cell would present the second as the first. -->
+                        <DataGridTemplateColumn Header="{loc:Loc Col_Protocol}" Width="Auto" MinWidth="150" MaxWidth="900">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Panel VerticalAlignment="Center">
+                                        <ItemsControl ItemsSource="{Binding Badges}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border CornerRadius="3" Background="{Binding Colour}" Margin="0,1,4,1"
+                                                            Padding="5,1" ToolTip.Tip="{Binding Tooltip}"
+                                                            Tag="{Binding Url}" PointerPressed="OnBadgeClick"
+                                                            Cursor="{Binding Converter={x:Static loc:BadgeCursor.Instance}}">
+                                                        <TextBlock Text="{Binding Name}" Foreground="White"
+                                                                   FontSize="11" FontWeight="SemiBold" />
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <TextBlock Text="{loc:Loc Av_Ipv6NoAnswer}" Opacity="0.5" FontSize="11"
+                                                   IsVisible="{Binding NothingAnswered}"
+                                                   ToolTip.Tip="{loc:Loc Av_Ipv6NoAnswerTip}" />
+                                        <TextBlock Text="{loc:Loc Av_Ipv6NotProbed}" Opacity="0.5" FontSize="11"
+                                                   IsVisible="{Binding NotProbed}"
+                                                   ToolTip.Tip="{loc:Loc Av_Ipv6NotProbedTip}" />
+                                    </Panel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="{loc:Loc Col_Mac}" Binding="{Binding Mac}" Width="Auto" />
+                        <DataGridTextColumn Header="{loc:Loc Col_MacVendor}" Binding="{Binding MacVendor}" Width="Auto" MinWidth="140" MaxWidth="900" Tag="rich" />
+                        <!-- Vendor / model / serial / OS / name are what THIS address answered where it
+                             answered at all, and the device's value only otherwise – see Ipv6Row.Prefer. -->
+                        <DataGridTextColumn Header="{loc:Loc Col_Vendor}" Binding="{Binding Vendor}" Width="Auto" MinWidth="110" MaxWidth="900" Tag="rich" />
+                        <DataGridTextColumn Header="{loc:Loc Col_Board}" Binding="{Binding Model}" Width="Auto" MinWidth="140" MaxWidth="900" Tag="rich" />
+                        <DataGridTextColumn Header="{loc:Loc Col_Serial}" Binding="{Binding Serial}" Width="Auto" Tag="rich" />
+                        <DataGridTextColumn Header="{loc:Loc Col_Os}" Binding="{Binding Os}" Width="Auto" Tag="rich" />
+                        <!-- Shares moved into the expandable row details (click the SMB badge or the + toggle),
+                             the same place the IPv4 grid keeps them – see the RowDetailsTemplate above. -->
+
+                        <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Firmware}" Width="Auto" Tag="rich" />
+                        <DataGridTemplateColumn Header="{loc:Loc Col_Latest}" Width="Auto" Tag="rich">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding LatestDisplay}" VerticalAlignment="Center"
+                                               Classes.pending="{Binding UpdateAvailable}"
+                                               Classes.latestlink="{Binding HasLatestLink}"
+                                               Background="Transparent"
+                                               Tag="{Binding LatestVersionUrl}" PointerPressed="OnLatestClick"
+                                               Cursor="{Binding HasLatestLink, Converter={x:Static loc:BadgeCursor.Instance}}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <!-- Installed/Update release dropped here too – duplicates of Version and Latest. -->
+                        <DataGridTextColumn Header="{loc:Loc Col_Cpu}" Binding="{Binding Cpu}" Width="Auto" />
+                        <DataGridTextColumn Header="{loc:Loc Col_Ram}" Binding="{Binding Memory}" Width="Auto" />
+                        <DataGridTextColumn Header="{loc:Loc Col_Uptime}" Binding="{Binding Uptime}" Width="Auto" />
+                        <DataGridTextColumn Header="{loc:Loc St_Online}" Binding="{Binding Status}" Width="Auto" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <!-- Topology (logical) -->
+            <TabItem Header="{loc:Loc Av_TabMapLogical}" Tag="logical">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                        <Button Content="{loc:Loc Av_Fit}" Click="OnTopoFit" Tag="logical" Classes="action" />
+                        <Button Content="{loc:Loc Av_Relayout}" Click="OnTopoRelayout" Tag="logical" ToolTip.Tip="{loc:Loc Av_RelayoutTip}" Classes="action" />
+                        <Button Content="{loc:Loc Av_Export}" Click="OnTopoExport" Tag="logical" Classes="action" />
+                        <TextBlock Text="{loc:Loc Av_PanZoomHint}" Opacity="0.6" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <!-- ⚠️ Tag names the view. The pan/zoom handlers used to reach the canvas as
+                         `border.Child`, which broke silently the moment anything was wrapped around it. -->
+                    <Border x:Name="LogicalViewport" ClipToBounds="True" Background="Transparent" Tag="logical"
+                            PointerWheelChanged="OnTopoWheel" PointerPressed="OnTopoPressed"
+                            PointerMoved="OnTopoMoved" PointerReleased="OnTopoReleased">
+                        <Panel>
+                            <!-- Right-click the empty canvas to add a node of your own (an unmanaged switch,
+                                 a patch panel, an uplink TikMan cannot see). -->
+                            <!-- ⚠️ Pinned top-left, and that is load-bearing. Draw sets an explicit
+                                 Width/Height on the canvas, and a stretch-aligned child with an explicit
+                                 size gets CENTRED by its Panel – so a graph wider than the viewport was
+                                 laid out at a negative offset. FitCanvas then computed its translation
+                                 from (0,0), the two offsets stacked, and the whole map was pushed outside
+                                 the clip: a blank white view with no error anywhere. Left/Top makes the
+                                 canvas origin and the viewport origin the same point, which is what every
+                                 pan/zoom/fit calculation here already assumes. -->
+                            <Canvas x:Name="LogicalCanvas" Background="Transparent" Tag="logical"
+                                    HorizontalAlignment="Left" VerticalAlignment="Top">
+                                <Canvas.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="{loc:Loc Av_TopoAddNode}" Click="OnTopoAddNode" Tag="logical" />
+                                        <MenuItem Header="{loc:Loc Av_TopoClearManual}" Click="OnTopoClearManual" Tag="logical" />
+                                    </ContextMenu>
+                                </Canvas.ContextMenu>
+                            </Canvas>
+                            <!-- ⚠️ Status card as an OVERLAY, a sibling of the canvas – not a child of it.
+                                 The canvas carries the pan/zoom transform, so a card placed on it scrolled
+                                 away and shrank with the wheel: a "working on it" notice that can be panned
+                                 off screen is one the user cannot read. Here it stays pinned to the middle
+                                 of the viewport. IsHitTestVisible=False so it never eats a drag. -->
+                            <Border x:Name="LogicalOverlay" IsVisible="False" IsHitTestVisible="False"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Background="#14808080" CornerRadius="10" Padding="22,18">
+                                <StackPanel x:Name="LogicalOverlayBody" Spacing="10" />
+                            </Border>
+                        </Panel>
                     </Border>
-                </Grid>
+                </DockPanel>
             </TabItem>
 
-            <!-- Topologie (logisch) -->
-            <TabItem Header="Karte (logisch)">
-                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                    <Canvas x:Name="LogicalCanvas" Background="Transparent" />
-                </ScrollViewer>
+            <!-- Topology (physical) -->
+            <TabItem Header="{loc:Loc Av_TabMapPhysical}" Tag="physical">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                        <Button Content="{loc:Loc Av_Fit}" Click="OnTopoFit" Tag="physical" Classes="action" />
+                        <Button Content="{loc:Loc Av_Relayout}" Click="OnTopoRelayout" Tag="physical" ToolTip.Tip="{loc:Loc Av_RelayoutTip}" Classes="action" />
+                        <Button Content="{loc:Loc Av_Export}" Click="OnTopoExport" Tag="physical" Classes="action" />
+                        <TextBlock Text="{loc:Loc Av_PanZoomHint}" Opacity="0.6" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <Border x:Name="PhysicalViewport" ClipToBounds="True" Background="Transparent" Tag="physical"
+                            PointerWheelChanged="OnTopoWheel" PointerPressed="OnTopoPressed"
+                            PointerMoved="OnTopoMoved" PointerReleased="OnTopoReleased">
+                        <Panel>
+                            <!-- Left/Top for the same reason as the logical canvas – see the note there. -->
+                            <Canvas x:Name="PhysicalCanvas" Background="Transparent" Tag="physical"
+                                    HorizontalAlignment="Left" VerticalAlignment="Top">
+                                <Canvas.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="{loc:Loc Av_TopoAddNode}" Click="OnTopoAddNode" Tag="physical" />
+                                        <MenuItem Header="{loc:Loc Av_TopoClearManual}" Click="OnTopoClearManual" Tag="physical" />
+                                    </ContextMenu>
+                                </Canvas.ContextMenu>
+                            </Canvas>
+                            <!-- Same overlay as the logical tab – see the comment there. This is the one it
+                                 was written for: the physical build reads every bridge and takes seconds. -->
+                            <Border x:Name="PhysicalOverlay" IsVisible="False" IsHitTestVisible="False"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Background="#14808080" CornerRadius="10" Padding="22,18">
+                                <StackPanel x:Name="PhysicalOverlayBody" Spacing="10" />
+                            </Border>
+                        </Panel>
+                    </Border>
+                </DockPanel>
             </TabItem>
 
-            <!-- Topologie (physisch) -->
-            <TabItem Header="Karte (physisch)">
-                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                    <Canvas x:Name="PhysicalCanvas" Background="Transparent" />
-                </ScrollViewer>
+            <!-- Assistants as tabs, like the WPF client -->
+            <TabItem Header="{loc:Loc Av_BackupTitle}" Tag="backups">
+                <loc:BackupAllView x:Name="BackupView" />
+            </TabItem>
+            <TabItem Header="{loc:Loc Av_UpdatesTitle}" Tag="updates">
+                <loc:UpdateAllView x:Name="UpdateView" />
             </TabItem>
         </TabControl>
     </DockPanel>
+
+    <!-- Copy confirmation. Floats above everything, bottom-centre, and never takes part in the layout –
+         a message that pushed the list around would be worse than no message. IsHitTestVisible=False so
+         it can never swallow a click aimed at the row underneath it. -->
+    <Border x:Name="Toast" IsVisible="False" IsHitTestVisible="False"
+            HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,54"
+            Background="#E6202020" CornerRadius="6" Padding="14,8" BoxShadow="0 2 10 0 #40000000">
+        <TextBlock x:Name="ToastText" Foreground="White" FontSize="13" />
+    </Border>
+    </Panel>
 </Window>

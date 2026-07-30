@@ -3,33 +3,79 @@ using TikMan.Core.Discovery;
 using TikMan.Core.Fleet;
 using TikMan.Core.Models;
 using TikMan.Core.Storage;
-using TikMan.Web;
 
-namespace TikMan.Host;
+namespace TikMan.Web;
 
-/// <summary>The headless <see cref="IWebBackend"/>: a thin adapter over the shared <see cref="FleetService"/>
+/// <summary>The UI-free <see cref="IWebBackend"/>: a thin adapter over the shared <see cref="FleetService"/>
 /// (device list, scan, enrich, classify, reachability – all UI-free in Core) plus the web-specific pieces
 /// the dashboard needs (backup streaming, SSH/VNC endpoints, the topology graph). Passwords are used only
-/// at send time and stored solely via <see cref="CredentialProtector"/> – never logged.</summary>
+/// at send time and stored solely via <see cref="CredentialProtector"/> – never logged.
+/// <para>Lives here (not in TikMan.Host) so the headless host <b>and</b> the Avalonia GUI can both serve the
+/// dashboard. The GUI passes its own live fleet, so the web view mirrors what is on screen instead of
+/// scanning a second time – the same "one shared inventory" the WPF client has.</para></summary>
 public sealed class HostBackend : IWebBackend
 {
     private readonly FleetService _fleet;
     private readonly AppData _appData;
 
-    public HostBackend()
+    /// <summary>Headless use: loads the settings and owns its own fleet.</summary>
+    public HostBackend() : this(null, null) { }
+
+    /// <summary>Shares an existing fleet/settings (the GUI case); null falls back to loading its own.</summary>
+    public HostBackend(FleetService? fleet, AppData? appData)
     {
-        _appData = DeviceStore.Load();
-        _fleet = new FleetService(_appData);
+        _appData = appData ?? DeviceStore.Load();
+        _fleet = fleet ?? new FleetService(_appData);
     }
 
     public string AppTitle => "TikMan";
-    public string AppVersion => typeof(HostBackend).Assembly.GetName().Version?.ToString() ?? "0.0";
+    // Three components, matching the WPF title and the release tags – not Version.ToString()'s "2.2.2.0".
+    // ⚠️ The ENTRY assembly (the running client), not this one. TikMan.Web is a library with no <Version>,
+    // so asking it returned .NET's default 1.0.0 – which is what the dashboard proudly displayed while the
+    // app was on 2.2.2. Passing no assembly makes AppVersion.Current use the entry assembly.
+    public string AppVersion => TikMan.Core.AppVersion.Text();
 
     // ---- device list (delegated to the fleet) ---------------------------------------------------
 
     public IReadOnlyList<DeviceDto> GetDevices() =>
-        _fleet.Snapshot().Select(s => new DeviceDto(
-            s.Id, s.Name, s.Ip, s.Mac, s.Vendor, s.KindText, s.Model, s.Status, s.IsGateway, s.HasLogin)).ToList();
+        _fleet.Snapshot().Select(ToDto).ToList();
+
+    private static DeviceDto ToDto(DeviceSnapshot s) => new(
+        s.Id, s.Name, s.Ip, s.Mac, s.Vendor, s.KindText, s.Model, s.Status, s.IsGateway, s.HasLogin,
+        s.MacVendor, s.Ipv6Summary, s.Serial, s.Os, s.Firmware,
+        s.Cpu, s.Memory, s.Uptime, s.LatestVersion, s.UpdateAvailable,
+        s.Badges.Select(b => new BadgeDto(b.Name, b.Url, b.Colour, b.Tooltip)).ToList());
+
+    /// <summary>One row per IPv6 address, mirroring the app's IPv6 tab: the device facts are repeated on
+    /// every row on purpose, so each address can be read (and sorted) on its own.</summary>
+    public IReadOnlyList<Ipv6RowDto> GetIpv6Rows()
+    {
+        var rows = new List<Ipv6RowDto>();
+        var group = 0;
+        foreach (var s in _fleet.Snapshot().Where(d => d.HasIpv6))
+        {
+            group++;
+            foreach (var e in s.Ipv6Entries.OrderBy(e => e.Address, StringComparer.OrdinalIgnoreCase))
+                rows.Add(new Ipv6RowDto(
+                    s.Id, group, Prefer(e.Facts.Name, s.Name), s.KindText, s.Ip, e.Address, e.Tag.Text,
+                    s.Mac, s.MacVendor, Prefer(e.Facts.Vendor, s.Vendor), Prefer(e.Facts.Model, s.Model),
+                    s.Status,
+                    // ⚠️ The badges of THIS address, not the device's IPv4 ones: a service can be bound to
+                    // one address only, which is the whole reason the per-address view exists.
+                    e.Badges.Select(b => new BadgeDto(b.Name, b.Url, b.Colour, b.Tooltip)).ToList(),
+                    Prefer(e.Facts.Serial, s.Serial), Prefer(e.Facts.Os, s.Os),
+                    e.Facts.HasShares ? string.Join(" ", e.Facts.ShareNames)
+                        : e.Facts.SharesDenied ? "denied" : "",
+                    s.Firmware, s.LatestVersion, s.InstalledRelease, s.UpdateRelease,
+                    s.Cpu, s.Memory, s.Uptime));
+        }
+        return rows;
+    }
+
+    /// <summary>The per-address answer where there is one, the device fact otherwise – see
+    /// <see cref="Ipv6Facts"/>.</summary>
+    private static string Prefer(string perAddress, string device) =>
+        perAddress.Length > 0 ? perAddress : device;
 
     public DeviceDetail? GetDevice(string id)
     {
@@ -108,13 +154,22 @@ public sealed class HostBackend : IWebBackend
 
     // ---- SSH terminal / VNC ---------------------------------------------------------------------
 
-    public async Task<ITerminalSession?> OpenSshShellAsync(string id, uint cols, uint rows)
+    public async Task<ITerminalSession?> OpenSshShellAsync(string id, uint cols, uint rows,
+        string? user = null, string? password = null)
     {
         var d = _fleet.RawDevice(id);
-        if (d is null || d.EncryptedPassword.Length == 0) return null;
-        var password = CredentialProtector.Unprotect(d.EncryptedPassword);
-        if (password.Length == 0) return null;
-        return await SshTerminalSession.ConnectAsync(d.Host, d.SshPort, d.Username, password, cols, rows);
+        if (d is null) return null;
+
+        // Credentials typed into the terminal win; the stored login is the fallback. ⚠️ Neither is written
+        // anywhere here – the typed pair authenticates this session and is then gone, exactly like the
+        // password a normal SSH client prompts for.
+        var loginUser = user is { Length: > 0 } ? user : d.Username;
+        var loginPass = password is { Length: > 0 }
+            ? password
+            : (d.EncryptedPassword.Length > 0 ? CredentialProtector.Unprotect(d.EncryptedPassword) : "");
+        if (loginPass.Length == 0) return null;
+
+        return await SshTerminalSession.ConnectAsync(d.Host, d.SshPort, loginUser, loginPass, cols, rows);
     }
 
     public NetEndpoint? GetVncTarget(string id)
@@ -132,7 +187,7 @@ public sealed class HostBackend : IWebBackend
                               : _fleet.BuildLogicalTopology();
         return new TopoGraph(
             layout.Nodes.Select(n => new TopoNodeDto(n.Key, n.DeviceId, n.Title, n.Detail, n.Mac,
-                n.X, n.Y, n.W, n.H, n.Fill, n.Line, n.Text)).ToList(),
+                n.X, n.Y, n.W, n.H, n.Fill, n.Line, n.Text, n.Vendor, n.Model, n.Kind)).ToList(),
             layout.Edges.Select(e => new TopoEdgeDto(e.From, e.To)).ToList());
     }
 }

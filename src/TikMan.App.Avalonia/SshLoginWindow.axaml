@@ -1,0 +1,33 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="using:TikMan.App.Avalonia"
+        x:Class="TikMan.App.Avalonia.SshLoginWindow"
+        x:CompileBindings="False"
+        Width="380" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/tikman.png"
+        Title="{loc:Loc Av_SshLoginTitle}">
+    <StackPanel Margin="20" Spacing="12">
+        <TextBlock x:Name="PromptText" TextWrapping="Wrap" />
+
+        <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Loc Av_User}" VerticalAlignment="Center" />
+            <TextBox   Grid.Row="0" Grid.Column="1" x:Name="UserBox" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Loc Av_Password}" VerticalAlignment="Center" Margin="0,8,0,0" />
+            <TextBox   Grid.Row="1" Grid.Column="1" x:Name="PassBox" Margin="0,8,0,0"
+                       PasswordChar="●" RevealPassword="{Binding #RevealBox.IsChecked}"
+                       KeyDown="OnKey" />
+        </Grid>
+
+        <CheckBox x:Name="RevealBox" Content="{loc:Loc Av_ShowPassword}" />
+
+        <!-- Says plainly that this is a one-off. The device store is untouched, so nobody has to wonder
+             afterwards whether a password they typed here is now saved somewhere. -->
+        <TextBlock Text="{loc:Loc Av_SshLoginHint}" Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+            <Button Content="{loc:Loc Av_Cancel}" Click="OnCancel" Classes="action" />
+            <Button Content="{loc:Loc Av_SshConnect}" Click="OnOk" Classes="action" />
+        </StackPanel>
+    </StackPanel>
+</Window>

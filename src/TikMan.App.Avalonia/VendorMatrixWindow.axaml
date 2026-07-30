@@ -1,0 +1,279 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="using:TikMan.App.Avalonia"
+        x:Class="TikMan.App.Avalonia.VendorMatrixWindow"
+        x:CompileBindings="False"
+        Width="1180" Height="595"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/tikman.png"
+        Title="{loc:Loc Av_MatrixTitle}">
+    <DockPanel Margin="20">
+        <TextBlock DockPanel.Dock="Top" Text="{loc:Loc Av_MatrixIntro}" TextWrapping="Wrap"
+                   Opacity="0.75" Margin="0,0,0,14" />
+
+        <!-- Legend first, the close button on its own row below it and centred – as the window's single
+             action it reads as "done with this dialog", not as part of the legend. -->
+        <StackPanel DockPanel.Dock="Bottom" Spacing="14" Margin="0,14,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="16">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Ellipse Width="10" Height="10" Fill="#4CAF50" VerticalAlignment="Center" />
+                    <TextBlock Text="{loc:Loc Av_MatrixYes}" Opacity="0.75" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Ellipse Width="10" Height="10" Fill="#E0A33E" VerticalAlignment="Center" />
+                    <TextBlock Text="{loc:Loc Av_MatrixPartial}" Opacity="0.75" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Ellipse Width="10" Height="10" Fill="#B0B0B0" VerticalAlignment="Center" />
+                    <TextBlock Text="{loc:Loc Av_MatrixNo}" Opacity="0.75" />
+                </StackPanel>
+                <!-- Hollow: on the list, not built. An outline reads as an unfilled promise, which is
+                     exactly the difference from the settled grey "no" beside it. -->
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Ellipse Width="10" Height="10" Fill="Transparent" Stroke="#7E9BB5" StrokeThickness="1.6"
+                             VerticalAlignment="Center" />
+                    <TextBlock Text="{loc:Loc Av_MatrixPlanned}" Opacity="0.75" />
+                </StackPanel>
+                <!-- The fourth state is about the HARDWARE, not about TikMan – hence a dash rather than a
+                     fourth dot: it is a different kind of answer, not a fourth degree of the same one. -->
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="&#x2013;" Opacity="0.45" FontSize="13" VerticalAlignment="Center"
+                               Width="10" TextAlignment="Center" />
+                    <TextBlock Text="{loc:Loc Av_MatrixNotAvailable}" Opacity="0.75" />
+                </StackPanel>
+            </StackPanel>
+            <Button Content="{loc:Loc Av_Close}" Click="OnClose" HorizontalAlignment="Center" MinWidth="120"
+                    Classes="action" />
+        </StackPanel>
+
+        <!-- ⚠️ RowDetails is Collapsed, not just empty: with Visible the grid reserves the details strip on
+             EVERY row, leaving a band that belongs to the row but to no cell. -->
+        <!-- CanUserResizeColumns off: the custom header template drops the resize grips, and a fixed-width
+             reference table has no need for them anyway. -->
+        <DataGrid x:Name="Grid" IsReadOnly="True" CanUserResizeColumns="False"
+                  GridLinesVisibility="All" RowDetailsVisibilityMode="Collapsed">
+            <DataGrid.Styles>
+                <!-- Every cell centres its content vertically – the vendor name used to sit at the top of
+                     its row while the dots floated in the middle, which looked misaligned. -->
+                <Style Selector="DataGridCell">
+                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                </Style>
+                <Style Selector="DataGridCell TextBlock">
+                    <Setter Property="VerticalAlignment" Value="Center" />
+                </Style>
+                <!-- ⚠️ No cell focus box here: this table is a reference to read, not a list to pick from,
+                     so a framed cell suggests a selection that means nothing. Both theme parts are hidden –
+                     the Semi cell template carries a FocusVisual and a CurrencyVisual, and hiding only one
+                     leaves the other drawing the box. -->
+                <Style Selector="DataGridCell /template/ #FocusVisual" x:SetterTargetType="Control">
+                    <Setter Property="IsVisible" Value="False" />
+                    <Setter Property="Opacity" Value="0" />
+                </Style>
+                <Style Selector="DataGridCell /template/ #CurrencyVisual" x:SetterTargetType="Control">
+                    <Setter Property="IsVisible" Value="False" />
+                    <Setter Property="Opacity" Value="0" />
+                </Style>
+                <!-- ⚠️ The header caption is centred by REPLACING the header template, not by tweaking it.
+                     Every property-level attempt failed the same way: the Semi/Avalonia header template puts
+                     the caption in a Grid cell beside a sort-indicator column, so "centre the content" centres
+                     it over (column − sort-icon), a few pixels left of the true column centre the dots below
+                     use – which is the persistent "slightly left" the captions showed. This template is just
+                     a full-width ContentPresenter in a Border: nothing sits beside the caption, so a
+                     stretched TextBlock fills the whole column and its TextAlignment (Center for the marks,
+                     Left for Vendor) lands exactly over the cell content. The table is a fixed-width
+                     reference, so the dropped sort indicator and resize grips are no loss. -->
+                <Style Selector="DataGridColumnHeader">
+                    <Setter Property="Template">
+                        <ControlTemplate>
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    Padding="4,6">
+                                <ContentPresenter Content="{TemplateBinding Content}"
+                                                  ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                  HorizontalContentAlignment="Stretch"
+                                                  VerticalContentAlignment="Center" />
+                            </Border>
+                        </ControlTemplate>
+                    </Setter>
+                </Style>
+                <!-- Protocol captions are marked out from the feature ones: they answer a different
+                     question – "where can the data come from" rather than "what can TikMan do". -->
+                <Style Selector="TextBlock.proto">
+                    <Setter Property="Foreground" Value="{DynamicResource HintInkBrush}" />
+                </Style>
+            </DataGrid.Styles>
+            <DataGrid.Columns>
+                <!-- Manufacturer on the first line, the models it covers quietly underneath – the row is
+                     about the vendor, and the model list is the qualifier, not a second heading. -->
+                <DataGridTemplateColumn Width="2.6*">
+                    <!-- Explicitly left, while every other caption is centred: this column holds text, the
+                         others hold a single mark in the middle of the cell. A centred caption over a
+                         left-aligned list of names does not line up with anything. -->
+                    <DataGridTemplateColumn.Header>
+                        <!-- Stretch to fill the header (so it can't be re-centred by the presenter), and let
+                             TextAlignment do the aligning: Left here, Center on every other column. -->
+                        <TextBlock Text="{loc:Loc Col_Vendor}" HorizontalAlignment="Stretch" TextAlignment="Left" />
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <StackPanel VerticalAlignment="Center" Margin="0,4">
+                                <TextBlock Text="{Binding Vendor}" />
+                                <TextBlock Text="{Binding Models}" Opacity="0.6" FontSize="11"
+                                           TextWrapping="Wrap" />
+                                <!-- Says the row is still being built, so a thin line of dots is not
+                                     mistaken for a finished set of decisions.
+                                     ⚠️ Its own line, and HorizontalAlignment=Left so it stays badge-sized.
+                                     Beside the vendor name it forced the column to be as wide as the
+                                     longest name PLUS the badge, on every row - including the rows that
+                                     have no badge at all. Stacked, the column only has to fit the text. -->
+                                <Border IsVisible="{Binding WorkInProgress}" CornerRadius="3"
+                                        Padding="5,1" Margin="0,3,0,0" HorizontalAlignment="Left"
+                                        Background="{DynamicResource HintBrush}"
+                                        BorderBrush="{DynamicResource HintBorderBrush}" BorderThickness="1"
+                                        ToolTip.Tip="{loc:Loc Av_MatrixWipTip}">
+                                    <TextBlock Text="{Binding WorkInProgressText}" FontSize="10"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource HintInkBrush}" />
+                                </Border>
+                            </StackPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <!-- Protocols: where this vendor's data can come from. -->
+                <DataGridTemplateColumn Width="100">
+                    <DataGridTemplateColumn.Header>
+                        <TextBlock Text="REST" HorizontalAlignment="Stretch" TextAlignment="Center" TextWrapping="Wrap" FontSize="12" FontWeight="SemiBold" Classes="proto" />
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Panel HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="{Binding Rest.Tip}">
+                                <Ellipse Width="11" Height="11" Fill="{Binding Rest.Colour}" IsVisible="{Binding Rest.IsDot}" />
+                                <Ellipse Width="11" Height="11" Fill="Transparent" Stroke="{Binding Rest.Colour}" StrokeThickness="1.6" IsVisible="{Binding Rest.IsPlanned}" />
+                                <TextBlock Text="&#x2013;" Opacity="0.45" FontSize="13" IsVisible="{Binding Rest.IsNotAvailable}" />
+                            </Panel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Width="100">
+                    <DataGridTemplateColumn.Header>
+                        <TextBlock Text="SSH" HorizontalAlignment="Stretch" TextAlignment="Center" TextWrapping="Wrap" FontSize="12" FontWeight="SemiBold" Classes="proto" />
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Panel HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="{Binding Ssh.Tip}">
+                                <Ellipse Width="11" Height="11" Fill="{Binding Ssh.Colour}" IsVisible="{Binding Ssh.IsDot}" />
+                                <Ellipse Width="11" Height="11" Fill="Transparent" Stroke="{Binding Ssh.Colour}" StrokeThickness="1.6" IsVisible="{Binding Ssh.IsPlanned}" />
+                                <TextBlock Text="&#x2013;" Opacity="0.45" FontSize="13" IsVisible="{Binding Ssh.IsNotAvailable}" />
+                            </Panel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Width="100">
+                    <DataGridTemplateColumn.Header>
+                        <TextBlock Text="SNMP" HorizontalAlignment="Stretch" TextAlignment="Center" TextWrapping="Wrap" FontSize="12" FontWeight="SemiBold" Classes="proto" />
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Panel HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="{Binding Snmp.Tip}">
+                                <Ellipse Width="11" Height="11" Fill="{Binding Snmp.Colour}" IsVisible="{Binding Snmp.IsDot}" />
+                                <Ellipse Width="11" Height="11" Fill="Transparent" Stroke="{Binding Snmp.Colour}" StrokeThickness="1.6" IsVisible="{Binding Snmp.IsPlanned}" />
+                                <TextBlock Text="&#x2013;" Opacity="0.45" FontSize="13" IsVisible="{Binding Snmp.IsNotAvailable}" />
+                            </Panel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <!-- Features: what TikMan can then do with it. -->
+                <DataGridTemplateColumn Width="100">
+                    <DataGridTemplateColumn.Header>
+                        <TextBlock Text="{loc:Loc Av_MatrixMonitoring}" HorizontalAlignment="Stretch" TextAlignment="Center" TextWrapping="Wrap" FontSize="12" />
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Panel HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="{Binding Monitoring.Tip}">
+                                <Ellipse Width="11" Height="11" Fill="{Binding Monitoring.Colour}" IsVisible="{Binding Monitoring.IsDot}" />
+                                <Ellipse Width="11" Height="11" Fill="Transparent" Stroke="{Binding Monitoring.Colour}" StrokeThickness="1.6" IsVisible="{Binding Monitoring.IsPlanned}" />
+                                <TextBlock Text="&#x2013;" Opacity="0.45" FontSize="13" IsVisible="{Binding Monitoring.IsNotAvailable}" />
+                            </Panel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Width="100">
+                    <DataGridTemplateColumn.Header>
+                        <TextBlock Text="{loc:Loc Av_MatrixConfig}" HorizontalAlignment="Stretch" TextAlignment="Center" TextWrapping="Wrap" FontSize="12" />
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Panel HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="{Binding ConfigBackup.Tip}">
+                                <Ellipse Width="11" Height="11" Fill="{Binding ConfigBackup.Colour}" IsVisible="{Binding ConfigBackup.IsDot}" />
+                                <Ellipse Width="11" Height="11" Fill="Transparent" Stroke="{Binding ConfigBackup.Colour}" StrokeThickness="1.6" IsVisible="{Binding ConfigBackup.IsPlanned}" />
+                                <TextBlock Text="&#x2013;" Opacity="0.45" FontSize="13" IsVisible="{Binding ConfigBackup.IsNotAvailable}" />
+                            </Panel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Width="100">
+                    <DataGridTemplateColumn.Header>
+                        <TextBlock Text="{loc:Loc Av_MatrixFull}" HorizontalAlignment="Stretch" TextAlignment="Center" TextWrapping="Wrap" FontSize="12" />
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Panel HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="{Binding FullBackup.Tip}">
+                                <Ellipse Width="11" Height="11" Fill="{Binding FullBackup.Colour}" IsVisible="{Binding FullBackup.IsDot}" />
+                                <Ellipse Width="11" Height="11" Fill="Transparent" Stroke="{Binding FullBackup.Colour}" StrokeThickness="1.6" IsVisible="{Binding FullBackup.IsPlanned}" />
+                                <TextBlock Text="&#x2013;" Opacity="0.45" FontSize="13" IsVisible="{Binding FullBackup.IsNotAvailable}" />
+                            </Panel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Width="100">
+                    <DataGridTemplateColumn.Header>
+                        <TextBlock Text="{loc:Loc Av_MatrixUpdates}" HorizontalAlignment="Stretch" TextAlignment="Center" TextWrapping="Wrap" FontSize="12" />
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Panel HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="{Binding Updates.Tip}">
+                                <Ellipse Width="11" Height="11" Fill="{Binding Updates.Colour}" IsVisible="{Binding Updates.IsDot}" />
+                                <Ellipse Width="11" Height="11" Fill="Transparent" Stroke="{Binding Updates.Colour}" StrokeThickness="1.6" IsVisible="{Binding Updates.IsPlanned}" />
+                                <TextBlock Text="&#x2013;" Opacity="0.45" FontSize="13" IsVisible="{Binding Updates.IsNotAvailable}" />
+                            </Panel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Width="100">
+                    <DataGridTemplateColumn.Header>
+                        <TextBlock Text="{loc:Loc Av_MatrixTopology}" HorizontalAlignment="Stretch" TextAlignment="Center" TextWrapping="Wrap" FontSize="12" />
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Panel HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="{Binding Topology.Tip}">
+                                <Ellipse Width="11" Height="11" Fill="{Binding Topology.Colour}" IsVisible="{Binding Topology.IsDot}" />
+                                <Ellipse Width="11" Height="11" Fill="Transparent" Stroke="{Binding Topology.Colour}" StrokeThickness="1.6" IsVisible="{Binding Topology.IsPlanned}" />
+                                <TextBlock Text="&#x2013;" Opacity="0.45" FontSize="13" IsVisible="{Binding Topology.IsNotAvailable}" />
+                            </Panel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Width="100">
+                    <DataGridTemplateColumn.Header>
+                        <TextBlock Text="{loc:Loc Av_MatrixLogs}" HorizontalAlignment="Stretch" TextAlignment="Center" TextWrapping="Wrap" FontSize="12" />
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Panel HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="{Binding Logs.Tip}">
+                                <Ellipse Width="11" Height="11" Fill="{Binding Logs.Colour}" IsVisible="{Binding Logs.IsDot}" />
+                                <Ellipse Width="11" Height="11" Fill="Transparent" Stroke="{Binding Logs.Colour}" StrokeThickness="1.6" IsVisible="{Binding Logs.IsPlanned}" />
+                                <TextBlock Text="&#x2013;" Opacity="0.45" FontSize="13" IsVisible="{Binding Logs.IsNotAvailable}" />
+                            </Panel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <!-- The old "Terminal" column is gone: it asked whether a shell can be opened, which the
+                     SSH protocol column above now answers – and answers better, because it covers every
+                     read that comes over SSH rather than just the terminal. -->
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</Window>

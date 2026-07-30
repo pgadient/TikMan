@@ -1,0 +1,101 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:TikMan.App.Avalonia"
+             x:Class="TikMan.App.Avalonia.UpdateAllView"
+             x:CompileBindings="False">
+    <UserControl.Styles>
+        <!-- Button.action lives in App.axaml – one definition for every view. -->
+        <!-- Selection is a row concept here too – the cell focus box framed whichever cell was clicked and
+             read as "this value is selected". Both theme parts are hidden; a selector that matches nothing
+             is harmless, a missing one leaves the box drawn. -->
+        <Style Selector="DataGridCell /template/ #FocusVisual" x:SetterTargetType="Control">
+            <Setter Property="IsVisible" Value="False" />
+            <Setter Property="Opacity" Value="0" />
+        </Style>
+        <Style Selector="DataGridCell /template/ #CurrencyVisual" x:SetterTargetType="Control">
+            <Setter Property="IsVisible" Value="False" />
+            <Setter Property="Opacity" Value="0" />
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel Margin="0,8,0,0">
+        <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Opacity="0.7" Margin="0,0,0,10"
+                   Text="{loc:Loc Av_UpdateIntro}" />
+
+        <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0" Spacing="8">
+            <ProgressBar x:Name="Progress" Minimum="0" Maximum="1" Height="6" IsVisible="False" />
+            <TextBox x:Name="Log" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                     FontFamily="Consolas, Menlo, monospace" FontSize="12" Height="110"
+                     VerticalContentAlignment="Top"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <Button x:Name="CheckButton" Content="{loc:Loc Av_CheckUpdates}" Click="OnCheck" Classes="action" />
+                <Button x:Name="InstallButton" Content="{loc:Loc Av_InstallSelected}" Click="OnInstall" IsEnabled="False" Classes="action" />
+                <!-- Visible only while a run is going: an update chain can take many minutes and the user
+                     must be able to stop after the current device instead of killing the app. -->
+                <Button x:Name="StopButton" Content="{loc:Loc Av_Stop}" Click="OnStop" IsVisible="False" Classes="action" />
+            </StackPanel>
+        </StackPanel>
+
+        <!-- List actions beside the list they act on, stacked – the same shape as the backup assistant. -->
+        <StackPanel DockPanel.Dock="Right" Margin="10,0,0,0" Spacing="6" VerticalAlignment="Top" MinWidth="120">
+            <Button Content="{loc:Loc Av_SelectAll}" Click="OnSelectAll" Classes="action" HorizontalAlignment="Stretch" />
+            <Button Content="{loc:Loc Av_SelectNone}" Click="OnSelectNone" Classes="action" HorizontalAlignment="Stretch" />
+            <Button Content="{loc:Loc Av_Refresh}" Click="OnRefresh" Classes="action" HorizontalAlignment="Stretch" />
+            <!-- ⚠️ Arrows, not ▲/▼: those render as hollow triangles in the Windows UI font. -->
+            <Button Content="↑" Click="OnMoveUp" ToolTip.Tip="{loc:Loc Av_MoveUpTip}" Classes="action"
+                    HorizontalAlignment="Stretch" FontSize="15" />
+            <Button Content="↓" Click="OnMoveDown" ToolTip.Tip="{loc:Loc Av_MoveDownTip}" Classes="action"
+                    HorizontalAlignment="Stretch" FontSize="15" />
+        </StackPanel>
+
+        <!-- Run options + the channel default, above the grid so they read as settings for the whole run. -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="14" Margin="0,0,0,8">
+            <CheckBox x:Name="ContinueOnError" Content="{loc:Loc Av_ContinueOnError}" IsChecked="True"
+                      VerticalAlignment="Center" />
+            <CheckBox x:Name="WaitForDevice" Content="{loc:Loc Av_WaitForDevice}" IsChecked="True"
+                      ToolTip.Tip="{loc:Loc Av_WaitForDeviceTip}" VerticalAlignment="Center" />
+            <!-- One channel for the whole fleet, or each device its own. Off by default: switching every
+                 device's release channel at once is a real change and has to be asked for. While it is on,
+                 the per-row picker is disabled – two places setting the same thing is how a device ends up
+                 on a channel nobody chose. -->
+            <CheckBox x:Name="OneChannelForAll" Content="{loc:Loc Av_OneChannelForAll}"
+                      ToolTip.Tip="{loc:Loc Av_OneChannelForAllTip}" VerticalAlignment="Center"
+                      IsCheckedChanged="OnOneChannelToggled" />
+            <ComboBox x:Name="ChannelForAll" SelectionChanged="OnChannelForAll" MinWidth="150"
+                      IsEnabled="{Binding #OneChannelForAll.IsChecked}" />
+        </StackPanel>
+
+        <!-- ⚠️ "Nothing here" is a STATE drawn over the empty grid, not a log line. As an Append it was
+             written the first time the list was empty – before the first scan – and then stayed in the log
+             for the rest of the session, so the tab could show a full list above the sentence "no devices".
+             (Same fix as BackupAllView.) -->
+        <Panel>
+        <DataGrid x:Name="Grid" IsReadOnly="False" CanUserResizeColumns="True" GridLinesVisibility="Horizontal">
+            <DataGrid.Columns>
+                <DataGridCheckBoxColumn Header="" Binding="{Binding Selected, Mode=TwoWay}" Width="Auto" />
+                <DataGridTextColumn Header="{loc:Loc Av_ColName}" Binding="{Binding Name}" Width="2*" IsReadOnly="True" />
+                <DataGridTextColumn Header="{loc:Loc Av_ColIp}" Binding="{Binding Ip}" Width="Auto" IsReadOnly="True" />
+                <DataGridTextColumn Header="{loc:Loc Av_ColType}" Binding="{Binding KindText}" Width="Auto" IsReadOnly="True" />
+                <!-- Per-device channel: a lab box can sit on testing while the rest stays on stable.
+                     Disabled while "one channel for all" is on – that switch owns the value then. -->
+                <DataGridTemplateColumn Header="{loc:Loc Av_ColChannel}" Width="Auto">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <ComboBox ItemsSource="{Binding ChannelChoices}" SelectedItem="{Binding Channel, Mode=TwoWay}"
+                                      IsEnabled="{Binding ChannelEditable}"
+                                      MinWidth="130" Margin="2" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="{loc:Loc Av_ColInstalled}" Binding="{Binding Installed}" Width="Auto" IsReadOnly="True" />
+                <DataGridTextColumn Header="{loc:Loc Av_ColAvailable}" Binding="{Binding Latest}" Width="Auto" IsReadOnly="True" />
+                <DataGridTextColumn Header="{loc:Loc Av_ColStatus}" Binding="{Binding Status}" Width="2*" IsReadOnly="True" />
+            </DataGrid.Columns>
+        </DataGrid>
+            <TextBlock x:Name="EmptyNotice" Text="{loc:Loc Av_UpdateNoDevices}" IsVisible="False"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20,40,20,0"
+                       TextWrapping="Wrap" MaxWidth="440" TextAlignment="Center" Opacity="0.7" />
+        </Panel>
+    </DockPanel>
+</UserControl>

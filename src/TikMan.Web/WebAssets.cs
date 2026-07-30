@@ -11,7 +11,7 @@ internal static class WebAssets
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TikMan</title>
+<title>TikMan Web</title>
 <style>
   :root { color-scheme: light dark; --bg:#f6f7f9; --fg:#1b1d21; --muted:#767b85; --card:#ffffff;
           --line:#e4e6ea; --accent:#2266cc; --gw:#f68500; }
@@ -80,9 +80,17 @@ internal static class WebAssets
          background:color-mix(in srgb, var(--accent) 16%, transparent); color:var(--accent); }
   .gw { background:color-mix(in srgb, var(--gw) 20%, transparent); color:var(--gw); }
   .lock { color:var(--muted); font-size:12px; }
+  /* Service chips, same idea as the app's row badges. Clickable ones keep the link colour. */
+  .badge { display:inline-block; padding:1px 6px; border-radius:4px; font-size:11px; font-weight:600;
+           background:color-mix(in srgb, var(--fg) 12%, transparent); color:var(--fg);
+           text-decoration:none; white-space:nowrap; }
+  /* ⚠️ Hover must not repaint a coloured chip: the colour IS the service, and swapping it on hover made a
+     clickable https badge look like a different protocol under the cursor. Only brightness changes. */
+  a.badge:hover, .badge.act:hover { filter:brightness(1.15); }
+  .badge.act { cursor:pointer; }
+  a.badge:not([style]):hover { background:color-mix(in srgb, var(--accent) 26%, transparent); color:var(--accent); }
   .muted { color:var(--muted); }
   .empty { padding:40px; text-align:center; color:var(--muted); }
-  footer { padding:14px 18px; color:var(--muted); font-size:12px; }
   .tabs { display:flex; gap:4px; padding:8px 18px 0; }
   .tab { background:transparent; color:var(--muted); border:none; border-bottom:2px solid transparent;
          border-radius:0; padding:7px 12px; font-weight:600; cursor:pointer; }
@@ -105,21 +113,38 @@ internal static class WebAssets
   #vnc { position:fixed; inset:0; z-index:20; background:#000; flex-direction:column; }
   #vnc:not([hidden]) { display:flex; }
   #vncbox { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }
+  /* Connection-lost bar: sticky at the very top, unmissable red, above the VNC/terminal overlays too. */
+  #lostbar { position:sticky; top:0; z-index:40; background:#c62828; color:#fff; font-weight:600;
+             text-align:center; padding:9px 14px; box-shadow:0 2px 6px rgba(0,0,0,.35); }
+  #lostbar[hidden] { display:none; }
 </style>
 </head>
 <body>
+<!-- Full-width red bar shown when the browser can no longer reach TikMan (the app was closed, the machine
+     slept, the network dropped). It sits above everything and is sticky, so a lost connection is impossible
+     to miss – the polled data would otherwise just quietly freeze at its last values. -->
+<div id="lostbar" hidden>Connection to TikMan lost — trying to reconnect…</div>
 <header>
-  <h1 id="title">TikMan</h1><span class="ver" id="ver"></span>
+  <!-- "Web" is part of the product name here, not a separate line: this IS TikMan, served over HTTP.
+       "(live)" rides at the version's size so the title stays the title. The "tap a row for details" hint
+       is gone: the rows are obviously clickable once you try one, and it was on screen permanently for a
+       thing you learn once. -->
+  <h1 id="title">TikMan Web</h1><span class="ver" id="ver"></span>
+  <span class="ver">(live)</span>
   <span class="count" id="count"></span>
 </header>
 <div class="tabs">
-  <button id="tabDevices" class="tab on">Devices</button>
-  <button id="tabMap" class="tab">Map</button>
+  <!-- Same four views as the desktop app, and named the same – "Devices"/"Map" made the browser look
+       like a different product with a different feature set. -->
+  <button id="tabIpv4" class="tab on">IPv4</button>
+  <button id="tabIpv6" class="tab">IPv6</button>
+  <button id="tabDist" class="tab">IP distribution</button>
+  <button id="tabTopo" class="tab">Topology</button>
 </div>
 <div id="devicesView">
 <div class="bar">
   <button id="scan">⟳ Scan</button>
-  <input type="search" id="filter" placeholder="Filter… (name, IP, MAC, vendor, type)" autocomplete="off">
+  <input type="search" id="filter" placeholder="Filter… (name, IP, MAC, vendor, type, protocols)" autocomplete="off">
   <span class="muted" id="status"></span>
 </div>
 <div class="prog" id="prog" hidden>
@@ -129,8 +154,12 @@ internal static class WebAssets
 <div class="wrap">
   <table>
     <thead><tr>
-      <th data-k="name">Name</th><th data-k="ip">IP</th><th data-k="type">Type</th>
-      <th data-k="vendor">Vendor</th><th data-k="model">Model</th><th data-k="mac">MAC</th>
+      <th data-k="type">Type</th><th data-k="name">Name</th><th data-k="ip">IPv4</th>
+      <th data-k="ipv6Summary">IPv6</th><th>Supported protocols</th>
+      <th data-k="mac">MAC</th><th data-k="vendor">Vendor</th><th data-k="macVendor">MAC vendor</th>
+      <th data-k="model">Model</th><th data-k="serial">Serial</th><th data-k="os">OS</th>
+      <th data-k="firmware">Firmware</th><th data-k="latestVersion">Latest</th>
+      <th data-k="cpu">CPU</th><th data-k="memory">RAM</th><th data-k="uptime">Uptime</th>
       <th data-k="status">Status</th>
     </tr></thead>
     <tbody id="rows"></tbody>
@@ -138,10 +167,28 @@ internal static class WebAssets
   <div class="empty" id="empty" hidden>No devices yet — start a scan in the desktop app.</div>
 </div>
 </div>
+<div id="ipv6View" hidden>
+<div class="wrap">
+  <table>
+    <thead><tr>
+      <th data-k="group">#</th><th data-k="type">Type</th><th data-k="name">Name</th>
+      <th data-k="address">IPv6</th><th data-k="scope">Scope</th>
+      <th>Supported protocols</th>
+      <th data-k="ip">IPv4</th><th data-k="mac">MAC</th>
+      <th data-k="macVendor">MAC vendor</th><th data-k="vendor">Vendor</th>
+      <th data-k="model">Model</th><th data-k="serial">Serial</th><th data-k="os">OS</th>
+      <th data-k="shares">Shares</th>
+      <th data-k="firmware">Firmware</th><th data-k="latestVersion">Latest</th>
+      <th data-k="cpu">CPU</th><th data-k="memory">RAM</th><th data-k="uptime">Uptime</th>
+      <th data-k="status">Status</th>
+    </tr></thead>
+    <tbody id="v6rows"></tbody>
+  </table>
+  <div class="empty" id="v6empty" hidden>No IPv6 addresses found yet.</div>
+</div>
+</div>
 <div id="mapView" hidden>
   <div class="mapbar">
-    <button id="mapLogical" class="seg on">Logical</button>
-    <button id="mapPhysical" class="seg">Physical</button>
     <button id="mapRefresh">⟳</button>
     <span class="muted" id="mapstatus"></span>
   </div>
@@ -167,12 +214,17 @@ internal static class WebAssets
         <button id="mbfull">Full (.backup)</button>
       </div>
     </div>
+    <!-- ⚠️ No Terminal / VNC buttons here. Those are reached by clicking the device's ssh / vnc chip in
+         the list – the same gesture as in the desktop client. Having them in the detail panel as well was
+         a second, differently-gated way to do one thing, and it did not match the app. -->
     <div class="mfoot">
-      <button id="mterm" hidden>⌨ Terminal</button>
-      <button id="mvnc" hidden>🖥 VNC</button>
       <button id="mwake" hidden>⏻ Wake</button>
       <span class="muted" id="mtoast"></span>
     </div>
+    <!-- Over plain HTTP the backup buttons are hidden (a config can hold secrets, so the server refuses it
+         without TLS). Without this line they would just be absent, which reads as "this build cannot do
+         backups" rather than "turn on HTTPS". -->
+    <div class="muted" id="msecurehint" hidden>🔒 Backup and setting a login need HTTPS — enable it in the desktop app's web-server settings.</div>
   </div>
 </div>
 <div id="term" hidden>
@@ -183,9 +235,10 @@ internal static class WebAssets
   <div class="termhead"><span id="vnctitle">VNC</span><button class="x" id="vncclose">✕</button></div>
   <div id="vncbox"></div>
 </div>
-<footer>TikMan web · live · tap a row for details</footer>
+<!-- No footer. It repeated the header word for word at the bottom of every page – the product name and
+     "live" are already up there, and a second copy is just a line that scrolls with the table. -->
 <script>
-let devices = [], sortKey = "ip", sortDir = 1;
+let devices = [], v6rows = [], sortKey = "ip", sortDir = 1;
 let mapPhysical = false, mapLoaded = false, vb = { x:0, y:0, w:100, h:100 };
 const secure = location.protocol === "https:";
 const $ = s => document.querySelector(s);
@@ -193,8 +246,52 @@ const $ = s => document.querySelector(s);
 async function j(url){ const r = await fetch(url,{cache:"no-store"}); if(!r.ok) throw new Error(r.status); return r.json(); }
 
 async function loadInfo(){
-  try { const i = await j("/api/info"); $("#title").textContent = i.title || "TikMan";
-        $("#ver").textContent = i.version ? "v"+i.version : ""; document.title = (i.title||"TikMan"); } catch{}
+  // The version comes from the running app (/api/info), never from a constant in this page – a hard-coded
+  // one silently claimed v1.0.0 long after the app had moved on.
+  try { const i = await j("/api/info");
+        $("#title").textContent = (i.title || "TikMan") + " Web";
+        $("#ver").textContent = i.version ? "v"+i.version : "";
+        document.title = (i.title||"TikMan") + " Web"; } catch{}
+}
+
+// A row's service badges, same idea as the app's coloured protocol chips.
+// Service chips in the SAME colours as the app: green = encrypted, orange = plain web, blue = shell,
+// red = cleartext login, teal = file sharing, and so on.
+// ⚠️ The colour comes from the payload (BadgeDto.Colour), never from a lookup table repeated here – the
+// meaning is carried by the colour, so the browser and the app disagreeing about it is worse than no
+// colour at all. A badge without one falls back to the neutral chip.
+function badges(list, id){
+  if(!list || !list.length) return '<span class="muted">no answer</span>';
+  return list.map(b => {
+    // White text on the saturated fills, which is what the app uses and what these hues are picked for.
+    const style = b.colour ? ` style="background:${esc(b.colour)};color:#fff"` : "";
+    const tip = b.tooltip || b.url || b.name;
+    const scheme = (b.url||"").split(":")[0].toLowerCase();
+    // ⚠️ ssh:// and vnc:// are NOT rendered as links. Followed as an href the browser hands them to a
+    // client on the machine running the browser – never what you want from a remote dashboard.
+    // Clicking one opens the in-browser terminal / VNC instead, which is the same gesture as in the
+    // desktop client (there the ssh badge opens the terminal too). No stored login is needed: the
+    // terminal asks for the credentials itself, the way any SSH client does.
+    if(scheme==="ssh" || scheme==="vnc"){
+      if(!secure)   // the relay is a wss socket; the server refuses it over plain HTTP
+        return `<span class="badge" title="${esc(tip)} — needs HTTPS"${style}>${esc(b.name)}</span>`;
+      const act = scheme==="ssh" ? "term" : "vnc";
+      return `<span class="badge act" data-act="${act}" data-id="${esc(id)}" title="${esc(tip)}"${style}>${esc(b.name)}</span>`;
+    }
+    return b.url
+      ? `<a class="badge" href="${esc(b.url)}" target="_blank" rel="noopener" title="${esc(tip)}"${style}>${esc(b.name)}</a>`
+      : `<span class="badge" title="${esc(tip)}"${style}>${esc(b.name)}</span>`;
+  }).join(" ");
+}
+
+// A click on an ssh/vnc chip opens the relayed terminal / VNC, and swallows the event so the row's
+// "open detail" handler underneath does not also fire. Returns true when it handled the click.
+function badgeAct(e){
+  const a = e.target.closest(".badge.act");
+  if(!a) return false;
+  e.stopPropagation();
+  if(a.dataset.act==="term") openTerminal(a.dataset.id); else openVnc(a.dataset.id);
+  return true;
 }
 
 function ipKey(ip){ const m=(ip||"").match(/(\d+)\.(\d+)\.(\d+)\.(\d+)/);
@@ -203,7 +300,9 @@ function ipKey(ip){ const m=(ip||"").match(/(\d+)\.(\d+)\.(\d+)\.(\d+)/);
 function render(){
   const f = $("#filter").value.trim().toLowerCase();
   let list = devices.filter(d => !f ||
-    [d.name,d.ip,d.mac,d.vendor,d.type,d.model,d.status].some(v => (v||"").toLowerCase().includes(f)));
+    [d.name,d.ip,d.mac,d.vendor,d.macVendor,d.type,d.model,d.status,d.serial,d.os,d.firmware,d.ipv6Summary]
+      .some(v => (v||"").toLowerCase().includes(f)) ||
+    (d.badges||[]).some(b => (b.name||"").toLowerCase().includes(f)));
   list.sort((a,b)=>{
     let x,y;
     if(sortKey==="ip"){ x=ipKey(a.ip); y=ipKey(b.ip); }
@@ -213,17 +312,71 @@ function render(){
   $("#count").textContent = devices.length + " devices" + (f? " · "+list.length+" shown":"");
   $("#empty").hidden = devices.length>0;
   $("#rows").innerHTML = list.map(d => `<tr class="row" data-id="${esc(d.id)}">
+    <td>${d.type?`<span class="tag ${d.isGateway?'gw':''}">${esc(d.type)}</span>`:''}</td>
     <td class="name">${esc(d.name)||'<span class="muted">—</span>'} ${d.hasLogin?'<span class="lock" title="has login">🔑</span>':''}</td>
     <td>${esc(d.ip)}</td>
-    <td>${d.type?`<span class="tag ${d.isGateway?'gw':''}">${esc(d.type)}</span>`:''}</td>
-    <td>${esc(d.vendor)}</td><td>${esc(d.model)}</td>
-    <td class="muted">${esc(d.mac)}</td><td>${esc(d.status)}</td></tr>`).join("");
+    <td class="muted">${v6short(d.ipv6Summary)}</td>
+    <td>${badges(d.badges, d.id)}</td>
+    <td class="muted">${esc(d.mac)}</td>
+    <td>${esc(d.vendor)}</td><td class="muted">${esc(d.macVendor)}</td>
+    <td>${esc(d.model)}</td><td class="muted">${esc(d.serial)}</td>
+    <td>${esc(d.os)}</td><td>${esc(d.firmware)}</td>
+    <td>${d.updateAvailable?`<b>${esc(d.latestVersion)}</b>`:esc(d.latestVersion)}</td>
+    <td>${esc(d.cpu)}</td><td>${esc(d.memory)}</td><td>${esc(d.uptime)}</td>
+    <td>${esc(d.status)}</td></tr>`).join("");
+}
+
+// The IPv4 table shows the FIRST v6 address and ", …" for the rest.
+// A dual-stack host routinely carries four or five at once (global, ULA, link-local, one or two privacy
+// ones), and the full list made that one column wider than every other column in the table put together,
+// pushing the useful ones off screen. The whole list is on hover, in the detail panel, and one tab away in
+// the IPv6 view – where each address has its own row, which is what that view is for.
+// ⚠️ Display only: the filter above still searches the complete summary, so typing any address still finds
+// its device even when the cell is not showing it.
+function v6short(summary){
+  const all = (summary||"").split(/\s+/).filter(Boolean);
+  if(!all.length) return "";
+  const shown = all.length>1 ? esc(all[0])+", …" : esc(all[0]);
+  return `<span title="${esc(all.join("\n"))}">${shown}</span>`;
+}
+
+// The IPv6 view: one row per address, so two addresses of the same device can be compared side by side.
+function renderIpv6(){
+  const f = $("#filter").value.trim().toLowerCase();
+  const list = v6rows.filter(r => !f ||
+    [r.name,r.address,r.scope,r.ip,r.mac,r.vendor,r.macVendor,r.model,r.type,r.status,
+     r.serial,r.os,r.shares,r.firmware,r.latestVersion,r.cpu,r.memory,r.uptime]
+      .some(v => (v||"").toLowerCase().includes(f)) ||
+    (r.badges||[]).some(b => (b.name||"").toLowerCase().includes(f)));
+  $("#v6empty").hidden = v6rows.length>0;
+  $("#v6rows").innerHTML = list.map(r => `<tr class="row" data-id="${esc(r.id)}">
+    <td class="muted">${r.group}</td>
+    <td>${r.type?`<span class="tag">${esc(r.type)}</span>`:''}</td>
+    <td class="name">${esc(r.name)||'<span class="muted">—</span>'}</td>
+    <td>${esc(r.address)}</td><td class="muted">${esc(r.scope)}</td>
+    <td>${badges(r.badges, r.id)}</td>
+    <td>${esc(r.ip)}</td><td class="muted">${esc(r.mac)}</td>
+    <td class="muted">${esc(r.macVendor)}</td><td>${esc(r.vendor)}</td>
+    <td>${esc(r.model)}</td><td class="muted">${esc(r.serial)}</td><td>${esc(r.os)}</td>
+    <td class="muted">${esc(r.shares)}</td>
+    <td>${esc(r.firmware)}</td><td>${esc(r.latestVersion)}</td>
+    <td class="muted">${esc(r.cpu)}</td><td class="muted">${esc(r.memory)}</td>
+    <td class="muted">${esc(r.uptime)}</td>
+    <td>${esc(r.status)}</td></tr>`).join("");
 }
 function esc(s){ return (s||"").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
+// One place decides whether TikMan is reachable, so the red bar can't disagree with itself between the two
+// pollers. Any successful fetch clears it; any failed one raises it.
+function setConnected(ok){
+  const bar = $("#lostbar");
+  if(bar) bar.hidden = ok;
+  if(ok) $("#status").textContent = "";
+}
+
 async function tick(){
-  try { devices = await j("/api/devices"); $("#status").textContent=""; render(); }
-  catch(e){ $("#status").textContent = "connection lost…"; }
+  try { devices = await j("/api/devices"); setConnected(true); render(); }
+  catch(e){ setConnected(false); }
 }
 
 let wasScanning = false;
@@ -242,7 +395,8 @@ async function pollStatus(){
       if(wasScanning) tick(); // one final refresh when a scan just finished
     }
     wasScanning = s.scanning;
-  } catch(e){ $("#status").textContent = "connection lost…"; }
+    setConnected(true);
+  } catch(e){ setConnected(false); }
 }
 async function scanNow(){ try { await fetch("/api/scan",{method:"POST"}); pollStatus(); } catch{} }
 
@@ -261,8 +415,8 @@ async function openDetail(id){
     $("#mluser").value = d.user || ""; $("#mlpass").value = "";
     $("#mloginhttp").hidden = secure; $("#mloginform").style.display = secure ? "flex" : "none";
     $("#mbackup").hidden = !(secure && d.hasLogin);
-    $("#mterm").hidden = !(secure && d.hasLogin);
-    $("#mvnc").hidden = !(secure && d.vncPort > 0);
+    // Explain the gap over HTTP, but only where there is actually something behind it.
+    $("#msecurehint").hidden = secure || !d.hasLogin;
     $("#mtoast").textContent=""; $("#modal").hidden=false;
   } catch(e){}
 }
@@ -300,6 +454,12 @@ async function wake(id){
   catch { $("#mtoast").textContent="failed"; }
 }
 
+// The display name of a device from the loaded list ("" when it has none / is not loaded).
+function deviceName(id){
+  const d = devices.find(x => x.id === id);
+  return d ? (d.name || d.ip || "") : "";
+}
+
 // ---- SSH terminal (xterm.js, lazy-loaded) ----
 let xtermReady = null, currentTerm = null;
 function loadXterm(){
@@ -316,7 +476,10 @@ async function openTerminal(id){
   if(!id || !secure) return;
   try { await loadXterm(); } catch { $("#mtoast").textContent="failed to load terminal"; return; }
   $("#modal").hidden=true;
-  $("#termtitle").textContent = "SSH · " + ($("#mname").textContent || id);
+  // ⚠️ The name comes from the device list, not from the modal's heading: the terminal is opened straight
+  // from a chip in the row now, so the modal may never have been opened and its heading would name
+  // whichever device was looked at last.
+  $("#termtitle").textContent = "SSH · " + (deviceName(id) || id);
   $("#term").hidden=false;
   const term = new Terminal({ fontSize:13, cursorBlink:true, theme:{ background:"#000000" } });
   const fit = new FitAddon.FitAddon(); term.loadAddon(fit);
@@ -347,7 +510,7 @@ async function openVnc(id){
   try { RFB = (await import("/novnc.js")).default; }
   catch { $("#mtoast").textContent="failed to load VNC"; return; }
   $("#modal").hidden = true;
-  $("#vnctitle").textContent = "VNC · " + ($("#mname").textContent || id);
+  $("#vnctitle").textContent = "VNC · " + (deviceName(id) || id);
   $("#vnc").hidden = false;
   const box = $("#vncbox"); box.innerHTML = "";
   const rfb = new RFB(box, `wss://${location.host}/ws/vnc?id=${encodeURIComponent(id)}`);
@@ -379,9 +542,16 @@ function renderMap(g){
     const tx=n.x+11;
     return `<g class="node" data-id="${esc(n.deviceId)}">`
       + `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="7" fill="${esc(n.fill)}" stroke="${esc(n.line)}"/>`
-      + `<text x="${tx}" y="${n.y+21}" fill="${esc(n.text)}" font-size="12" font-weight="600">${esc(clip(n.title,22))}</text>`
-      + (n.detail?`<text x="${tx}" y="${n.y+37}" fill="${esc(n.text)}" font-size="10" opacity="0.85">${esc(clip(n.detail,28))}</text>`:"")
-      + (n.mac?`<text x="${tx}" y="${n.y+50}" fill="${esc(n.text)}" font-size="9" opacity="0.55">${esc(n.mac)}</text>`:"")
+      // Same five lines in the same order as the desktop map: category, name, vendor, model, address -
+      // then the MAC. The category leads so the boxes can be sorted by eye in one pass down the map.
+      // Vendor and model are separate lines here too; combined they overflowed the box and the clip()
+      // below ate the model, which is the half that identifies the device.
+      + (n.kind?`<text x="${tx}" y="${n.y+16}" fill="${esc(n.text)}" font-size="9" opacity="0.7">${esc(clip(n.kind,26))}</text>`:"")
+      + `<text x="${tx}" y="${n.y+31}" fill="${esc(n.text)}" font-size="12" font-weight="600">${esc(clip(n.title,22))}</text>`
+      + (n.vendor?`<text x="${tx}" y="${n.y+46}" fill="${esc(n.text)}" font-size="10" opacity="0.9">${esc(clip(n.vendor,26))}</text>`:"")
+      + (n.model?`<text x="${tx}" y="${n.y+59}" fill="${esc(n.text)}" font-size="10" opacity="0.9">${esc(clip(n.model,26))}</text>`:"")
+      + (n.detail?`<text x="${tx}" y="${n.y+74}" fill="${esc(n.text)}" font-size="10" opacity="0.85">${esc(clip(n.detail,28))}</text>`:"")
+      + (n.mac?`<text x="${tx}" y="${n.y+87}" fill="${esc(n.text)}" font-size="9" opacity="0.5">${esc(n.mac)}</text>`:"")
       + `</g>`;
   }).join("");
   svg.innerHTML = edges + nodes;
@@ -394,10 +564,27 @@ async function loadMap(){
   try { renderMap(await j("/api/topology?view="+(mapPhysical?"physical":"logical"))); mapLoaded=true; }
   catch(e){ $("#mapstatus").textContent = "failed"; }
 }
-function showView(map){
-  $("#devicesView").hidden = map; $("#mapView").hidden = !map;
-  $("#tabDevices").classList.toggle("on", !map); $("#tabMap").classList.toggle("on", map);
-  if(map && !mapLoaded) loadMap();
+async function loadIpv6(){
+  try { v6rows = await j("/api/ipv6"); renderIpv6(); } catch(e){}
+}
+
+// Four named views, matching the desktop app. The map is one element reused by the two map views – the
+// difference between them is only which graph is fetched, so mapPhysical decides and a switch reloads.
+let view = "ipv4";
+function showView(v){
+  view = v;
+  $("#devicesView").hidden = v !== "ipv4";
+  $("#ipv6View").hidden    = v !== "ipv6";
+  $("#mapView").hidden     = v !== "dist" && v !== "topo";
+  $("#tabIpv4").classList.toggle("on", v === "ipv4");
+  $("#tabIpv6").classList.toggle("on", v === "ipv6");
+  $("#tabDist").classList.toggle("on", v === "dist");
+  $("#tabTopo").classList.toggle("on", v === "topo");
+  if(v === "ipv6") loadIpv6();
+  if(v === "dist" || v === "topo"){
+    const wantPhysical = v === "topo";
+    if(wantPhysical !== mapPhysical || !mapLoaded){ mapPhysical = wantPhysical; loadMap(); }
+  }
 }
 (function(){
   const svg = $("#mapsvg"); let drag=null, moved=false;
@@ -417,27 +604,30 @@ function showView(map){
   svg.addEventListener("click", e=>{ if(moved){ moved=false; return; }
     const g=e.target.closest(".node"); if(g && g.dataset.id) openDetail(g.dataset.id); });
 })();
-$("#tabDevices").onclick = ()=> showView(false);
-$("#tabMap").onclick = ()=> showView(true);
+$("#tabIpv4").onclick = ()=> showView("ipv4");
+$("#tabIpv6").onclick = ()=> showView("ipv6");
+$("#tabDist").onclick = ()=> showView("dist");
+$("#tabTopo").onclick = ()=> showView("topo");
 $("#mapRefresh").onclick = loadMap;
-$("#mapLogical").onclick = ()=>{ mapPhysical=false; $("#mapLogical").classList.add("on"); $("#mapPhysical").classList.remove("on"); loadMap(); };
-$("#mapPhysical").onclick = ()=>{ mapPhysical=true; $("#mapPhysical").classList.add("on"); $("#mapLogical").classList.remove("on"); loadMap(); };
 
 document.querySelectorAll("th[data-k]").forEach(th=>th.onclick=()=>{
   const k=th.dataset.k; if(sortKey===k) sortDir*=-1; else {sortKey=k; sortDir=1;} render();
 });
-$("#filter").oninput = render;
+// One filter box drives whichever table is showing.
+$("#filter").oninput = ()=>{ render(); renderIpv6(); };
 $("#scan").onclick = scanNow;
-$("#rows").addEventListener("click", e=>{ const tr=e.target.closest("tr[data-id]"); if(tr) openDetail(tr.dataset.id); });
+$("#rows").addEventListener("click", e=>{ if(badgeAct(e)) return; const tr=e.target.closest("tr[data-id]"); if(tr) openDetail(tr.dataset.id); });
+// Same on the IPv6 table: an ssh/vnc chip connects, anything else on the row opens the detail.
+$("#v6rows").addEventListener("click", e=>{ if(badgeAct(e)) return; const tr=e.target.closest("tr[data-id]"); if(tr) openDetail(tr.dataset.id); });
 $("#mclose").onclick = ()=>{ $("#modal").hidden=true; };
 $("#modal").onclick = e=>{ if(e.target.id==="modal") $("#modal").hidden=true; };
 $("#mwake").onclick = ()=> wake($("#mwake").dataset.id);
 $("#mlsave").onclick = ()=> saveLogin($("#modal").dataset.id);
 $("#mbrsc").onclick = ()=> backup($("#modal").dataset.id, false);
 $("#mbfull").onclick = ()=> backup($("#modal").dataset.id, true);
-$("#mterm").onclick = ()=> openTerminal($("#modal").dataset.id);
+// The terminal and VNC are opened from the ssh / vnc chips in the list (see badgeAct); only their close
+// buttons are wired here.
 $("#termclose").onclick = closeTerminal;
-$("#mvnc").onclick = ()=> openVnc($("#modal").dataset.id);
 $("#vncclose").onclick = closeVnc;
 loadInfo(); tick(); pollStatus();
 setInterval(tick, 4000); setInterval(pollStatus, 1200);

@@ -225,6 +225,9 @@ public sealed class WebServer : IDisposable
             case "/api/devices":
                 await WriteJsonAsync(stream, _backend.GetDevices());
                 break;
+            case "/api/ipv6":
+                await WriteJsonAsync(stream, _backend.GetIpv6Rows());
+                break;
             case "/api/status":
                 await WriteJsonAsync(stream, _backend.GetStatus());
                 break;
@@ -409,14 +412,34 @@ public sealed class WebServer : IDisposable
         var cols = ParseDim(QueryValue(req.Query, "cols"), 120);
         var rows = ParseDim(QueryValue(req.Query, "rows"), 32);
 
+        // ⚠️ A device without a stored login is NOT refused. The terminal asks for the credentials itself,
+        // in the terminal window, the way PuTTY and ssh do ("login as:" / "password:"). Nothing is stored:
+        // the pair authenticates this one session and is then gone. This needs no dialog in the page and no
+        // client change – the prompt is terminal output, and the reply is the keystrokes the user was going
+        // to send anyway.
+        string? typedUser = null, typedPass = null;
+        var detail = SafeDetail(id);
+        if (detail is null || !detail.HasLogin)
+        {
+            var creds = await PromptCredentialsAsync(ws, detail?.User ?? "", ct).ConfigureAwait(false);
+            if (creds is null)   // gave up, or the socket went away mid-prompt
+            {
+                try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "cancelled", ct); } catch { }
+                return;
+            }
+            (typedUser, typedPass) = creds.Value;
+        }
+
         ITerminalSession? session = null;
-        try { session = await _backend.OpenSshShellAsync(id, cols, rows).ConfigureAwait(false); }
+        try { session = await _backend.OpenSshShellAsync(id, cols, rows, typedUser, typedPass).ConfigureAwait(false); }
         catch { }
         if (session is null)
         {
             try
             {
-                await ws.SendAsync(Encoding.UTF8.GetBytes("\r\n[31mConnection failed.[0m\r\n"),
+                var red = ((char)27) + "[31m";
+                var off = ((char)27) + "[0m";
+                await ws.SendAsync(Encoding.UTF8.GetBytes("\r\n" + red + "Connection failed." + off + "\r\n"),
                     WebSocketMessageType.Binary, true, ct);
                 await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "no session", ct);
             }
@@ -428,6 +451,81 @@ public sealed class WebServer : IDisposable
 
     private static uint ParseDim(string? s, uint fallback) =>
         uint.TryParse(s, out var v) && v is > 0 and <= 500 ? v : fallback;
+
+    private DeviceDetail? SafeDetail(string id)
+    {
+        try { return _backend.GetDevice(id); } catch { return null; }
+    }
+
+    /// <summary>Asks for the SSH login in the terminal itself and returns it, or null when the user gave up
+    /// (Ctrl-C / Ctrl-D) or the socket closed. ⚠️ The password is echoed as nothing at all, and it is never
+    /// written to a log, a file or a query string – it goes straight into the connection attempt.</summary>
+    private static async Task<(string User, string Password)?> PromptCredentialsAsync(
+        WebSocket ws, string suggestedUser, CancellationToken ct)
+    {
+        // Written as an escape, not a literal ESC byte: a raw control character in source survives right up
+        // until an editor or a diff tool quietly eats it.
+        var esc = ((char)27).ToString();
+        async Task SendAsync(string text) =>
+            await ws.SendAsync(Encoding.UTF8.GetBytes(text), WebSocketMessageType.Binary, true, ct)
+                .ConfigureAwait(false);
+
+        try
+        {
+            // A username TikMan already knows is offered as the default, so the usual case is
+            // Enter, password, Enter.
+            var prompt = suggestedUser.Length > 0 ? $"login as ({suggestedUser}): " : "login as: ";
+            await SendAsync($"{esc}[90mNo stored login for this device.{esc}[0m\r\n{prompt}");
+            var user = await ReadLineAsync(ws, echo: true, ct).ConfigureAwait(false);
+            if (user is null) return null;
+            if (user.Length == 0) user = suggestedUser;
+            if (user.Length == 0) return null;
+
+            await SendAsync("\r\npassword: ");
+            var password = await ReadLineAsync(ws, echo: false, ct).ConfigureAwait(false);
+            if (password is null) return null;
+
+            await SendAsync($"\r\n{esc}[90mconnecting...{esc}[0m\r\n");
+            return (user, password);
+        }
+        catch { return null; }
+    }
+
+    /// <summary>Reads one line of keystrokes from the terminal. Handles backspace and treats Ctrl-C / Ctrl-D
+    /// as "give up" (null). With <paramref name="echo"/> off nothing is sent back, so a password leaves no
+    /// trace on screen – not even its length.</summary>
+    private static async Task<string?> ReadLineAsync(WebSocket ws, bool echo, CancellationToken ct)
+    {
+        var line = new StringBuilder();
+        var buffer = new byte[256];
+        while (!ct.IsCancellationRequested)
+        {
+            var received = await ws.ReceiveAsync(buffer, ct).ConfigureAwait(false);
+            if (received.MessageType == WebSocketMessageType.Close) return null;
+
+            for (var i = 0; i < received.Count; i++)
+            {
+                var b = buffer[i];
+                if (b is 0x03 or 0x04) return null;                    // Ctrl-C / Ctrl-D
+                if (b is (byte)'\r' or (byte)'\n') return line.ToString();
+                if (b is 0x08 or 0x7F)                                 // backspace / delete
+                {
+                    if (line.Length == 0) continue;
+                    line.Length--;
+                    // Rub the character out on screen; with echo off there is nothing to rub out.
+                    if (echo)
+                        await ws.SendAsync(Encoding.UTF8.GetBytes("\b \b"),
+                            WebSocketMessageType.Binary, true, ct).ConfigureAwait(false);
+                    continue;
+                }
+                if (b < 0x20) continue;                                // other control codes / escapes
+                line.Append((char)b);
+                if (echo)
+                    await ws.SendAsync(new[] { b }, WebSocketMessageType.Binary, true, ct).ConfigureAwait(false);
+            }
+        }
+        return null;
+    }
 
     /// <summary>Transparently relays RFB bytes between the browser's noVNC (over the WebSocket) and the
     /// device's VNC TCP port – the server understands nothing of RFB, it only shuffles bytes. The target

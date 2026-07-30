@@ -26,6 +26,11 @@ public enum DeviceKind
     PaymentTerminal,
     /// <summary>Franking machine / postage meter (Francotyp-Postalia, Pitney Bowes, Neopost, …).</summary>
     Franking,
+    /// <summary>Time-recording / access-control terminal – the badge reader on the wall (Datafox, Kaba /
+    /// dormakaba, Interflex, PCS Intus, ZKTeco, Suprema, …). Single-purpose gear that serves a web UI and
+    /// often a plain TCP port, which is exactly why it needs its own category: without one it lands under
+    /// whatever port heuristic fires first.</summary>
+    TimeRecording,
     /// <summary>Out-of-band management controller (BMC) or an IP-KVM: Fujitsu iRMC, HPE iLO, Dell
     /// iDRAC, IPMI, Intel AMT/vPro, JetKVM. A separate little computer, not the host it manages.</summary>
     Management,
@@ -71,6 +76,13 @@ public static class DeviceClassifier
         // Franking machines / postage meters.
         ("francotyp", DeviceKind.Franking), ("pitney bowes", DeviceKind.Franking),
         ("neopost", DeviceKind.Franking), ("quadient", DeviceKind.Franking), ("frama", DeviceKind.Franking),
+        // Time-recording / access-control terminals. ⚠️ "datafox" is matched, not the bare OUI: the OUI
+        // lookup already turns E4:F7:A1 into "Datafox GmbH", and matching the registrant name keeps working
+        // when the vendor buys another block – which a hard-coded prefix would not.
+        ("datafox", DeviceKind.TimeRecording), ("dormakaba", DeviceKind.TimeRecording),
+        ("kaba ", DeviceKind.TimeRecording), ("interflex", DeviceKind.TimeRecording),
+        ("zkteco", DeviceKind.TimeRecording), ("suprema", DeviceKind.TimeRecording),
+        ("pcs systemtechnik", DeviceKind.TimeRecording),
         // BMC chips: an ASPEED/Nuvoton NIC *is* the management controller, never the host.
         ("aspeed", DeviceKind.Management),
         ("espressif", DeviceKind.IoT), ("tuya", DeviceKind.IoT), ("sonoff", DeviceKind.IoT),
@@ -459,7 +471,8 @@ public static class DeviceClassifier
         if (vendorKind is DeviceKind.Printer or DeviceKind.Phone or DeviceKind.Ups
             or DeviceKind.Camera or DeviceKind.Nas or DeviceKind.PaymentTerminal
             or DeviceKind.Franking or DeviceKind.Management or DeviceKind.Audio
-            or DeviceKind.GameConsole or DeviceKind.Tv or DeviceKind.StreamingBox)
+            or DeviceKind.GameConsole or DeviceKind.Tv or DeviceKind.StreamingBox
+            or DeviceKind.TimeRecording)
             return vendorKind;
 
         // 5) A real mailbox server (IMAP/POP/submission). Bare SMTP does *not* count: that is what

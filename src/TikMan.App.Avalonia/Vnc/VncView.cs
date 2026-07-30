@@ -1,0 +1,132 @@
+using System;
+using System.Reactive.Disposables;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Input.Platform;
+using Avalonia.Threading;
+using MarcusW.VncClient.Output;
+using MarcusW.VncClient.Protocol.Implementation.MessageTypes.Outgoing;
+
+namespace MarcusW.VncClient.Avalonia
+{
+    /// <summary>
+    /// Displays a remote screen using the RFB protocol.
+    /// </summary>
+    public partial class VncView : RfbRenderTarget, IOutputHandler
+    {
+        /// <summary>
+        /// Defines the <see cref="Connection"/> property.
+        /// </summary>
+        public static readonly DirectProperty<VncView, RfbConnection?> ConnectionProperty =
+            AvaloniaProperty.RegisterDirect<VncView, RfbConnection?>(nameof(Connection), o => o.Connection, (o, v) => o.Connection = v);
+
+        private RfbConnection? _connection;
+
+        // Disposable for cleaning up after connection detaches
+        private CompositeDisposable _connectionDetachDisposable = new CompositeDisposable();
+
+        /// <summary>
+        /// Initializes static members of the <see cref="VncView"/> class.
+        /// </summary>
+        static VncView()
+        {
+            // Make the view focusable to receive key input events.
+            FocusableProperty.OverrideDefaultValue(typeof(VncView), true);
+        }
+
+        /// <summary>
+        /// Gets or sets the connection that is shown in this VNC view.
+        /// </summary>
+        /// <remarks>
+        /// Interactions with this <see cref="VncView"/> will be forwarded to the selected <see cref="RfbConnection"/>.
+        /// In case this property is set to <see langword="null"/>, no connection will be attached to this view.
+        /// </remarks>
+        public RfbConnection? Connection
+        {
+            get => _connection;
+            set
+            {
+                // Detach view from previous connection
+                if (_connection != null)
+                {
+                    if (ReferenceEquals(_connection.RenderTarget, this))
+                        _connection.RenderTarget = null;
+                    if (ReferenceEquals(_connection.OutputHandler, this))
+                        _connection.OutputHandler = null;
+                }
+
+                _connectionDetachDisposable.Dispose();
+
+                // Clear key input state
+                ResetKeyPresses();
+
+                // Attach view to new connection
+                if (value != null)
+                {
+                    _connectionDetachDisposable = new CompositeDisposable();
+
+                    value.RenderTarget = this;
+                    value.OutputHandler = this;
+
+                    // Make sure the connection is resized to fit the view, if enabled
+                    // Dispatch this to make sure the Connection property has been updated
+                    Dispatcher.UIThread.Post(SendInitialSizeUpdate);
+                }
+
+                SetAndRaise(ConnectionProperty, ref _connection, value);
+            }
+        }
+
+        public VncView()
+        {
+            InitSizing();
+            // Avalonia 12: OnLostFocus is no longer an override – see VncView.KeyInput.cs.
+            LostFocus += OnViewLostFocus;
+            // Local -> remote clipboard: push the local clipboard to the server whenever the view is focused,
+            // so text copied on this machine can be pasted inside the remote session.
+            GotFocus += OnViewGotFocus;
+        }
+
+        // Local -> remote clipboard sync. Best-effort: a busy or unavailable clipboard is not worth an error.
+        private async void OnViewGotFocus(object? sender, FocusChangedEventArgs e)
+        {
+            RfbConnection? connection = Connection;
+            if (connection == null)
+                return;
+            IClipboard? clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard == null)
+                return;
+            try
+            {
+                string? text = await clipboard.TryGetTextAsync().ConfigureAwait(true);
+                if (!string.IsNullOrEmpty(text))
+                    connection.EnqueueMessage(new ClientCutTextMessage(text));
+            }
+            catch { /* clipboard unavailable */ }
+        }
+
+        /// <inheritdoc />
+        public virtual void RingBell()
+        {
+            // Ring the system bell
+            Console.Beep();
+        }
+
+        /// <inheritdoc />
+        public virtual void HandleServerClipboardUpdate(string text)
+        {
+            // Remote -> local clipboard: the remote clipboard changed, so copy it into the local one.
+            // ⚠️ Avalonia 12 reworked the clipboard API – SetTextAsync now lives on ClipboardExtensions in
+            // Avalonia.Input.Platform, which is why the original one-liner failed to compile until that using
+            // was added.
+            Dispatcher.UIThread.Post(async () => {
+                IClipboard? clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+                if (clipboard == null)
+                    return;
+                try { await clipboard.SetTextAsync(text).ConfigureAwait(true); }
+                catch { /* clipboard busy / unavailable */ }
+            });
+        }
+    }
+}

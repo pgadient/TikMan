@@ -33,13 +33,14 @@ public static class SsdpScanner
     /// <summary>Multicasts an M-SEARCH on every IPv4 interface, then fetches each responder's device
     /// description. Keyed by IP. Never throws – a blocked port or a dead description URL just means
     /// fewer answers.</summary>
+    /// <param name="onlyLocalAddress">This machine's IPv4 on the interface to search, or null/empty for all.</param>
     public static async Task<Dictionary<string, SsdpInfo>> DiscoverAsync(
-        TimeSpan duration, CancellationToken ct = default)
+        TimeSpan duration, CancellationToken ct = default, string? onlyLocalAddress = null)
     {
         var locations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); // ip → LOCATION url
         try
         {
-            await Task.WhenAll(LocalIPv4().Select(local => ListenAsync(local, duration, locations, ct)))
+            await Task.WhenAll(LocalIPv4(onlyLocalAddress).Select(local => ListenAsync(local, duration, locations, ct)))
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) { /* cancelled – keep whatever we already have */ }
@@ -53,13 +54,17 @@ public static class SsdpScanner
         return results;
     }
 
-    private static IEnumerable<IPAddress> LocalIPv4() =>
+    /// <summary>The local IPv4 addresses to M-SEARCH from – one per interface.
+    /// <para><paramref name="only"/> restricts that to a single interface, so a UI network choice really
+    /// limits the search instead of quietly covering every segment this machine is attached to.</para></summary>
+    private static IEnumerable<IPAddress> LocalIPv4(string? only = null) =>
         NetworkInterface.GetAllNetworkInterfaces()
             .Where(n => n.OperationalStatus == OperationalStatus.Up &&
                         n.NetworkInterfaceType != NetworkInterfaceType.Loopback)
             .SelectMany(n => n.GetIPProperties().UnicastAddresses)
             .Where(a => a.Address.AddressFamily == AddressFamily.InterNetwork)
-            .Select(a => a.Address);
+            .Select(a => a.Address)
+            .Where(a => only is not { Length: > 0 } || a.ToString() == only);
 
     /// <summary>Sends the M-SEARCH from one interface and collects the LOCATION of every responder
     /// until the time is up. Devices answer more than once; the first LOCATION per IP wins.</summary>

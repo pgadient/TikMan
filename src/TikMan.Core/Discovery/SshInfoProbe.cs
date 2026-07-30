@@ -27,13 +27,30 @@ public static partial class SshInfoProbe
         if (v.Contains("cisco")) return ["show version", "show inventory"];
         if (v.Contains("aruba") || v.Contains("hewlett") || v.Contains("hpe")) return ["show system", "show version"];
         if (v.Contains("ubiquiti")) return ["show version", "info"];
-        // Unknown vendor: broad sweep, most common first.
-        return ["show version", "show system-information", "show system", "show switch"];
+
+        // ⚠️ An unknown vendor gets NOTHING. This used to fall through to a broad sweep
+        // ("show version", "show system-information", "show system", "show switch") on the reasoning that
+        // they are all read-only. That reasoning is incomplete: a command is only read-only on a CLI that
+        // parses it as a command. Plenty of SMB gear answers SSH with a MENU shell, where the same bytes
+        // are keystrokes selecting menu entries – and nobody can say what entry 's' is on a device we have
+        // not identified. Guessing costs little when it works and is unbounded when it does not, so on an
+        // unidentified device TikMan stays quiet and simply learns nothing.
+        return [];
     }
 
+    /// <summary>⚠️ Only ever called for a device with a <b>stored login</b> (see the call site in
+    /// FleetService.ProbeOneDeviceAsync) – a scan never opens an SSH session to anything. That matters:
+    /// unexpected SSH input is a well-known way to upset small embedded gear, and unlike an HTTP GET – which
+    /// every device on a LAN receives constantly and is built to survive – an SSH login attempt is not
+    /// something a random IoT box expects. Without credentials there would be nothing to learn anyway.</summary>
     public static async Task<SshDeviceInfo?> QueryAsync(string host, int port, string user, string password,
         string vendorHint, CancellationToken ct = default)
     {
+        // An unidentified vendor yields no commands (see CommandsFor). Return before connecting rather than
+        // after: opening and authenticating a session only to send nothing still costs the device a login,
+        // and on the gear this guard exists for, that is the part worth not doing.
+        if (CommandsFor(vendorHint).Length == 0) return null;
+
         try
         {
             // Facts merge across commands (e.g. RouterOS: version from resource print, serial from

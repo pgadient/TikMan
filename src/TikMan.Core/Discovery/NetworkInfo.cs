@@ -5,7 +5,10 @@ using System.Net.Sockets;
 namespace TikMan.Core.Discovery;
 
 /// <summary>A local IPv4 network the host is attached to, as a CIDR plus the adapter it came from.</summary>
-public readonly record struct LocalSubnet(string Cidr, string Adapter, string HostAddress);
+/// <summary>One local IPv4 network: its CIDR, the adapter it sits on, this machine's address in it, and the
+/// default gateway reachable through it (empty when the adapter has none). <see cref="HostAddress"/> is also
+/// what identifies the adapter to the raw-capture scanner, so ZON can be limited to the chosen interface.</summary>
+public readonly record struct LocalSubnet(string Cidr, string Adapter, string HostAddress, string Gateway = "");
 
 /// <summary>Facts about the local host's network configuration.</summary>
 public static class NetworkInfo
@@ -22,12 +25,16 @@ public static class NetworkInfo
             {
                 if (nic.OperationalStatus != OperationalStatus.Up) continue;
                 if (nic.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel) continue;
-                foreach (var ua in nic.GetIPProperties().UnicastAddresses)
+                var props = nic.GetIPProperties();
+                var gateway = props.GatewayAddresses
+                    .FirstOrDefault(g => g.Address?.AddressFamily == AddressFamily.InterNetwork
+                                      && !g.Address.Equals(IPAddress.Any))?.Address?.ToString() ?? "";
+                foreach (var ua in props.UnicastAddresses)
                 {
                     if (ua.Address.AddressFamily != AddressFamily.InterNetwork) continue;
                     int prefix = ua.PrefixLength is >= 16 and <= 32 ? ua.PrefixLength : 24;
                     var cidr = $"{NetworkAddress(ua.Address, prefix)}/{prefix}";
-                    if (seen.Add(cidr)) list.Add(new LocalSubnet(cidr, nic.Name, ua.Address.ToString()));
+                    if (seen.Add(cidr)) list.Add(new LocalSubnet(cidr, nic.Name, ua.Address.ToString(), gateway));
                 }
             }
         }

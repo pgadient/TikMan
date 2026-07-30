@@ -7,7 +7,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using PdfSharp.Drawing;
 using TikMan.Core.Discovery;
-using static TikMan.App.Localization.LocalizationManager;
+using static TikMan.Core.Localization.LocalizationManager;
 
 namespace TikMan.App;
 

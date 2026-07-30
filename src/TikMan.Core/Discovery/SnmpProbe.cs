@@ -10,18 +10,26 @@ public static class SnmpProbe
 {
     public readonly record struct SnmpInfo(string SysName, string SysDescr);
 
+    /// <summary>The read community the app configured, so a caller that has no <c>AppData</c> to hand (a
+    /// ViewModel, the Zyxel serial fallback) can still honour the user's setting. Set once at startup by the
+    /// window, the same way <see cref="TikMan.Core.Api.RouterOsClient.AllowHttpFallback"/> is – a plain
+    /// value shared by every reader, defaulting to what most gear ships with.</summary>
+    public static string DefaultCommunity { get; set; } = "public";
+
     private static readonly int[] SysDescrOid = { 1, 3, 6, 1, 2, 1, 1, 1, 0 };
     private static readonly int[] SysNameOid = { 1, 3, 6, 1, 2, 1, 1, 5, 0 };
 
     public static async Task<SnmpInfo?> QueryAsync(string host, CancellationToken ct = default,
-        string community = "public")
+        string community = "public", int version = 0)
     {
         if (!IPAddress.TryParse(host.Trim('[', ']'), out var ip)) return null;
         try
         {
             using var udp = new UdpClient(ip.AddressFamily);
             udp.Client.ReceiveTimeout = 1500;
-            var request = BuildGetRequest(community, requestId: 0x54494B4D & 0x7FFFFFFF); // "TIKM"
+            // version 0 = SNMPv1, 1 = SNMPv2c. Only the version integer differs; the sysDescr/sysName GET
+            // and its GetResponse are identical, so the same parser reads both.
+            var request = BuildGetRequest(community, requestId: 0x54494B4D & 0x7FFFFFFF, version); // "TIKM"
             await udp.SendAsync(request, request.Length, new IPEndPoint(ip, 161)).ConfigureAwait(false);
 
             var receiveTask = udp.ReceiveAsync();
@@ -78,7 +86,7 @@ public static class SnmpProbe
 
     // ---- BER encoding ----
 
-    private static byte[] BuildGetRequest(string community, int requestId)
+    private static byte[] BuildGetRequest(string community, int requestId, int version = 0)
     {
         var varbinds = Seq(0x30, Concat(
             Varbind(SysDescrOid),
@@ -89,7 +97,7 @@ public static class SnmpProbe
             Integer(0),                      // error-index
             varbinds));
         return Seq(0x30, Concat(
-            Integer(0),                      // version = SNMPv1
+            Integer(version),                // 0 = SNMPv1, 1 = SNMPv2c
             OctetString(community),
             pdu));
     }

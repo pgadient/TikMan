@@ -24,24 +24,35 @@ public partial class TerminalWindow : Window
         Title = $"SSH — {deviceLabel}";
         session.DataReceived += OnData;
         Closed += (_, _) => { session.DataReceived -= OnData; session.Dispose(); };
-        Opened += (_, _) => Input.Focus();
+        Opened += (_, _) => InputBox?.Focus();
     }
+
+    /// <summary>⚠️ Looked up by name, never through the <c>x:Name</c> field.
+    ///
+    /// <para>Whether those fields are populated depends on whether <b>this particular view's</b> XAML was
+    /// compiled: the compiled populate method assigns them, the runtime parser does not – it builds the
+    /// tree and the name scope and leaves every field null. Both paths run the same C#, so the difference
+    /// is invisible until a handler dereferences one. That is what killed the process when a VNC password
+    /// was confirmed. Relying on which views happen to compile is not a property worth depending on.</para></summary>
+    private TextBox? InputBox => this.FindControl<TextBox>("Input");
+    private TextBox? OutputBox => this.FindControl<TextBox>("Output");
 
     private void OnData(byte[] data)
     {
         var text = Clean(Encoding.UTF8.GetString(data));
         Dispatcher.UIThread.Post(() =>
         {
-            Output.Text += text;
-            Output.CaretIndex = Output.Text?.Length ?? 0; // keeps the newest output in view
+            if (OutputBox is not { } box) return;
+            box.Text += text;
+            box.CaretIndex = box.Text?.Length ?? 0; // keeps the newest output in view
         });
     }
 
     private void OnInputKey(object? sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Enter) return;
-        var line = (Input.Text ?? "") + "\n";
-        Input.Text = "";
+        if (e.Key != Key.Enter || InputBox is not { } input) return;
+        var line = (input.Text ?? "") + "\n";
+        input.Text = "";
         var bytes = Encoding.UTF8.GetBytes(line);
         _session?.Write(bytes, bytes.Length);
         e.Handled = true;

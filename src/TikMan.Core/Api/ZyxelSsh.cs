@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.RegularExpressions;
 using Renci.SshNet;
 using TikMan.Core.Models;
 
@@ -14,7 +16,7 @@ namespace TikMan.Core.Api;
 /// <para>⚠️ The CLI is read-only on this series: <c>show</c> works, configuring doesn't (that's the web
 /// UI). Fine here – TikMan only reads. And no abbreviations: <c>show run</c> answers "invalid command
 /// run", it has to be <c>show running-config</c>.</para></summary>
-public static class ZyxelSsh
+public static partial class ZyxelSsh
 {
     /// <summary>What a Zyxel switch says about itself.</summary>
     public sealed record ZyxelInfo(string Model, string Name, string Firmware, string Serial,
@@ -25,32 +27,173 @@ public static class ZyxelSsh
             new PasswordAuthenticationMethod(user, password)) { Timeout = TimeSpan.FromSeconds(12) }
             .WithCompatibleMacs();   // Zyxel miscomputes the encrypt-then-MAC variants
 
+    /// <summary>Runs one CLI command over an <b>interactive shell with a PTY</b> and returns its output.
+    ///
+    /// <para>⚠️ Deliberately NOT the SSH exec channel, and this was MEASURED. The old embedded sshd on this
+    /// family (OpenSSH 3.9p1) has a broken exec handler: on an XGS1930 an exec request yields nothing at
+    /// all, and on a GS1920 (ZyNOS V4.50) it is <b>fatal</b> – the server splits the command on spaces,
+    /// rejects a fragment ("invalid command system-information") and closes the whole connection. The old
+    /// design tried exec first and, when it failed, ran the shell on the <i>same</i> connection – which
+    /// exec had just torn down, so every read on a GS1920 came back null and the switch looked unreachable.
+    /// The CLI on this series is written for a terminal; the shell is the only transport it truly supports,
+    /// so it is the only one used.</para>
+    ///
+    /// <para>The shell path types the command like a human, feeds the pager a space whenever it stalls on
+    /// "More", and <see cref="CleanShellOutput"/> strips echo/prompt/control characters so the parsers see
+    /// clean text. <paramref name="onError"/> gets a short reason on failure – never the password.</para></summary>
     private static async Task<string?> RunAsync(string host, int port, string user, string password,
-        string command, CancellationToken ct, TimeSpan? timeout = null)
+        string command, CancellationToken ct, TimeSpan? timeout = null, Action<string>? onError = null)
     {
         try
         {
-            return await Task.Run(() =>
+            var result = await Task.Run(() =>
             {
                 using var ssh = new SshClient(Info(host, port, user, password));
                 ssh.Connect();
-                try
-                {
-                    using var cmd = ssh.CreateCommand(command);
-                    cmd.CommandTimeout = timeout ?? TimeSpan.FromSeconds(30);
-                    return cmd.Execute();
-                }
+                try { return RunInShell(ssh, command, timeout ?? TimeSpan.FromSeconds(30)); }
                 finally { if (ssh.IsConnected) ssh.Disconnect(); }
             }, ct).ConfigureAwait(false);
+            if (result is null) onError?.Invoke("SSH connected, but the CLI produced no output");
+            return result;
         }
-        catch (Exception) { return null; } // SSH off / bad creds / not a Zyxel
+        catch (Exception ex) { onError?.Invoke(ex.Message); return null; } // SSH off / bad creds / not a Zyxel
     }
 
-    /// <summary>Model, firmware, serial, MAC and uptime. Null when SSH didn't answer.</summary>
-    public static async Task<ZyxelInfo?> GetInfoAsync(string host, int port, string user, string password,
-        CancellationToken ct = default)
+    /// <summary>The interactive-shell transport: request a PTY, let the login banner and prompt pass,
+    /// type the command, keep feeding the pager a space, and stop when the prompt returns (or the
+    /// output has been quiet for a while). Wide PTY (512 columns) so long config lines don't wrap.</summary>
+    private static string? RunInShell(SshClient ssh, string command, TimeSpan limit)
     {
-        var text = await RunAsync(host, port, user, password, "show system-information", ct);
+        var deadline = DateTime.UtcNow + limit;
+        using var shell = ssh.CreateShellStream("dumb", 512, 60, 4096, 480, 65536);
+
+        // Swallow banner + first prompt; some firmwares also honour a pager-off command – if this one
+        // doesn't exist its error message is flushed along with the banner and harms nothing.
+        DrainUntilIdle(shell, deadline, TimeSpan.FromMilliseconds(900));
+        shell.WriteLine("terminal length 0");
+        DrainUntilIdle(shell, deadline, TimeSpan.FromMilliseconds(700));
+
+        shell.WriteLine(command);
+        var sb = new StringBuilder();
+        var lastData = DateTime.UtcNow;
+        while (DateTime.UtcNow < deadline)
+        {
+            var chunk = shell.Read();
+            if (!string.IsNullOrEmpty(chunk))
+            {
+                sb.Append(chunk);
+                lastData = DateTime.UtcNow;
+                if (PagerPrompt().IsMatch(Tail(sb))) shell.Write(" ");
+                continue;
+            }
+            var idleMs = (DateTime.UtcNow - lastData).TotalMilliseconds;
+            // Prompt back and briefly quiet = done; otherwise a longer quiet spell also ends it.
+            if (sb.Length > 0 && idleMs > (TrailingPrompt().IsMatch(Tail(sb)) ? 350 : 2000)) break;
+            Thread.Sleep(80);
+        }
+        var text = CleanShellOutput(sb.ToString(), command);
+        return text.Length > 0 ? text : null;
+    }
+
+    private static void DrainUntilIdle(Renci.SshNet.ShellStream shell, DateTime deadline, TimeSpan idle)
+    {
+        var lastData = DateTime.UtcNow;
+        while (DateTime.UtcNow < deadline && DateTime.UtcNow - lastData < idle)
+        {
+            if (shell.Read() is { Length: > 0 }) lastData = DateTime.UtcNow;
+            else Thread.Sleep(60);
+        }
+    }
+
+    private static string Tail(StringBuilder sb) =>
+        sb.Length <= 96 ? sb.ToString() : sb.ToString(sb.Length - 96, 96);
+
+    // The shapes ZyNOS-family pagers stall on. Two families, measured on two firmwares:
+    //   XGS1930 (V5.00): "--More--" (optionally in ANSI inverse video), at the end of the line.
+    //   GS1920  (V4.50): "-- more --, next page: Space, continue: c, quit: ESC" – the marker is NOT at the
+    //                    end of the line, so the old end-anchored pattern never matched it. Only TERM=dumb
+    //                    suppressing the pager kept the connector working; this makes it robust without
+    //                    relying on that.
+    // ⚠️ The dash-wrapped "-- more --" and "next page: space" forms are specific enough to match anywhere
+    // in the tail safely; the bare "more:" / "press any key" forms stay end-anchored so a config line that
+    // merely contains the word "more" cannot be mistaken for a prompt (a stray space fed into the shell
+    // would otherwise land in its input).
+    [GeneratedRegex(@"(?i)(--\s*more\s*--|next\s*page:\s*space|(?:\bmore\s*[:.]|press any key)\s*$)")]
+    private static partial Regex PagerPrompt();
+
+    // A prompt alone on the last line ("XGS1930#", "Switch>") – the CLI is waiting again.
+    [GeneratedRegex(@"(?m)^[\w.\-]{1,40}[#>]\s*$(?!\n)")]
+    private static partial Regex TrailingPrompt();
+
+    /// <summary>Turns a raw PTY capture into what the exec channel would have printed: resolves
+    /// carriage-return overwrites (how the pager erases its own "More" line), applies backspaces,
+    /// strips ANSI escape sequences, and drops the echoed command, pager-prompt remnants and the
+    /// trailing CLI prompt. Pure, so the smoke test can pin it against a synthetic capture.</summary>
+    public static string CleanShellOutput(string raw, string command)
+    {
+        // ANSI first (colours/inverse video around "More"), then per-line \r-overwrite + \b.
+        var noAnsi = AnsiSequence().Replace(raw, "");
+        var lines = new List<string>();
+        foreach (var line in noAnsi.Split('\n'))
+        {
+            var resolved = ResolveOverwrites(line);
+            if (resolved.TrimEnd().Length == 0) { lines.Add(""); continue; }
+            var t = resolved.Trim();
+            if (PagerRemnant().IsMatch(t)) continue;         // a pager line that wasn't overwritten
+            lines.Add(resolved.TrimEnd());
+        }
+        // Drop everything up to and including the echoed command (banner fragments may precede it).
+        int start = lines.FindIndex(l => l.Trim() == command.Trim());
+        if (start >= 0) lines.RemoveRange(0, start + 1);
+        // Drop the prompt the CLI printed when it was done (and any blank tail).
+        while (lines.Count > 0 &&
+               (lines[^1].Trim().Length == 0 || TrailingPrompt().IsMatch(lines[^1].Trim())))
+            lines.RemoveAt(lines.Count - 1);
+        while (lines.Count > 0 && lines[0].Trim().Length == 0) lines.RemoveAt(0);
+        return string.Join("\r\n", lines);
+    }
+
+    /// <summary>One terminal line: '\r' returns the caret to column 0 and what follows overwrites,
+    /// '\b' steps back one column. That is exactly how the pager wipes "--More--" before printing the
+    /// next page, so resolving it faithfully makes the pager vanish from the capture.</summary>
+    private static string ResolveOverwrites(string line)
+    {
+        var buf = new StringBuilder();
+        int col = 0;
+        foreach (var c in line)
+        {
+            switch (c)
+            {
+                case '\r': col = 0; break;
+                case '\b': if (col > 0) col--; break;
+                default:
+                    if (col < buf.Length) buf[col] = c; else buf.Append(c);
+                    col++;
+                    break;
+            }
+        }
+        return buf.ToString();
+    }
+
+    // Three shapes: a CSI sequence (ESC [ … letter), a charset-select (ESC ( / ) + char), and a two-byte
+    // Fe/Fp escape (ESC + one char). ⚠️ The last alternative is why this is here: a GS1920 on ZyNOS V4.50
+    // prefixes every command's output with a run of ESC 7 (DECSC, "save cursor") and ends the prompt with
+    // one more. The old regex matched only ESC [ … , so those ESC 7 pairs survived and the parser saw a
+    // line of literal "7"s glued to the first row of every table. Measured against the real device.
+    [GeneratedRegex(@"\x1b\[[0-9;?]*[A-Za-z]|\x1b[()][A-Z0-9]|\x1b[78=>cDEHMNO]")]
+    private static partial Regex AnsiSequence();
+
+    // A whole pager line that survived (wasn't erased by a \r-overwrite) – dropped so it never reaches a
+    // parser. Covers the XGS1930 "--More--" and the GS1920 "-- more --, next page: Space, …" forms.
+    [GeneratedRegex(@"(?i)^(--\s*more\s*--.*|more\s*[:.].*|.*next\s*page:\s*space.*|press any key.*)$")]
+    private static partial Regex PagerRemnant();
+
+    /// <summary>Model, firmware, serial, MAC and uptime. Null when SSH didn't answer;
+    /// <paramref name="onError"/> then says why.</summary>
+    public static async Task<ZyxelInfo?> GetInfoAsync(string host, int port, string user, string password,
+        CancellationToken ct = default, Action<string>? onError = null)
+    {
+        var text = await RunAsync(host, port, user, password, "show system-information", ct, onError: onError);
         return text is null ? null : ParseSystemInformation(text);
     }
 
@@ -58,12 +201,17 @@ public static class ZyxelSsh
     /// <para>⚠️ Unlike RouterOS's <c>/export</c>, which hides secrets, this carries
     /// <c>admin-password cipher …</c>. The text is a credential-bearing artefact: never log it.</para></summary>
     public static async Task<string?> GetRunningConfigAsync(string host, int port, string user, string password,
-        CancellationToken ct = default)
+        CancellationToken ct = default, Action<string>? onError = null)
     {
         var text = await RunAsync(host, port, user, password, "show running-config", ct,
-            TimeSpan.FromSeconds(60));   // a 52-port switch prints a lot
-        return text is { Length: > 0 } && text.Contains("Current configuration", StringComparison.OrdinalIgnoreCase)
-            ? text : null;
+            TimeSpan.FromSeconds(60), onError);   // a 52-port switch prints a lot
+        if (text is not { Length: > 0 }) return null;
+        // A config is recognised by its own text, not the transport: the "Current configuration"
+        // banner or the "; Product Name = …" header comment. Anything else is the CLI complaining.
+        if (text.Contains("Current configuration", StringComparison.OrdinalIgnoreCase) ||
+            ParseConfigHeader(text).Model.Length > 0) return text;
+        onError?.Invoke($"device answered, but not with a running-config ({text.Length} chars)");
+        return null;
     }
 
     /// <summary>The forwarding table as MAC → port name, the same shape <see cref="Discovery.SnmpFdb"/>
@@ -72,9 +220,9 @@ public static class ZyxelSsh
     /// <para>This is the point of the whole class: the map's evidence for non-MikroTik gear has only
     /// ever come from SNMP, and a switch with SNMP off contributes nothing. Now it does.</para></summary>
     public static async Task<Dictionary<string, string>?> GetFdbAsync(string host, int port, string user,
-        string password, CancellationToken ct = default)
+        string password, CancellationToken ct = default, Action<string>? onError = null)
     {
-        var macs = await RunAsync(host, port, user, password, "show mac address-table all", ct);
+        var macs = await RunAsync(host, port, user, password, "show mac address-table all", ct, onError: onError);
         if (macs is null) return null;
 
         // Port names in the same read: a user who labelled port 20 "Uplink-Server" should see that on
@@ -88,7 +236,139 @@ public static class ZyxelSsh
         return fdb;
     }
 
+    /// <summary>CPU load, memory and uptime for the monitoring columns and the history chart – the switch
+    /// analogue of RouterOS's <c>/system resource</c>. Null when SSH didn't answer.
+    /// <para>Three short reads: <c>show cpu-utilization</c> (a "CPU usage status: NN%" headline),
+    /// <c>show memory</c> (a total/used byte row) and the uptime from <c>show system-information</c>.</para></summary>
+    public static async Task<ResourceInfo?> GetResourceAsync(string host, int port, string user, string password,
+        CancellationToken ct = default, Action<string>? onError = null)
+    {
+        var cpu = await RunAsync(host, port, user, password, "show cpu-utilization", ct, onError: onError);
+        if (cpu is null) return null;   // one failed read is enough to know it is unreachable / wrong login
+        var mem = await RunAsync(host, port, user, password, "show memory", ct).ConfigureAwait(false);
+        var sys = await RunAsync(host, port, user, password, "show system-information", ct).ConfigureAwait(false);
+
+        var (total, used) = mem is null ? (0L, 0L) : ParseMemory(mem);
+        var info = sys is null ? null : ParseSystemInformation(sys);
+        return new ResourceInfo
+        {
+            CpuLoad = ParseCpuUtilisation(cpu),
+            TotalMemory = total,
+            FreeMemory = total > 0 ? total - used : 0,
+            Uptime = info?.Uptime ?? "",
+            Version = info?.Firmware ?? "",
+        };
+    }
+
+    /// <summary>The percentage out of <c>show cpu-utilization</c>'s headline: "CPU usage status:  52.78%".
+    /// Rounded to a whole percent (ResourceInfo carries an int, like RouterOS's cpu-load). 0 when absent.</summary>
+    public static int ParseCpuUtilisation(string text)
+    {
+        var m = CpuHeadline().Match(text);
+        return m.Success && double.TryParse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var v)
+            ? (int)Math.Round(v) : 0;
+    }
+
+    /// <summary>Total and used bytes out of <c>show memory</c> (shape verbatim from a GS1920):
+    /// <code>
+    ///   Name          Total          Used     Util
+    ///   ------    -----------    ----------    -----
+    ///   common    30612608(B)    5954272(B)    19(%)
+    /// </code>
+    /// The "(B)" values are what matters; "(0,0)" when the row isn't there.</summary>
+    public static (long Total, long Used) ParseMemory(string text)
+    {
+        foreach (var raw in text.Split('\n'))
+        {
+            var bytes = MemoryBytes().Matches(raw);
+            if (bytes.Count >= 2 &&
+                long.TryParse(bytes[0].Groups[1].Value, out var total) &&
+                long.TryParse(bytes[1].Groups[1].Value, out var used))
+                return (total, used);
+        }
+        return (0, 0);
+    }
+
+    [GeneratedRegex(@"CPU usage status:\s*([\d.]+)\s*%", RegexOptions.IgnoreCase)]
+    private static partial Regex CpuHeadline();
+
+    [GeneratedRegex(@"(\d+)\(B\)")]
+    private static partial Regex MemoryBytes();
+
+    /// <summary>The switch log, newest first. Null when SSH didn't answer.
+    /// <para><c>show logging</c> on this family, measured on a GS1920. The log is <b>newest-first</b>
+    /// (entry 1 is the most recent), so <paramref name="maxEntries"/> keeps the first N.</para></summary>
+    public static async Task<List<LogEntry>?> GetLogAsync(string host, int port, string user, string password,
+        int maxEntries = 200, CancellationToken ct = default, Action<string>? onError = null)
+    {
+        var text = await RunAsync(host, port, user, password, "show logging", ct,
+            TimeSpan.FromSeconds(45), onError);   // a full log is long
+        return text is null ? null : ParseLog(text, maxEntries);
+    }
+
+    /// <summary>Reads the Zyxel-private serial number over SNMP – the one the web GUI shows on its Status
+    /// page but the CLI's <c>show system-information</c> omits on older firmware (a GS1920 on V4.50 reports
+    /// no serial there, and no <c>show serial-number</c> command exists).
+    ///
+    /// <para>⚠️ A Zyxel-<b>private</b> OID (<c>1.3.6.1.4.1.890.1.15.3.1.12</c>), not the standard
+    /// ENTITY-MIB <c>entPhysicalSerialNum</c> – that one is unpopulated on this firmware (measured). The
+    /// exact leaf can differ across the switch families, so this walks the small model-info table
+    /// (<c>…890.1.15.3.1</c>) and returns the first serial-shaped value rather than trusting one index.
+    /// Best-effort: "" when SNMP is off, the community is wrong, or nothing there looks like a serial.</para></summary>
+    public static async Task<string> GetSerialViaSnmpAsync(string host, string community,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var rows = await Discovery.SnmpProbe.WalkAsync(host, community,
+                new[] { 1, 3, 6, 1, 4, 1, 890, 1, 15, 3, 1 }, maxRows: 64, ct).ConfigureAwait(false);
+            if (rows is null) return "";
+            foreach (var (_, _, value) in rows)
+            {
+                var s = Encoding.ASCII.GetString(value).Trim();
+                if (LooksLikeSerial(s)) return s;
+            }
+        }
+        catch { /* best-effort: SNMP off, wrong community, unreachable */ }
+        return "";
+    }
+
+    // A Zyxel serial: a letter, then 10-15 alphanumerics, e.g. "S000A00000000" (shape anonymised). Tight
+    // enough that a model name or a firmware string in a neighbouring OID is not mistaken for one.
+    private static bool LooksLikeSerial(string s) =>
+        s.Length is >= 11 and <= 16 && char.IsLetter(s[0]) && s.All(char.IsLetterOrDigit) &&
+        s.Count(char.IsDigit) >= 6;
+
     // ---- parsers (pure, pinned to real output) ----
+
+    /// <summary>Parses <c>show logging</c> (shape verbatim from a GS1920, address anonymised):
+    /// <code>
+    ///     1 Jan 01 01:23:22 IN authentication: SSH user admin login [IP address = 10.0.0.9]
+    ///     4 Jan 01 01:21:04 IN system: Save system configuration 1 successfully
+    /// </code>
+    /// Columns: running index, "Mon DD HH:MM:SS", a class code (IN = info, ER = error, …), the category up
+    /// to a colon, then the message. Newest first; <paramref name="maxEntries"/> keeps the first N.</summary>
+    public static List<LogEntry> ParseLog(string text, int maxEntries = 0)
+    {
+        var list = new List<LogEntry>();
+        foreach (var raw in text.Split('\n'))
+        {
+            var m = LogLine().Match(raw.TrimEnd('\r'));
+            if (!m.Success) continue;
+            list.Add(new LogEntry
+            {
+                Time = m.Groups[1].Value,
+                // Class + category together: "IN authentication" – the severity is worth keeping.
+                Topics = (m.Groups[2].Value + " " + m.Groups[3].Value.Trim()).Trim(),
+                Message = m.Groups[4].Value.Trim(),
+            });
+            if (maxEntries > 0 && list.Count >= maxEntries) break;   // newest first ⇒ keep the first N
+        }
+        return list;
+    }
+
+    [GeneratedRegex(@"^\s*\d+\s+([A-Z][a-z]{2}\s+\d{1,2}\s+\d{1,2}:\d{2}:\d{2})\s+(\S+)\s+([^:]+?):\s*(.*)$")]
+    private static partial Regex LogLine();
 
     /// <summary>Parses <c>show mac address-table all</c> (shape verbatim from an XGS1930-52HP,
     /// MACs anonymised):
@@ -123,23 +403,79 @@ public static class ZyxelSsh
 
     /// <summary>Parses the port names out of <c>show interfaces status</c>:
     /// <code>
-    ///   Port      Name          Link        State             Type          Up Time
-    ///      1         Port1           1G/F FORWARDING         10/100/1000M    2:01:34
+    ///   Port      Name           Link          State         Type       Up Time
+    ///   ---- ------------- --------------- ----------- --------------- ----------
+    ///     30                       1000M/F  FORWARDING    10/100/1000M    0:39:26
     /// </code>
-    /// Number → name. The default names ("Port1") say nothing the number doesn't, but a labelled port
-    /// carries its label onto the map.</summary>
+    /// Number → name, but only for a port that actually carries a label.
+    ///
+    /// <para>⚠️ Parsed by COLUMN, not by whitespace, and this was measured. On a GS1920 the ports are
+    /// unnamed, so the Name column is blank – and a naive whitespace split then reads the <i>Link</i> value
+    /// ("1000M/F") as the name and stamps it on the map. The <c>----</c> rule line gives the exact column
+    /// spans, so a blank Name column stays blank and the port keeps its number. When no rule line is present
+    /// (an unexpected firmware) it falls back to whitespace, but rejects a "name" that is really a
+    /// link/state token.</para></summary>
     public static Dictionary<string, string> ParseInterfaceNames(string text)
     {
+        var lines = text.Split('\n');
+        var spans = lines.Select(RuleColumns).FirstOrDefault(s => s is { Count: >= 2 });
+
         var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var raw in text.Split('\n'))
+        foreach (var raw in lines)
         {
-            var parts = raw.TrimEnd('\r').Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 2) continue;
-            if (!int.TryParse(parts[0], out _)) continue;   // header, and the "---- ----" rule line
-            d[parts[0]] = parts[1];
+            var line = raw.TrimEnd('\r');
+            if (spans is not null)
+            {
+                var port = Slice(line, spans[0]).Trim();
+                if (!int.TryParse(port, out _)) continue;                  // header / rule / stray line
+                var name = Slice(line, spans[1]).Trim();
+                if (name.Length > 0) d[port] = name;                       // blank column ⇒ keep the number
+            }
+            else
+            {
+                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 2 || !int.TryParse(parts[0], out _)) continue;
+                if (!LooksLikeLinkOrState(parts[1])) d[parts[0]] = parts[1];
+            }
         }
         return d;
     }
+
+    /// <summary>The character spans of a ZyNOS table's columns, read off its <c>---- ---- ----</c> rule
+    /// line: each run of dashes is one column, returned as (start, length). Null when the line is not a rule
+    /// line (anything other than dashes and spaces, or fewer than two dash runs).</summary>
+    private static List<(int Start, int Length)>? RuleColumns(string raw)
+    {
+        var line = raw.TrimEnd('\r');
+        if (line.Trim().Length == 0 || line.Any(c => c != '-' && c != ' ')) return null;
+        var spans = new List<(int, int)>();
+        int i = 0;
+        while (i < line.Length)
+        {
+            if (line[i] == '-')
+            {
+                int start = i;
+                while (i < line.Length && line[i] == '-') i++;
+                spans.Add((start, i - start));
+            }
+            else i++;
+        }
+        return spans.Count >= 2 ? spans : null;
+    }
+
+    /// <summary>A column substring, clamped to the line – a data row can be shorter than the rule line, and
+    /// the last column often runs a little past its dashes, so the end is not trusted blindly.</summary>
+    private static string Slice(string line, (int Start, int Length) span)
+    {
+        if (span.Start >= line.Length) return "";
+        var end = Math.Min(line.Length, span.Start + span.Length);
+        return line[span.Start..end];
+    }
+
+    // "Down", "STOP", "1000M/F", "1G/F", "100/1000M" – a link/state token, never a user's port label.
+    private static bool LooksLikeLinkOrState(string token) =>
+        token is "Down" or "STOP" or "FORWARDING" or "DISABLED" ||
+        (token.Length > 0 && token.All(c => char.IsDigit(c) || c is '/' or 'M' or 'G' or 'F' or 'H'));
 
     private static bool LooksLikeMac(string s) =>
         s.Length == 17 && s[2] == ':' && s[5] == ':' && s.Count(c => c == ':') == 5;

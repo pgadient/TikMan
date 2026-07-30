@@ -8,7 +8,8 @@ namespace TikMan.Core.Discovery;
 
 /// <summary>Reads the TLS server certificate on port 443 and pulls device facts out of its subject.
 /// Many embedded devices present a self-signed cert that names the model, serial and MAC – e.g. a
-/// Cisco SPA ATA: CN="SPA122-RC, MAC: 007686EBFBD6, Serial: CCQ212301PK", O="Cisco Systems, Inc.".
+/// Cisco SPA ATA: CN="SPA122-RC, MAC: 007686AABBCC, Serial: CCQ184402RN", O="Cisco Systems, Inc."
+/// (MAC and serial suffixes anonymised; the vendor prefixes are real).
 /// This needs only the TLS handshake (no HTTP, no login, no MAC on the wire) and also reaches old
 /// devices whose legacy TLS the normal HTTP client can't fetch a page from.</summary>
 public static partial class TlsCertProbe
@@ -75,7 +76,7 @@ public static partial class TlsCertProbe
         // Model = the CN's leading token before a comma, if it looks like a product code (has a digit,
         // no dot/space so it isn't an IP or a hostname). Generic certs (CN=host / CN=192.168.x) yield "".
         var head = cn.Split(',')[0].Trim();
-        // Some certs append the MAC to the model with a separator ("nwa5123-ac-hd_5C6A80E75F41"): use
+        // Some certs append the MAC to the model with a separator ("nwa5123-ac-hd_5C6A80AABBCC"): use
         // it as the MAC if we don't have one, and drop it from the model.
         var glued = MacSuffixRegex().Match(head);
         if (glued.Success)

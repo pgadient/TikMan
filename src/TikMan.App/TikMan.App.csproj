@@ -10,7 +10,7 @@
     <RootNamespace>TikMan.App</RootNamespace>
     <ApplicationIcon>tikman.ico</ApplicationIcon>
     <!-- Build number auto-increments: 1.1.<days since 2026-01-01> (recomputed on every build). -->
-    <Version>2.2.2</Version>
+    <Version>2.3.1</Version>
     <Product>TikMan</Product>
     <Company>Pascal Montico-Gadient</Company>
   </PropertyGroup>
@@ -33,6 +33,13 @@
 
   <ItemGroup>
     <Resource Include="tikman.png" />
+  </ItemGroup>
+
+  <!-- LocalizationManager/Strings moved to TikMan.Core.Localization (shared with Avalonia/Web). This
+       global using keeps the existing WPF code (`LocalizationManager…`, and the `{loc:Loc}` markup that
+       still lives in TikMan.App.Localization) resolving without touching every file. -->
+  <ItemGroup>
+    <Using Include="TikMan.Core.Localization" />
   </ItemGroup>
 
 </Project>

@@ -1,31 +1,67 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="using:TikMan.App.Avalonia"
         x:Class="TikMan.App.Avalonia.LoginWindow"
         x:CompileBindings="False"
         Width="420" SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
         Icon="/Assets/tikman.png"
-        Title="Anmelden">
+        Title="{loc:Loc Av_LoginTitle}">
     <StackPanel Margin="20" Spacing="12">
-        <TextBlock Text="Zugangsdaten" FontSize="16" FontWeight="SemiBold" />
-        <TextBlock x:Name="PromptText" Opacity="0.7" TextWrapping="Wrap" />
+        <!-- The two facts about what is being edited, as two matching lines. The window title already says
+             what the dialog is, so a heading repeating it only pushed these down the panel. -->
+        <StackPanel Spacing="2">
+            <TextBlock x:Name="PromptText" TextWrapping="Wrap" />
+            <TextBlock x:Name="VendorText" TextWrapping="Wrap" Opacity="0.7" />
+        </StackPanel>
+
+        <!-- Only shown for a bulk edit. Writing one password to several devices at once is easy to do by
+             accident, so it says plainly how many are affected. -->
+        <Border x:Name="BulkBanner" IsVisible="False" CornerRadius="5" Padding="10,7"
+                Background="#33EF6C00" BorderBrush="#EF6C00" BorderThickness="1">
+            <TextBlock x:Name="BulkText" TextWrapping="Wrap" FontWeight="SemiBold" />
+        </Border>
 
         <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto">
-            <TextBlock Grid.Row="0" Grid.Column="0" Text="Benutzer" VerticalAlignment="Center" />
-            <TextBox   Grid.Row="0" Grid.Column="1" x:Name="UserBox" />
-            <TextBlock Grid.Row="1" Grid.Column="0" Text="Passwort" VerticalAlignment="Center" Margin="0,8,0,0" />
+            <!-- Enter saves, from either field – typing a password and pressing Enter is the whole gesture.
+                 ⚠️ Handled here rather than with IsDefault on the button: that paints the theme's blue
+                 accent, the same blue as the grid's selection, so the button read as "selected". -->
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Loc Av_User}" VerticalAlignment="Center" />
+            <TextBox   Grid.Row="0" Grid.Column="1" x:Name="UserBox" KeyDown="OnFieldKey" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Loc Av_Password}" VerticalAlignment="Center" Margin="0,8,0,0" />
             <TextBox   Grid.Row="1" Grid.Column="1" x:Name="PassBox" Margin="0,8,0,0"
-                       PasswordChar="●" RevealPassword="{Binding #RevealBox.IsChecked}" />
+                       PasswordChar="●" RevealPassword="{Binding #RevealBox.IsChecked}"
+                       KeyDown="OnFieldKey" />
         </Grid>
 
-        <CheckBox x:Name="RevealBox" Content="Passwort anzeigen" />
+        <!-- Connection: "Auto" covers almost everything, so the port only unlocks when a method is
+             actually chosen – an editable port next to "auto" would suggest auto respects it. -->
+        <Grid ColumnDefinitions="110,*,Auto,90" RowDefinitions="Auto">
+            <TextBlock Grid.Column="0" Text="{loc:Loc Av_Connection}" VerticalAlignment="Center" />
+            <ComboBox  Grid.Column="1" x:Name="MethodBox" HorizontalAlignment="Stretch"
+                       SelectionChanged="OnMethodChanged" />
+            <TextBlock Grid.Column="2" Text="{loc:Loc Av_Port}" VerticalAlignment="Center" Margin="10,0,6,0" />
+            <TextBox   Grid.Column="3" x:Name="PortBox" IsEnabled="False" />
+        </Grid>
+        <TextBlock x:Name="MethodHint" TextWrapping="Wrap" Opacity="0.7" FontSize="12" />
 
-        <TextBlock Opacity="0.6" FontSize="12" TextWrapping="Wrap"
-                   Text="Das Passwort wird nur zum Verbinden verwendet und lokal verschlüsselt gespeichert (DPAPI auf Windows, AES auf Linux/macOS) – nie im Klartext. Leer lassen entfernt die Anmeldung." />
+        <CheckBox x:Name="RevealBox" Content="{loc:Loc Av_ShowPassword}" />
+
+        <TextBlock Opacity="0.6" FontSize="12" TextWrapping="Wrap" Text="{loc:Loc Av_LoginHint}" />
+
+        <!-- Result of a test connection: shown in place so the password can be corrected without
+             closing and reopening the dialog. -->
+        <TextBlock x:Name="TestResult" TextWrapping="Wrap" FontSize="12" IsVisible="False" />
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
-            <Button Content="Abbrechen" Click="OnCancel" />
-            <Button Content="Speichern" Click="OnSave" />
+            <!-- Only offered for a single device: testing one password against N devices would have N
+                 answers, and showing one of them would be a lie. -->
+            <Button x:Name="TestButton" Content="{loc:Loc Av_TestLogin}" Click="OnTest" Classes="action" />
+            <Button Content="{loc:Loc Av_Cancel}" Click="OnCancel" Classes="action" />
+            <!-- ⚠️ No IsDefault here. It paints the theme's blue accent, which is the one button colour this
+                 dialog must not use: the same blue is the grid's selection, so a "Save" that looks selected
+                 reads as state rather than as an action. The action style is the product's button look. -->
+            <Button Content="{loc:Loc Av_Save}" Click="OnSave" Classes="action" />
         </StackPanel>
     </StackPanel>
 </Window>

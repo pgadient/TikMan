@@ -10,7 +10,7 @@ using MarcusW.VncClient.Protocol.SecurityTypes;
 using MarcusW.VncClient.Rendering;
 using MarcusW.VncClient.Security;
 using Microsoft.Extensions.Logging.Abstractions;
-using static TikMan.App.Localization.LocalizationManager;
+using static TikMan.Core.Localization.LocalizationManager;
 using WpfPixelFormats = System.Windows.Media.PixelFormats;
 using VncPixelFormat = MarcusW.VncClient.PixelFormat;
 using VncSize = MarcusW.VncClient.Size;

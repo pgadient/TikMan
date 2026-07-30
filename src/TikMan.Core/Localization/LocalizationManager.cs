@@ -3,7 +3,7 @@ using System.ComponentModel;
 using System.Globalization;
 using TikMan.Core.Models;
 
-namespace TikMan.App.Localization;
+namespace TikMan.Core.Localization;
 
 /// <summary>Runtime switching between German and English. XAML binds through the
 /// <see cref="LocExtension"/> to the indexer; a language change fires PropertyChanged
@@ -22,6 +22,11 @@ public sealed class LocalizationManager : INotifyPropertyChanged
 
     /// <summary>Currently active language (resolved, never System).</summary>
     public AppLanguage Effective { get; private set; } = AppLanguage.German;
+
+    /// <summary>Bumped on every <see cref="Apply"/>. Avalonia bindings watch this named property (its
+    /// PropertyChanged reliably refreshes a binding) and re-run their converter to re-read the text – the
+    /// WPF markup uses the "Item[]" indexer notification instead, so both frameworks refresh on a switch.</summary>
+    public int Version { get; private set; }
 
     /// <summary>Culture for date/number formatting matching the language.</summary>
     public CultureInfo Culture { get; private set; }
@@ -57,7 +62,9 @@ public sealed class LocalizationManager : INotifyPropertyChanged
             AppLanguage.Portuguese => "pt-PT",
             _ => "de-CH", // German / Swiss German
         });
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));
+        Version++;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));      // WPF markup (indexer)
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Version))); // Avalonia markup (converter)
     }
 
     /// <summary>Resolve the system language based on the Windows display language:

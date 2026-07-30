@@ -1,10 +1,10 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using TikMan.Web;
 using TikMan.Core.Discovery;
 using TikMan.Core.Storage;
-using static TikMan.App.Localization.LocalizationManager;
+using static TikMan.Core.Localization.LocalizationManager;
 
 namespace TikMan.App;
 
@@ -187,7 +187,7 @@ public partial class MainWindow : IWebBackend
     });
 
     /// <summary>Applies a login to the device, mirroring the GUI's "set credentials": the password is
-    /// only used transiently to DPAPI-encrypt it into the device (persisted to devices.json only when the
+    /// only used transiently to DPAPI-encrypt it into the device (persisted to settings.json only when the
     /// user keeps the list), never logged. Called by the server exclusively over HTTPS.</summary>
     ActionResult IWebBackend.SetLogin(string id, string user, string password) => Dispatcher.Invoke(() =>
     {
@@ -252,19 +252,28 @@ public partial class MainWindow : IWebBackend
 
     /// <summary>Opens an SSH shell to the device using its stored login. Reads the credentials on the UI
     /// thread, then connects off-thread. The password is used only to authenticate – never logged.</summary>
-    async Task<TikMan.Core.Api.ITerminalSession?> IWebBackend.OpenSshShellAsync(string id, uint cols, uint rows)
+    async Task<TikMan.Core.Api.ITerminalSession?> IWebBackend.OpenSshShellAsync(string id, uint cols, uint rows,
+        string? user, string? password)
     {
         var conn = await Dispatcher.InvokeAsync<(string Host, int Port, string User, string Pass)>(() =>
         {
             var d = FindByWebId(id);
-            if (d is null || !d.HasCredentials) return ("", 0, "", "");
+            // ⚠️ No HasCredentials gate any more: credentials typed into the browser terminal are enough,
+            // and the device only needs to exist. The stored login is the fallback for when nothing was
+            // typed. Neither is stored or logged here.
+            if (d is null) return ("", 0, "", "");
             var host = d.Ipv4Address.Length > 0 ? d.Ipv4Address : d.Host;
             return (host, d.Model.SshPort, d.Model.Username,
-                CredentialProtector.Unprotect(d.Model.EncryptedPassword));
+                d.HasCredentials ? CredentialProtector.Unprotect(d.Model.EncryptedPassword) : "");
         });
         if (conn.Host.Length == 0) return null;
+
+        var loginUser = user is { Length: > 0 } ? user : conn.User;
+        var loginPass = password is { Length: > 0 } ? password : conn.Pass;
+        if (loginPass.Length == 0) return null;
+
         return await TikMan.Core.Api.SshTerminalSession.ConnectAsync(
-            conn.Host, conn.Port, conn.User, conn.Pass, cols, rows);
+            conn.Host, conn.Port, loginUser, loginPass, cols, rows);
     }
 
     private DeviceDto ToDto(DeviceViewModel d) => new(
@@ -277,7 +286,50 @@ public partial class MainWindow : IWebBackend
         Model: d.ModelDisplay,
         Status: d.StatusText,
         IsGateway: d.IsGateway,
-        HasLogin: d.HasCredentials);
+        HasLogin: d.HasCredentials,
+        // The remaining GUI columns, so the browser table is not a poorer view of the same scan.
+        MacVendor: d.MacVendor,
+        Ipv6Summary: d.Ipv6Summary,
+        Serial: d.SerialNumber,
+        Os: d.OsDisplay,
+        Firmware: d.Version,
+        Cpu: d.CpuText,
+        Memory: d.MemoryText,
+        Uptime: d.Uptime,
+        LatestVersion: d.LatestReleaseText,
+        UpdateAvailable: d.UpdateAvailable,
+        Badges: d.SupportedProtocols.OfType<ProtocolVm>()
+            // The colour comes from the shared table, not from p.Color: that is a WPF Brush, and the web
+            // needs the hex the rest of the product already agrees on.
+            .Select(p => new BadgeDto(p.Name, p.IsClickable ? p.Url : "",
+                ServiceBadges.ColourFor(p.Name), p.Tooltip)).ToList());
+
+    /// <summary>One row per IPv6 address for the dashboard's IPv6 tab.
+    /// <para>⚠️ The WPF client has no per-address service probing (that lives in the shared FleetService,
+    /// which this client does not use), so the badges are left empty here rather than repeating the
+    /// device's IPv4 services against a v6 address and claiming they answered there.</para></summary>
+    IReadOnlyList<Ipv6RowDto> IWebBackend.GetIpv6Rows() => Dispatcher.Invoke(() =>
+    {
+        var rows = new List<Ipv6RowDto>();
+        var group = 0;
+        foreach (var d in _devices.Where(x => x.Ipv6List.Count > 0))
+        {
+            group++;
+            foreach (var a in d.Ipv6List.OrderBy(a => a, StringComparer.OrdinalIgnoreCase))
+                rows.Add(new Ipv6RowDto(
+                    WebId(d), group, d.Name, d.DeviceType,
+                    d.Ipv4Address.Length > 0 ? d.Ipv4Address : d.Host, a, "",
+                    d.Model.MacAddress, d.MacVendor, d.IdentifiedVendor, d.ModelDisplay, d.StatusText,
+                    Array.Empty<BadgeDto>(),
+                    // ⚠️ Device facts, and the per-address ones (serial/OS/shares) are left empty rather
+                    // than filled from IPv4: this client has no per-address probing, and repeating the v4
+                    // answer here would state something about the v6 address that was never measured.
+                    d.SerialNumber, d.OsDisplay, "",
+                    d.Version, d.LatestReleaseText, d.InstalledReleaseText, d.UpdateReleaseText,
+                    d.CpuText, d.MemoryText, d.Uptime));
+        }
+        return rows;
+    });
 
     /// <summary>A stable id for the web layer: the MAC (the app's real device identity) when known,
     /// otherwise the host address. Only used to map a web request back to a live device.</summary>

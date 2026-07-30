@@ -43,13 +43,14 @@ public static class MdnsScanner
     /// <summary>Queries every IPv4 interface and collects the answers, keyed by the responder's IP.
     /// Records are credited to the host that sent them, which is exactly right: over mDNS a device
     /// answers for itself.</summary>
+    /// <param name="onlyLocalAddress">This machine's IPv4 on the interface to query, or null/empty for all.</param>
     public static async Task<Dictionary<string, MdnsInfo>> DiscoverAsync(
-        TimeSpan duration, CancellationToken ct = default)
+        TimeSpan duration, CancellationToken ct = default, string? onlyLocalAddress = null)
     {
         var hosts = new Dictionary<string, Host>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            await Task.WhenAll(LocalIPv4().Select(local => ListenAsync(local, duration, hosts, ct)))
+            await Task.WhenAll(LocalIPv4(onlyLocalAddress).Select(local => ListenAsync(local, duration, hosts, ct)))
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) { /* keep what we have */ }
@@ -74,14 +75,19 @@ public static class MdnsScanner
         public readonly List<string> PendingTxt = new();
     }
 
-    private static IEnumerable<IPAddress> LocalIPv4() =>
+    /// <summary>The local IPv4 addresses to send from – one multicast query per interface.
+    /// <para><paramref name="only"/> restricts that to a single interface: mDNS is per-interface, so when
+    /// the user picked one network in the UI, querying every interface would pull in devices from segments
+    /// they explicitly did not ask about.</para></summary>
+    private static IEnumerable<IPAddress> LocalIPv4(string? only = null) =>
         NetworkInterface.GetAllNetworkInterfaces()
             .Where(n => n.OperationalStatus == OperationalStatus.Up &&
                         n.SupportsMulticast &&
                         n.NetworkInterfaceType != NetworkInterfaceType.Loopback)
             .SelectMany(n => n.GetIPProperties().UnicastAddresses)
             .Where(a => a.Address.AddressFamily == AddressFamily.InterNetwork)
-            .Select(a => a.Address);
+            .Select(a => a.Address)
+            .Where(a => only is not { Length: > 0 } || a.ToString() == only);
 
     private static async Task ListenAsync(IPAddress local, TimeSpan duration,
         Dictionary<string, Host> hosts, CancellationToken ct)

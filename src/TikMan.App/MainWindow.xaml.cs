@@ -13,7 +13,7 @@ using TikMan.Core.Api;
 using TikMan.Core.Discovery;
 using TikMan.Core.Models;
 using TikMan.Core.Storage;
-using static TikMan.App.Localization.LocalizationManager;
+using static TikMan.Core.Localization.LocalizationManager;
 
 namespace TikMan.App;
 
@@ -39,6 +39,7 @@ public partial class MainWindow : Window
         if (v is not null) Title = $"TikMan {v.Major}.{v.Minor}.{v.Build}";
         RouterOsClient.AllowInsecureCertificates = appData.DefaultIgnoreCertErrors;
         RouterOsClient.AllowHttpFallback = appData.AllowHttpFallback;
+        SnmpProbe.DefaultCommunity = appData.SnmpCommunity;
         DeviceGrid.ItemsSource = _devices;
         if (Ipv6GroupBrush.CanFreeze) Ipv6GroupBrush.Freeze();
         // The v4 view hides IPv6-only devices live (HasIpv4 flips when a MAC-match adds an IPv4).
@@ -330,6 +331,7 @@ public partial class MainWindow : Window
         {
             RouterOsClient.AllowInsecureCertificates = _appData.DefaultIgnoreCertErrors;
             RouterOsClient.AllowHttpFallback = _appData.AllowHttpFallback;
+            SnmpProbe.DefaultCommunity = _appData.SnmpCommunity;
             ApplyCoffeeButton();
             ApplyContactButtons();   // the view toggles live in the settings dialog now
             ApplyListInfo();
@@ -660,7 +662,8 @@ public partial class MainWindow : Window
         {
             var title = $"TikMan {(ipv6 ? "IPv6" : "IPv4")} devices";
             var content = html
-                ? DeviceExporter.ToHtml(devices, ipv6, title, DateTime.Now.ToString("yyyy-MM-dd HH:mm"))
+                // Stamp() spells out the UTC offset – a bare local time is ambiguous once the file is shared.
+                ? DeviceExporter.ToHtml(devices, ipv6, title, TabularExport.Stamp())
                 : DeviceExporter.ToCsv(devices, ipv6);
             System.IO.File.WriteAllText(dlg.FileName, content, new System.Text.UTF8Encoding(true));
             SetStatus(T("Msg_Exported", devices.Count, dlg.FileName));
@@ -822,11 +825,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Offer only the plain (non-ETM) HMACs: some embedded servers (Zyxel firewalls) miscompute the
-        // encrypt-then-MAC variants and drop every packet with "Corrupted MAC on input". Every device
-        // we reach accepts these, so this is safe for MikroTik/APs too.
-        var macs = $"-o MACs={TikMan.Core.Api.SshCompat.OpenSshMacList}";
-        var sshArgs = sshPort != 22 ? $"{macs} -p {sshPort} {target}" : $"{macs} {target}";
+        // Compatibility options for the older embedded servers on this network: plain HMACs for the Zyxel
+        // firewalls' broken ETM, and ssh-rsa re-enabled for TP-Link's SHA-1-only signatures (otherwise the
+        // client fails with "no mutual signature supported" and the device closes the connection before the
+        // password prompt). Safe for MikroTik/APs – it only adds fallbacks, modern algorithms stay first.
+        var opts = TikMan.Core.Api.SshCompat.OpenSshCompatOptions;
+        var sshArgs = sshPort != 22 ? $"{opts} -p {sshPort} {target}" : $"{opts} {target}";
         try
         {
             System.Diagnostics.Process.Start(

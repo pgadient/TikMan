@@ -1,4 +1,6 @@
 #!/bin/sh
-# AppImage entry point: run the bundled self-contained tikman-host, passing through any arguments.
+# AppImage entry point: run the bundled self-contained binary, passing through any arguments.
+# The placeholder below is substituted by build-appimage.sh with the executable name it was given
+# (tikman-host for the headless server, tikman for the desktop client).
 HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/usr/bin/tikman-host" "$@"
+exec "$HERE/usr/bin/@EXEC@" "$@"

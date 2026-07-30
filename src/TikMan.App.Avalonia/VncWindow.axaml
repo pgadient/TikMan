@@ -1,0 +1,25 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vnc="using:MarcusW.VncClient.Avalonia"
+        x:Class="TikMan.App.Avalonia.VncWindow"
+        x:CompileBindings="False"
+        Width="1024" Height="740"
+        Icon="/Assets/tikman.png"
+        Title="VNC">
+    <!-- Panel, not DockPanel: the status has to sit ON TOP of the view, centred, so "Connecting…" and any
+         failure are actually visible. Docked at the bottom with 0.7 opacity, a connect error was easy to
+         miss and the window just looked like an empty grey VNC pane. -->
+    <Panel>
+        <!-- Viewbox scales the framebuffer to the window. Uniform keeps the remote screen's aspect ratio
+             (no distortion) and grows the image as the window is enlarged; the window itself is sized to the
+             remote resolution on connect (see VncWindow.axaml.cs), so it starts at 1:1. -->
+        <Viewbox Stretch="Uniform">
+            <vnc:VncView x:Name="Vnc" />
+        </Viewbox>
+        <Border x:Name="StatusOverlay" HorizontalAlignment="Center" VerticalAlignment="Center"
+                Background="#D0202020" CornerRadius="8" Padding="20,14">
+            <TextBlock x:Name="Status" Foreground="White" FontSize="14" TextWrapping="Wrap"
+                       MaxWidth="600" TextAlignment="Center" />
+        </Border>
+    </Panel>
+</Window>

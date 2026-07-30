@@ -20,7 +20,7 @@ public static class BackupNaming
     };
 
     /// <summary>Format: &lt;identity-or-board&gt;_&lt;IP&gt;_&lt;timestamp&gt;&lt;ext&gt;,
-    /// e.g. "L009UiGS_192.168.14.19_20260704-011530.rsc" – capped at 50 characters by trimming the
+    /// e.g. "RouterA_192.0.2.10_20260704-011530.rsc" – capped at 50 characters by trimming the
     /// label first (it is the decorative part) and the host second (the timestamp stays, it is what
     /// keeps successive backups distinct). The extension names the dialect: ".rsc" for a RouterOS
     /// export, ".cfg" for a Zyxel running-config.</summary>
@@ -36,7 +36,12 @@ public static class BackupNaming
         if (label.Length > Budget())
         {
             // The label yields first, but keeps at least 8 characters of identity …
-            label = label[..Math.Max(8, Math.Max(0, Budget()))].TrimEnd('_', '-', '.');
+            // ⚠️ …and never more than it has. The floor of 8 is a *desired* length, not a promise the
+            // label is that long: with a long host (an IPv6 address sanitises to 39 characters) the
+            // budget goes negative, and a short RouterOS identity – "GW", "sw1", "hAP" are the norm –
+            // then made this slice past the end of the string and take the whole backup down.
+            label = label[..Math.Min(label.Length, Math.Max(8, Math.Max(0, Budget())))]
+                .TrimEnd('_', '-', '.');
             // … after which an overlong host (IPv6) yields the rest.
             if (label.Length > Budget() && hostPart.Length > 0)
             {

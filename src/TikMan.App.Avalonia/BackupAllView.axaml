@@ -1,0 +1,82 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:TikMan.App.Avalonia"
+             x:Class="TikMan.App.Avalonia.BackupAllView"
+             x:CompileBindings="False">
+    <UserControl.Styles>
+        <!-- Button.action lives in App.axaml – one definition for every view. -->
+        <!-- Selection is a row concept here too – the cell focus box framed whichever cell was clicked and
+             read as "this value is selected". Both theme parts are hidden; a selector that matches nothing
+             is harmless, a missing one leaves the box drawn. -->
+        <Style Selector="DataGridCell /template/ #FocusVisual" x:SetterTargetType="Control">
+            <Setter Property="IsVisible" Value="False" />
+            <Setter Property="Opacity" Value="0" />
+        </Style>
+        <Style Selector="DataGridCell /template/ #CurrencyVisual" x:SetterTargetType="Control">
+            <Setter Property="IsVisible" Value="False" />
+            <Setter Property="Opacity" Value="0" />
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel Margin="0,8,0,0">
+        <!-- The intro paragraph is gone: the Config / Binary columns say per device what it supports,
+             which is what the prose was there to explain. -->
+        <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0" Spacing="8">
+            <ProgressBar x:Name="Progress" Minimum="0" Maximum="1" Height="6" IsVisible="False" />
+            <TextBox x:Name="Log" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                     FontFamily="Consolas, Menlo, monospace" FontSize="12" Height="110"
+                     VerticalContentAlignment="Top"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <!-- ⚠️ BOTH on by default. The binary backup used to be opt-in, which quietly made the
+                     default run the weaker one: on a device that offers a full backup, taking only the
+                     config is a choice worth making deliberately, not by not noticing a checkbox. Either
+                     can still be turned off, and a device that cannot do a binary backup simply skips it. -->
+                <CheckBox x:Name="ConfigExport" Content="{loc:Loc Av_ConfigExport}" IsChecked="True" />
+                <CheckBox x:Name="AlsoBinary" Content="{loc:Loc Av_AlsoBinary}" IsChecked="True" />
+            </StackPanel>
+            <!-- The run buttons on their own row, hard left: as the one action of this tab the start button
+                 was easy to miss at the end of a line of checkboxes it does not belong to. -->
+            <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Left">
+                <Button x:Name="StartButton" Content="{loc:Loc Av_CreateBackups}" Click="OnStart" Classes="action" />
+                <Button x:Name="StopButton" Content="{loc:Loc Av_Stop}" Click="OnStop" IsVisible="False" Classes="action" />
+            </StackPanel>
+        </StackPanel>
+
+        <!-- List actions live beside the list they act on, stacked, instead of in the row of run controls. -->
+        <StackPanel DockPanel.Dock="Right" Margin="10,0,0,0" Spacing="6" VerticalAlignment="Top" MinWidth="120">
+            <Button Content="{loc:Loc Av_SelectAll}" Click="OnSelectAll" Classes="action" HorizontalAlignment="Stretch" />
+            <Button Content="{loc:Loc Av_SelectNone}" Click="OnSelectNone" Classes="action" HorizontalAlignment="Stretch" />
+            <Button Content="{loc:Loc Av_Refresh}" Click="OnRefresh" Classes="action" HorizontalAlignment="Stretch" />
+            <!-- ⚠️ Arrow glyphs, not the ▲/▼ shapes used before: those rendered as hollow triangles in the
+                 UI font on Windows. These are the solid small-triangle characters. -->
+            <Button Content="↑" Click="OnMoveUp" ToolTip.Tip="{loc:Loc Av_MoveUpTip}" Classes="action"
+                    HorizontalAlignment="Stretch" FontSize="15" />
+            <Button Content="↓" Click="OnMoveDown" ToolTip.Tip="{loc:Loc Av_MoveDownTip}" Classes="action"
+                    HorizontalAlignment="Stretch" FontSize="15" />
+        </StackPanel>
+
+        <!-- ⚠️ "Nothing here" is a STATE, so it is drawn over the empty list instead of being written into
+             the log. As a log line it was appended the first time the list happened to be empty – before the
+             first scan – and then stayed there for the rest of the session, so the tab could show seventeen
+             ready devices above the sentence "no backup-capable devices with a saved login". A message that
+             is only true at the moment it is written does not belong in a transcript that never clears. -->
+        <Panel>
+        <DataGrid x:Name="Grid" IsReadOnly="False" CanUserResizeColumns="True" GridLinesVisibility="Horizontal">
+            <DataGrid.Columns>
+                <DataGridCheckBoxColumn Header="" Binding="{Binding Selected, Mode=TwoWay}" Width="Auto" />
+                <DataGridTextColumn Header="{loc:Loc Av_ColName}" Binding="{Binding Name}" Width="2*" IsReadOnly="True" />
+                <DataGridTextColumn Header="{loc:Loc Av_ColIp}" Binding="{Binding Ip}" Width="Auto" IsReadOnly="True" />
+                <DataGridTextColumn Header="{loc:Loc Av_ColType}" Binding="{Binding KindText}" Width="Auto" IsReadOnly="True" />
+                <!-- One column per backup kind: ✓ / ✗ per device, so support is visible without prose. -->
+                <DataGridTextColumn Header="{loc:Loc Av_ColConfig}" Binding="{Binding ConfigText}" Width="Auto" IsReadOnly="True" />
+                <DataGridTextColumn Header="{loc:Loc Av_ColBinary}" Binding="{Binding BinaryText}" Width="Auto" IsReadOnly="True" />
+                <DataGridTextColumn Header="{loc:Loc Av_ColStatus}" Binding="{Binding Status}" Width="2*" IsReadOnly="True" />
+            </DataGrid.Columns>
+        </DataGrid>
+            <TextBlock x:Name="EmptyNotice" Text="{loc:Loc Av_BackupNoDevices}" IsVisible="False"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20,40,20,0"
+                       TextWrapping="Wrap" MaxWidth="420" TextAlignment="Center" Opacity="0.7" />
+        </Panel>
+    </DockPanel>
+</UserControl>

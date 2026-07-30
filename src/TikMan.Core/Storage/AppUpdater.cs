@@ -1,5 +1,6 @@
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -49,23 +50,182 @@ public static class AppUpdater
             if (!root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
                 return new Result(Outcome.Failed, null);
 
+            Result? scFallback = null;   // fdd → self-contained migration, see below
             foreach (var a in assets.EnumerateArray())
             {
                 var name = a.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
                 var url = a.TryGetProperty("browser_download_url", out var u) ? u.GetString() ?? "" : "";
-                // Match the exact variant, e.g. "TikMan-1.10.24-win-x64.exe". The "-fdd" must match too:
-                // require the suffix immediately before ".exe" so win-x64 never matches win-x64-fdd.
                 // The name must be a bare filename (no path) and the URL an https GitHub URL – belt and
-                // braces on top of the already-TLS API response.
-                if (IsTrustedGithubUrl(url) && IsSafeAssetName(name) &&
-                    name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
-                    name.Contains(variant, StringComparison.OrdinalIgnoreCase) &&
-                    IsFdd(name) == IsFdd(currentExeName))
+                // braces on top of the already-TLS API response. Then match this build's arch (win-x64/arm64).
+                if (!IsTrustedGithubUrl(url) || !IsSafeAssetName(name) ||
+                    !name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
+                    !name.Contains(variant, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (IsFdd(name) == IsFdd(currentExeName))
                     return new Result(Outcome.UpdateAvailable, new Available(latest, releaseName, name, url));
+
+                // ⚠️ We're an -fdd build and this is the self-contained asset of the same arch. Keep it as a
+                // fallback: if no -fdd asset shows up, migrate to self-contained rather than strand this
+                // install. That is what makes dropping the -fdd builds safe – a self-contained exe always
+                // runs, with or without a .NET runtime. Never the reverse (a self-contained install must not
+                // be handed an -fdd build that then needs a runtime which may be missing).
+                if (IsFdd(currentExeName) && !IsFdd(name))
+                    scFallback ??= new Result(Outcome.UpdateAvailable, new Available(latest, releaseName, name, url));
             }
-            return new Result(Outcome.Failed, null); // newer version exists but no asset for this variant
+            return scFallback ?? new Result(Outcome.Failed, null); // newer version, but no asset for this variant
         }
         catch (Exception) { return new Result(Outcome.Failed, null); } // offline / rate-limited / bad JSON
+    }
+
+    /// <summary>A newer release, ignoring assets entirely: is there a newer TikMan at all?
+    /// <para>⚠️ Deliberately separate from <see cref="CheckDetailedAsync"/>, which only reports success when
+    /// the release ships an asset matching <i>this build's</i> variant (TikMan-x.y-win-arch[-fdd].exe). The
+    /// cross-platform (Avalonia) client has no such per-variant exe on the release, so that check would
+    /// report "failed" for every genuinely newer version. This one just compares the tag, so a client that
+    /// can't self-update can still honestly say "a newer version exists".</para>
+    /// Returns Newer=false on any network/parse error – a failed check must never block startup.</summary>
+    public static async Task<(bool Newer, Version? Latest, string ReleaseName)> CheckVersionAsync(
+        Version current, CancellationToken ct = default)
+    {
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+            http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("TikMan", current.ToString()));
+            http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+
+            var json = await http.GetStringAsync(LatestReleaseApi, ct).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var tag = root.TryGetProperty("tag_name", out var t) ? t.GetString() ?? "" : "";
+            if (!TryParseVersion(tag, out var latest)) return (false, null, "");
+            var name = root.TryGetProperty("name", out var rn) ? rn.GetString() ?? "" : "";
+            if (name.Length == 0) name = tag;
+            return (latest > current, latest, name);
+        }
+        catch (Exception) { return (false, null, ""); }
+    }
+
+    /// <summary>How the running build is able to replace itself in place.</summary>
+    public enum SelfUpdateKind
+    {
+        /// <summary>Single-file Windows exe – the successor deletes the old file (see the "--replaced" flag).</summary>
+        WindowsExe,
+        /// <summary>Linux AppImage – one file, so it can be overwritten and re-executed.</summary>
+        LinuxAppImage,
+        /// <summary>No in-place update (macOS bundle, or an unrecognised layout): report only.</summary>
+        None,
+    }
+
+    /// <summary>What this process can do about an update. macOS is deliberately <see cref="SelfUpdateKind.None"/>:
+    /// swapping a running, unsigned <c>.app</c> bundle underneath Gatekeeper is not something to do behind the
+    /// user's back – the app reports the new version and lets them install it.</summary>
+    public static SelfUpdateKind CurrentSelfUpdateKind()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return SelfUpdateKind.WindowsExe;
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) &&
+            Environment.GetEnvironmentVariable("APPIMAGE") is { Length: > 0 })
+            return SelfUpdateKind.LinuxAppImage;
+        return SelfUpdateKind.None;
+    }
+
+    /// <summary>Finds the release asset for <b>this platform</b> for the cross-platform (Avalonia) client.
+    /// <para>Expected asset names on the GitHub release – if they aren't there, this returns null and the
+    /// caller simply reports the new version instead of pretending it can update:</para>
+    /// <code>
+    /// Windows : TikMan-&lt;version&gt;-win-x64.exe    (or -win-arm64.exe, plus -fdd variants)
+    /// Linux   : TikMan-&lt;version&gt;-x86_64.AppImage          (or -aarch64.AppImage)
+    /// macOS   : TikMan-&lt;version&gt;-macos.tar.gz              (reported, never swapped automatically)
+    /// </code>
+    /// The Windows names are the WPF client's names on purpose – see <see cref="MatchesThisPlatform"/>.</summary>
+    public static async Task<Available?> CheckPlatformAssetAsync(Version current, CancellationToken ct = default) =>
+        await CheckPlatformAssetAsync(current, CurrentExeName(), ct).ConfigureAwait(false);
+
+    /// <summary>As above, but told which exe is running so it can pick the matching naming scheme. See
+    /// <see cref="MatchesThisPlatform"/> for why that matters during the WPF → Avalonia migration.</summary>
+    public static async Task<Available?> CheckPlatformAssetAsync(Version current, string currentExeName,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+            http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("TikMan", current.ToString()));
+            http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+
+            var json = await http.GetStringAsync(LatestReleaseApi, ct).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var tag = root.TryGetProperty("tag_name", out var t) ? t.GetString() ?? "" : "";
+            if (!TryParseVersion(tag, out var latest) || latest <= current) return null;
+            var releaseName = root.TryGetProperty("name", out var rn) ? rn.GetString() ?? "" : "";
+            if (releaseName.Length == 0) releaseName = tag;
+            if (!root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array) return null;
+
+            Available? scFallback = null;   // fdd → self-contained migration, see below
+            foreach (var a in assets.EnumerateArray())
+            {
+                var name = a.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                var url = a.TryGetProperty("browser_download_url", out var u) ? u.GetString() ?? "" : "";
+                if (!IsTrustedGithubUrl(url) || !IsSafeAssetName(name) || !MatchesThisPlatform(name)) continue;
+
+                if (IsFdd(name) == IsFdd(currentExeName)) return new Available(latest, releaseName, name, url);
+
+                // ⚠️ We're an -fdd build and this is the self-contained asset for this platform. Keep it as a
+                // fallback so dropping the -fdd builds migrates fdd installs to self-contained instead of
+                // stranding them – self-contained always runs, runtime present or not. Never the reverse:
+                // handing a self-contained install the -fdd build would leave it needing a runtime that may
+                // not be there.
+                if (IsFdd(currentExeName) && !IsFdd(name)) scFallback ??= new Available(latest, releaseName, name, url);
+            }
+            return scFallback; // exact match wins; else the self-contained fallback for an fdd install, or null
+        }
+        catch (Exception) { return null; }
+    }
+
+    private static string CurrentExeName()
+    {
+        try { return Path.GetFileName(Environment.ProcessPath ?? ""); } catch { return ""; }
+    }
+
+    /// <summary>Whether a release asset is the build for this platform.
+    /// <para>Windows uses the <b>same</b> asset names the WPF client has always used –
+    /// <c>TikMan-&lt;ver&gt;-win-&lt;arch&gt;[-fdd].exe</c> – deliberately, because that is what makes the
+    /// WPF → Avalonia migration free: an installed WPF client can never be changed, it will forever ask for
+    /// exactly those names, so publishing the Avalonia build under them turns every WPF install into an
+    /// Avalonia install on its next update (same <c>--replaced</c> handshake, same settings file). After
+    /// that the exe is still called <c>TikMan-…-win-x64.exe</c>, so this same rule keeps it updating.</para>
+    /// <para>⚠️ The consequence: one Windows exe per variant per release. If a release ever shipped both a
+    /// WPF and an Avalonia build for the same variant, clients would pick whichever the API happened to list
+    /// first. Publish one or the other, never both.</para></summary>
+    private static bool MatchesThisPlatform(string name)
+    {
+        var arch = RuntimeInformation.ProcessArchitecture;
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            if (!name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) return false;
+            return arch switch
+            {
+                Architecture.Arm64 => name.Contains("win-arm64", StringComparison.OrdinalIgnoreCase),
+                Architecture.X64 => name.Contains("win-x64", StringComparison.OrdinalIgnoreCase),
+                _ => false,
+            };
+        }
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            if (!name.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase)) return false;
+            return arch switch
+            {
+                Architecture.Arm64 => name.Contains("aarch64", StringComparison.OrdinalIgnoreCase) ||
+                                      name.Contains("arm64", StringComparison.OrdinalIgnoreCase),
+                Architecture.X64 => name.Contains("x86_64", StringComparison.OrdinalIgnoreCase) ||
+                                    name.Contains("x64", StringComparison.OrdinalIgnoreCase),
+                _ => false,
+            };
+        }
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            return name.Contains("macos", StringComparison.OrdinalIgnoreCase) &&
+                   name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase);
+        return false;
     }
 
     /// <summary>Downloads the release asset next to the current executable and returns its full path;

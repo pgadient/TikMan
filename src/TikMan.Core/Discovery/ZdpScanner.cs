@@ -60,13 +60,19 @@ public static class ZdpScanner
         catch { return null; }
     }
 
+    /// <summary>Discovers Zyxel devices over raw Ethernet (ZON/ZDP).
+    /// <para><paramref name="onlyHostAddress"/> limits the scan to the adapter that carries that local IPv4
+    /// address – so picking one interface in the UI really does restrict ZON to it. Empty/null keeps the old
+    /// behaviour of sweeping every adapter. ZDP is layer 2 and crosses no router, so the adapter choice is
+    /// exactly the choice of which segment gets scanned.</para></summary>
     public static async Task<List<DiscoveredDevice>> DiscoverAsync(
-        TimeSpan duration, IProgress<DiscoveredDevice>? onFound = null, CancellationToken ct = default)
+        TimeSpan duration, IProgress<DiscoveredDevice>? onFound = null, CancellationToken ct = default,
+        string? onlyHostAddress = null)
     {
         var results = new Dictionary<string, DiscoveredDevice>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            await Task.Run(() => Scan(duration, results, onFound, ct), ct).ConfigureAwait(false);
+            await Task.Run(() => Scan(duration, results, onFound, ct, onlyHostAddress), ct).ConfigureAwait(false);
         }
         catch (DllNotFoundException) { /* Npcap not installed – no ZDP discovery */ }
         catch (TypeInitializationException) { /* Npcap not installed */ }
@@ -75,11 +81,14 @@ public static class ZdpScanner
     }
 
     private static void Scan(TimeSpan duration, Dictionary<string, DiscoveredDevice> results,
-        IProgress<DiscoveredDevice>? onFound, CancellationToken ct)
+        IProgress<DiscoveredDevice>? onFound, CancellationToken ct, string? onlyHostAddress = null)
     {
+        // ⚠️ Interface/Addresses can be null on some adapters (loopback, virtual, a device that vanished
+        // mid-enumeration). Dereferencing them threw a NullReferenceException, which DiscoverAsync does not
+        // catch – it only handles the "no capture layer" exceptions – so one odd adapter killed the scan.
         var adapters = CaptureDeviceList.Instance.OfType<LibPcapLiveDevice>()
-            .Where(d => d.MacAddress is not null &&
-                        d.Interface.Addresses.Any(a => a.Addr?.ipAddress?.AddressFamily == AddressFamily.InterNetwork))
+            .Where(d => d.MacAddress is not null && HasIpv4(d) &&
+                        (onlyHostAddress is not { Length: > 0 } || HasAddress(d, onlyHostAddress)))
             .ToList();
 
         foreach (var dev in adapters)
@@ -90,6 +99,16 @@ public static class ZdpScanner
             finally { try { if (dev.Opened) dev.Close(); } catch { /* ignore */ } }
         }
     }
+
+    private static bool HasIpv4(LibPcapLiveDevice d) =>
+        d.Interface?.Addresses?.Any(a => a.Addr?.ipAddress?.AddressFamily == AddressFamily.InterNetwork) == true;
+
+    /// <summary>True when the adapter carries this exact local IPv4 – how a UI subnet choice maps onto a
+    /// capture device (LocalSubnet.HostAddress is this machine's address on that adapter).</summary>
+    private static bool HasAddress(LibPcapLiveDevice d, string ipv4) =>
+        d.Interface?.Addresses?.Any(a => a.Addr?.ipAddress is { } ip &&
+            ip.AddressFamily == AddressFamily.InterNetwork &&
+            string.Equals(ip.ToString(), ipv4, StringComparison.Ordinal)) == true;
 
     private static void ScanAdapter(LibPcapLiveDevice dev, TimeSpan duration,
         Dictionary<string, DiscoveredDevice> results, IProgress<DiscoveredDevice>? onFound, CancellationToken ct)
