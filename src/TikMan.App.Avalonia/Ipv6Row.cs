@@ -90,6 +90,8 @@ public sealed class Ipv6Row : INotifyPropertyChanged, IExpandableRow
     public string LatestDisplay => Device.LatestDisplay;
     public string LatestVersionUrl => Device.LatestVersionUrl;
     public bool HasLatestLink => Device.HasLatestLink;
+    public string VersionUrl => Device.VersionUrl;
+    public bool HasVersionLink => Device.HasVersionLink;
     public bool UpdateAvailable => Device.UpdateAvailable;
     public string InstalledRelease => Device.InstalledRelease;
     public string UpdateRelease => Device.UpdateRelease;

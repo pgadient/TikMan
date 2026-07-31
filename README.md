@@ -74,7 +74,7 @@ it's a single file, and it doesn't write anything outside its own settings folde
 | Platform | File |
 |---|---|
 | **Windows** | `TikMan-<version>-win-x64.exe` or `-win-arm64.exe` — one self-contained file, nothing else to install |
-| **Linux** | `TikMan-<version>-x86_64.AppImage` / `-aarch64.AppImage` — `chmod +x`, then run |
+| **Linux** | `TikMan-<version>-linux-x86_64.AppImage` / `-linux-aarch64.AppImage` — `chmod +x`, then run |
 | **macOS** | `TikMan-<version>-macos.tar.gz` — unpack and run `install.command` (see the README inside; unsigned, so macOS needs one command to allow it) |
 
 The Windows build is the one that's had the most use; the Linux and macOS builds are newer.

@@ -426,53 +426,60 @@
                     <Setter Property="Content" Value="▼" />
                     <Setter Property="ToolTip.Tip" Value="{loc:Loc Av_DetailPaneHide}" />
                 </Style>
+                <!-- Keep the neutral grey action plate in EVERY state. The .action rule (App.axaml) colours
+                     the resting plate, but Semi repaints a ToggleButton's hover / checked / focus plate from
+                     its own accent, so the chevron lit up blue when it had focus or the pane was open. Pin the
+                     template's plate to the same greys and drop the accent border. Harmless if the part name
+                     ever changes – a /template/ selector that matches nothing just does nothing. -->
+                <Style Selector="ToggleButton /template/ ContentPresenter#PART_ContentPresenter">
+                    <Setter Property="Background" Value="#C9CCD1" />
+                    <Setter Property="BorderBrush" Value="Transparent" />
+                </Style>
+                <Style Selector="ToggleButton:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+                    <Setter Property="Background" Value="#B9BCC2" />
+                    <Setter Property="BorderBrush" Value="Transparent" />
+                </Style>
+                <Style Selector="ToggleButton:checked /template/ ContentPresenter#PART_ContentPresenter">
+                    <Setter Property="Background" Value="#C9CCD1" />
+                    <Setter Property="BorderBrush" Value="Transparent" />
+                </Style>
+                <Style Selector="ToggleButton:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+                    <Setter Property="Background" Value="#B9BCC2" />
+                    <Setter Property="BorderBrush" Value="Transparent" />
+                </Style>
+                <Style Selector="ToggleButton:focus-visible /template/ ContentPresenter#PART_ContentPresenter">
+                    <Setter Property="Background" Value="#C9CCD1" />
+                    <Setter Property="BorderBrush" Value="Transparent" />
+                </Style>
             </ToggleButton.Styles>
         </ToggleButton>
-
-        <!-- Drag handle for the detail pane. Docked directly above it so the two move together; the pane's
-             height is what the drag changes. -->
-        <!-- ⚠️ A Thumb, not a GridSplitter. GridSplitter resizes the rows of a Grid; docked in a DockPanel
-             it has no row to work on, so it rendered as a strip that could be grabbed but changed nothing.
-             A Thumb just reports the drag and we set the height ourselves. -->
-        <Thumb DockPanel.Dock="Bottom" Height="8" HorizontalAlignment="Stretch" Margin="16,0"
-               Cursor="SizeNorthSouth" IsVisible="{Binding ShowDetailPane}"
-               ToolTip.Tip="{loc:Loc Av_DetailResizeTip}"
-               DragDelta="OnDetailSplitterDrag">
-            <Thumb.Template>
-                <ControlTemplate>
-                    <!-- Transparent grab area with a visible grip line, so it reads as draggable. -->
-                    <Border Background="Transparent" Padding="0,3">
-                        <Border Height="2" CornerRadius="1" Background="#33808080" />
-                    </Border>
-                </ControlTemplate>
-            </Thumb.Template>
-        </Thumb>
 
         <!-- Device detail. Hidden together with its splitter when switched off, so the list gets the room. -->
         <Border x:Name="DetailPane" DockPanel.Dock="Bottom" Height="270" Margin="16,0,16,10" Padding="14"
                 Background="#14808080" CornerRadius="10" IsVisible="{Binding ShowDetailPane}">
-            <ScrollViewer>
-                <StackPanel Spacing="8">
+            <Grid RowDefinitions="Auto,*">
+                <StackPanel Grid.Row="0" Spacing="8">
                     <TextBlock Text="{loc:Loc Av_NoSelection}" Opacity="0.6"
                                IsVisible="{Binding !HasSelection}" />
                     <!-- ⚠️ Several devices marked: the pane describes exactly one device, so showing the
                          first of them would quietly misattribute its facts to the whole selection. -->
                     <TextBlock Text="{loc:Loc Av_DetailMultiSelect}" Opacity="0.6" TextWrapping="Wrap"
                                IsVisible="{Binding HasMultipleMarked}" />
-                    <StackPanel Spacing="8" IsVisible="{Binding ShowDeviceDetail}">
-
-                        <!-- Same four sections as the WPF client. Logs load on demand (an SSH round trip),
-                             the rest is already in the snapshot. -->
-                        <!-- Details and Connection errors are the two constants and lead; the rest appear
-                             only when the device supports them (see the IsVisible on each) – a tab whose
-                             only content is "not supported" was one click to learn nothing. -->
-                        <TabControl x:Name="DetailTabs" Margin="0,4,0,0" SelectionChanged="OnDetailTabChanged">
+                </StackPanel>
+                <!-- The tabs fill the rest of the pane (Row *), so the monitoring graph grows to use the
+                     space when the pane is dragged taller, instead of leaving a gap under a fixed chart.
+                     Same four sections as the WPF client; the non-constant tabs hide when unsupported. -->
+                <TabControl Grid.Row="1" x:Name="DetailTabs" Margin="0,4,0,0"
+                            IsVisible="{Binding ShowDeviceDetail}" SelectionChanged="OnDetailTabChanged">
                             <TabItem Header="{loc:Loc Tab_Details}">
-                              <Panel Margin="0,8,0,0">
-                                <TextBlock Text="{loc:Loc Av_DetailNotSupported}" Opacity="0.6" TextWrapping="Wrap"
-                                           IsVisible="{Binding !HasDetailFacts}" />
-                                <ItemsControl ItemsSource="{Binding SelectedDevice.Info}"
-                                              IsVisible="{Binding HasDetailFacts}">
+                              <!-- Scrolls: now the tabs fill a (sometimes short) pane, a device with many
+                                   facts has to scroll rather than clip. -->
+                              <ScrollViewer>
+                                <Panel Margin="0,8,0,0">
+                                  <TextBlock Text="{loc:Loc Av_DetailNotSupported}" Opacity="0.6" TextWrapping="Wrap"
+                                             IsVisible="{Binding !HasDetailFacts}" />
+                                  <ItemsControl ItemsSource="{Binding SelectedDevice.Info}"
+                                                IsVisible="{Binding HasDetailFacts}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
@@ -484,8 +491,9 @@
                                             </StackPanel>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                              </Panel>
+                                  </ItemsControl>
+                                </Panel>
+                              </ScrollViewer>
                             </TabItem>
 
                             <TabItem Header="{loc:Loc Col_LastError}">
@@ -593,10 +601,28 @@
                             </TabItem>
 
                         </TabControl>
-                    </StackPanel>
-                </StackPanel>
-            </ScrollViewer>
+            </Grid>
         </Border>
+
+        <!-- Drag handle for the detail pane, at its TOP edge (docked above it), so you grab the boundary
+             with the list and pull up to enlarge – the natural gesture. Dragging up makes the pane taller
+             (see OnDetailSplitterDrag). -->
+        <!-- ⚠️ A Thumb, not a GridSplitter. GridSplitter resizes the rows of a Grid; docked in a DockPanel
+             it has no row to work on, so it rendered as a strip that could be grabbed but changed nothing.
+             A Thumb just reports the drag and we set the height ourselves. -->
+        <Thumb DockPanel.Dock="Bottom" Height="8" HorizontalAlignment="Stretch" Margin="16,0"
+               Cursor="SizeNorthSouth" IsVisible="{Binding ShowDetailPane}"
+               ToolTip.Tip="{loc:Loc Av_DetailResizeTip}"
+               DragDelta="OnDetailSplitterDrag">
+            <Thumb.Template>
+                <ControlTemplate>
+                    <!-- Transparent grab area with a visible grip line, so it reads as draggable. -->
+                    <Border Background="Transparent" Padding="0,3">
+                        <Border Height="2" CornerRadius="1" Background="#33808080" />
+                    </Border>
+                </ControlTemplate>
+            </Thumb.Template>
+        </Thumb>
 
         <!-- Filter + scan options: above the tabs, so they stay put whichever view is open. -->
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="14" Margin="16,4,16,12">
@@ -1075,7 +1101,21 @@
                         <DataGridTextColumn Header="{loc:Loc Col_Board}" Binding="{Binding Model}" Width="Auto" MinWidth="140" MaxWidth="900" Tag="rich" />
                         <DataGridTextColumn Header="{loc:Loc Col_Serial}" Binding="{Binding Serial}" Width="Auto" Tag="rich" />
                         <DataGridTextColumn Header="{loc:Loc Col_Os}" Binding="{Binding Os}" Width="Auto" Tag="rich" />
-                        <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Firmware}" Width="Auto" Tag="rich" />
+                        <!-- Version is a link on MikroTik: the installed release number opens that release's
+                             changelog (per-version CHANGELOG on MikroTik's CDN). Plain text for other vendors
+                             (HasVersionLink false ⇒ no underline, no hand cursor, no tooltip). -->
+                        <DataGridTemplateColumn Header="{loc:Loc Col_Version}" Width="Auto" Tag="rich">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Firmware}" VerticalAlignment="Center"
+                                               Classes.latestlink="{Binding HasVersionLink}"
+                                               Background="Transparent"
+                                               ToolTip.Tip="{Binding VersionUrl, Converter={x:Static loc:EmptyToNull.Instance}}"
+                                               Tag="{Binding VersionUrl}" PointerPressed="OnLatestClick"
+                                               Cursor="{Binding HasVersionLink, Converter={x:Static loc:BadgeCursor.Instance}}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                         <!-- Update columns. Empty until a check has run – empty means "not checked", not
                              "up to date", so they are deliberately not filled by the scan. -->
                         <!-- Latest: for MikroTik the version from the update check; for TP-Link/Zyxel the
@@ -1088,6 +1128,7 @@
                                                Classes.pending="{Binding UpdateAvailable}"
                                                Classes.latestlink="{Binding HasLatestLink}"
                                                Background="Transparent"
+                                               ToolTip.Tip="{Binding LatestVersionUrl, Converter={x:Static loc:EmptyToNull.Instance}}"
                                                Tag="{Binding LatestVersionUrl}" PointerPressed="OnLatestClick"
                                                Cursor="{Binding HasLatestLink, Converter={x:Static loc:BadgeCursor.Instance}}" />
                                 </DataTemplate>
@@ -1314,7 +1355,21 @@
                         <!-- Shares moved into the expandable row details (click the SMB badge or the + toggle),
                              the same place the IPv4 grid keeps them – see the RowDetailsTemplate above. -->
 
-                        <DataGridTextColumn Header="{loc:Loc Col_Version}" Binding="{Binding Firmware}" Width="Auto" Tag="rich" />
+                        <!-- Version is a link on MikroTik: the installed release number opens that release's
+                             changelog (per-version CHANGELOG on MikroTik's CDN). Plain text for other vendors
+                             (HasVersionLink false ⇒ no underline, no hand cursor, no tooltip). -->
+                        <DataGridTemplateColumn Header="{loc:Loc Col_Version}" Width="Auto" Tag="rich">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Firmware}" VerticalAlignment="Center"
+                                               Classes.latestlink="{Binding HasVersionLink}"
+                                               Background="Transparent"
+                                               ToolTip.Tip="{Binding VersionUrl, Converter={x:Static loc:EmptyToNull.Instance}}"
+                                               Tag="{Binding VersionUrl}" PointerPressed="OnLatestClick"
+                                               Cursor="{Binding HasVersionLink, Converter={x:Static loc:BadgeCursor.Instance}}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                         <DataGridTemplateColumn Header="{loc:Loc Col_Latest}" Width="Auto" Tag="rich">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
@@ -1322,6 +1377,7 @@
                                                Classes.pending="{Binding UpdateAvailable}"
                                                Classes.latestlink="{Binding HasLatestLink}"
                                                Background="Transparent"
+                                               ToolTip.Tip="{Binding LatestVersionUrl, Converter={x:Static loc:EmptyToNull.Instance}}"
                                                Tag="{Binding LatestVersionUrl}" PointerPressed="OnLatestClick"
                                                Cursor="{Binding HasLatestLink, Converter={x:Static loc:BadgeCursor.Instance}}" />
                                 </DataTemplate>

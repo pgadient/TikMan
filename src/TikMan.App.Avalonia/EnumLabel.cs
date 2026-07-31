@@ -2,61 +2,38 @@ using System;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Avalonia.Data.Converters;
-using Avalonia.Media;
 using TikMan.Core.Localization;
 using TikMan.Core.Models;
 
 namespace TikMan.App.Avalonia;
 
-/// <summary>Renders an enum value in the dropdowns as its <b>translated</b> name, with a flag in front of
-/// the languages (same presentation as the WPF client).
+/// <summary>Renders an enum value in the dropdowns as its <b>translated</b> name.
 /// <para>⚠️ Deliberately a key lookup, not string cosmetics on the identifier. An earlier version just
 /// inserted spaces before capitals ("SwissGerman" → "Swiss German"), which reads fine in English and is
 /// wrong in every other language: the app speaks seven, and those dropdowns would have stayed stuck on the
 /// C# identifiers. The keys already exist – the WPF client uses the same ones – so both clients name these
 /// options identically.</para>
-/// <para>The flags stay emoji on purpose. Everywhere else the icons are vector paths so they can follow the
-/// light/dark theme, but a flag is inherently multi-coloured – tinting it would destroy it.</para>
+/// <para>The language flag is <b>not</b> here any more – it used to be an emoji prefixed to the name, but
+/// Windows draws regional-indicator pairs as bare letters ("DE"), so it only ever showed on macOS/Linux.
+/// The flag is now a real vector image (<see cref="LanguageFlag"/>) drawn beside this text in the item
+/// template, which looks the same on every OS. This converter is just the name.</para>
 /// <para>An enum member without a key falls back to the spaced identifier: a new option shows up readable
 /// instead of blank, which is the failure mode you want when someone forgets a translation.</para></summary>
 public sealed class EnumLabel : IValueConverter
 {
     public static readonly EnumLabel Instance = new();
 
-    /// <summary>Whether this system can actually draw a flag. Flags are regional-indicator pairs and need an
-    /// emoji font: Windows and macOS ship one, a bare Linux install often does not (fonts-noto-color-emoji).
-    /// Without it the text would degrade to tofu boxes, so the flag is dropped and only the name shown –
-    /// missing decoration beats visible breakage. Probed once; the font set doesn't change mid-run.</summary>
-    private static readonly bool FlagsRenderable = ProbeFlagFont();
-
-    private static bool ProbeFlagFont()
+    private static string LanguageKey(AppLanguage l) => l switch
     {
-        // ⚠️ Windows never renders flag emoji: Segoe UI Emoji deliberately draws regional-indicator pairs
-        // as the plain letters ("DE", "GB") – a Microsoft policy decision, not a missing font. The font
-        // probe below can't see that (the characters ARE in the font, they just render as letters), which
-        // is exactly how the dropdown ended up showing country codes in front of every language name.
-        // No flag beats a wrong-looking code.
-        if (OperatingSystem.IsWindows()) return false;
-        try
-        {
-            // U+1F1E8 REGIONAL INDICATOR SYMBOL LETTER C – the first half of 🇨🇭.
-            return FontManager.Current.TryMatchCharacter(
-                0x1F1E8, FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, null, null, out _);
-        }
-        catch { return false; } // no font manager yet / unusual platform – be conservative
-    }
-
-    private static (string Flag, string Key) Language(AppLanguage l) => l switch
-    {
-        AppLanguage.System => ("🌐", "Set_LangSystem"),
-        AppLanguage.German => ("🇩🇪", "Set_LangGerman"),
-        AppLanguage.English => ("🇬🇧", "Set_LangEnglish"),
-        AppLanguage.SwissGerman => ("🇨🇭", "Set_LangSwiss"),
-        AppLanguage.Spanish => ("🇪🇸", "Set_LangSpanish"),
-        AppLanguage.Italian => ("🇮🇹", "Set_LangItalian"),
-        AppLanguage.French => ("🇫🇷", "Set_LangFrench"),
-        AppLanguage.Portuguese => ("🇵🇹", "Set_LangPortuguese"),
-        _ => ("", ""),
+        AppLanguage.System => "Set_LangSystem",
+        AppLanguage.German => "Set_LangGerman",
+        AppLanguage.English => "Set_LangEnglish",
+        AppLanguage.SwissGerman => "Set_LangSwiss",
+        AppLanguage.Spanish => "Set_LangSpanish",
+        AppLanguage.Italian => "Set_LangItalian",
+        AppLanguage.French => "Set_LangFrench",
+        AppLanguage.Portuguese => "Set_LangPortuguese",
+        _ => "",
     };
 
     private static string BackupMethodKey(BackupMethod m) => m switch
@@ -69,8 +46,7 @@ public sealed class EnumLabel : IValueConverter
 
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
     {
-        AppLanguage l when Language(l) is var (flag, key) =>
-            FlagsRenderable && flag.Length > 0 ? $"{flag}  {Translate(key, l)}" : Translate(key, l),
+        AppLanguage l => Translate(LanguageKey(l), l),
         BackupMethod m => Translate(BackupMethodKey(m), m),
         null => "",
         _ => Spaced(value),

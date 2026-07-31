@@ -21,6 +21,11 @@ public class HistoryChart : Control
     private static readonly IBrush CpuBrush = new SolidColorBrush(Color.FromRgb(0xD9, 0x6C, 0x1F));
     private static readonly IBrush MemBrush = new SolidColorBrush(Color.FromRgb(0x2D, 0x6C, 0xB5));
 
+    /// <summary>How many samples fill the full plot width. The fleet keeps roughly this many points of
+    /// history per device (see FleetService.HistoryPoints); a fuller window would only ever show the newest
+    /// this-many anyway, so they are kept in step.</summary>
+    private const int Capacity = 50;
+
     public static readonly StyledProperty<IReadOnlyList<ResourceSnapshot>?> SnapshotsProperty =
         AvaloniaProperty.Register<HistoryChart, IReadOnlyList<ResourceSnapshot>?>(nameof(Snapshots));
 
@@ -42,7 +47,10 @@ public class HistoryChart : Control
         double w = Bounds.Width, h = Bounds.Height;
         if (w < 60 || h < 40) return;
 
-        const double marginLeft = 38, marginRight = 8, marginTop = 8, marginBottom = 22;
+        // ⚠️ marginTop reserves a band ABOVE the plot for the legend, so the swatches sit outside the graph
+        // area instead of floating over the top-right of the curves (where they collided with a series that
+        // ran high). Everything the plot draws starts at marginTop, so the legend band stays clear.
+        const double marginLeft = 38, marginRight = 8, marginTop = 22, marginBottom = 22;
         double plotW = w - marginLeft - marginRight;
         double plotH = h - marginTop - marginBottom;
         if (plotW <= 0 || plotH <= 0) return;
@@ -63,39 +71,65 @@ public class HistoryChart : Control
         }
 
         var data = Snapshots;
-        if (data is { Count: > 1 })
+        if (data is { Count: >= 1 })
         {
-            DrawSeries(dc, data, s => s.CpuLoad, CpuBrush, marginLeft, marginTop, plotW, plotH);
-            DrawSeries(dc, data, s => s.MemoryUsedPercent, MemBrush, marginLeft, marginTop, plotW, plotH);
+            // ⚠️ A fixed-width time window, newest on the RIGHT. The old code spread whatever points existed
+            // across the whole plot, so two readings drew one line straight across the screen. Instead each
+            // sample gets a fixed x-step (full width == Capacity samples) and the newest pins to the right
+            // edge, so a fresh chart shows a short stub on the right that grows leftward as readings arrive,
+            // then scrolls once it is full.
+            var count = Math.Min(data.Count, Capacity);
+            var start = data.Count - count;
+            var step = plotW / (Capacity - 1);
+            var rightX = marginLeft + plotW;
+            // Position p (0 = oldest shown, count-1 = newest) → x, counted back from the right edge.
+            double X(int p) => rightX - (count - 1 - p) * step;
 
-            var first = Text(data[0].Timestamp.ToString("HH:mm:ss"), 10, labelBrush);
-            var last = Text(data[^1].Timestamp.ToString("HH:mm:ss"), 10, labelBrush);
-            dc.DrawText(first, new Point(marginLeft, h - marginBottom + 4));
-            dc.DrawText(last, new Point(w - marginRight - last.Width, h - marginBottom + 4));
+            DrawSeries(dc, data, start, count, s => s.CpuLoad, CpuBrush, X, marginTop, plotH);
+            DrawSeries(dc, data, start, count, s => s.MemoryUsedPercent, MemBrush, X, marginTop, plotH);
+
+            var newest = Text(data[^1].Timestamp.ToString("HH:mm:ss"), 10, labelBrush);
+            dc.DrawText(newest, new Point(rightX - newest.Width, h - marginBottom + 4));
+            // The oldest label sits under the oldest sample, not at the far left – with a partly-filled
+            // window the left of the plot is empty, and a label there would point at nothing.
+            if (count > 1)
+            {
+                var oldest = Text(data[start].Timestamp.ToString("HH:mm:ss"), 10, labelBrush);
+                dc.DrawText(oldest, new Point(Math.Min(X(0), rightX - newest.Width - oldest.Width - 8),
+                    h - marginBottom + 4));
+            }
         }
         else
         {
             dc.DrawText(Text(T("Chart_NoData"), 11, labelBrush), new Point(marginLeft + 8, marginTop + 8));
         }
 
-        DrawLegend(dc, w - marginRight, marginTop, labelBrush);
+        // In the reserved top band (above the plot), vertically centred – "outside the graph".
+        DrawLegend(dc, w - marginRight, 4, labelBrush);
     }
 
-    private static void DrawSeries(DrawingContext dc, IReadOnlyList<ResourceSnapshot> data,
-        Func<ResourceSnapshot, double> value, IBrush brush,
-        double left, double top, double plotW, double plotH)
+    private static void DrawSeries(DrawingContext dc, IReadOnlyList<ResourceSnapshot> data, int start, int count,
+        Func<ResourceSnapshot, double> value, IBrush brush, Func<int, double> x, double top, double plotH)
     {
+        double Y(int p) => top + plotH * (1 - Math.Clamp(value(data[start + p]), 0, 100) / 100.0);
+
+        // A single reading has no line to draw – show it as a dot on the right so the chart isn't blank
+        // between the first and second poll.
+        if (count == 1)
+        {
+            dc.DrawEllipse(brush, null, new Point(x(0), Y(0)), 2.5, 2.5);
+            return;
+        }
+
         var pen = new Pen(brush, 2);
         var geometry = new StreamGeometry();
         using (var ctx = geometry.Open())
         {
-            for (var i = 0; i < data.Count; i++)
+            for (var p = 0; p < count; p++)
             {
-                var x = left + plotW * i / (data.Count - 1);
-                var v = Math.Clamp(value(data[i]), 0, 100);
-                var y = top + plotH * (1 - v / 100.0);
-                if (i == 0) ctx.BeginFigure(new Point(x, y), false);
-                else ctx.LineTo(new Point(x, y));
+                var pt = new Point(x(p), Y(p));
+                if (p == 0) ctx.BeginFigure(pt, false);
+                else ctx.LineTo(pt);
             }
             ctx.EndFigure(false);
         }

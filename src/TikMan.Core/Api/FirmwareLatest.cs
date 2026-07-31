@@ -23,13 +23,15 @@ public sealed record LatestFirmware(string Version, string SourceUrl, bool Parse
 /// an exception and never a guessed number.</para></summary>
 public static class FirmwareLatest
 {
-    // One shared client: a short timeout (a stale update column is fine, a hung one is not) and a normal
-    // browser UA (some vendor CDNs answer bots with a stub page).
+    // One shared client with a browser UA (some vendor CDNs answer bots with a stub page).
+    // Timeout is 20 s: defensive headroom for a slow CDN moment on a ~450 KB page. (Measured, the fetch is
+    // ~1 s and 8 concurrent still parse, so this is padding, not the fix for the "manual search" bug – that
+    // was a stale cache in FleetService, see MaybeCheckLatestAsync.)
     private static readonly HttpClient Http = CreateClient();
 
     private static HttpClient CreateClient()
     {
-        var c = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+        var c = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
         c.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36");
         return c;

@@ -21,7 +21,7 @@ Notes to self. Nothing here is needed to *use* TikMan — that's the [README](RE
 3. Name the assets **exactly** — the in-app auto-updater matches on the name; get it wrong and
    existing installs stop finding updates:
    - Windows: `TikMan-<version>-win-x64.exe` / `-win-arm64.exe`
-   - Linux:   `TikMan-<version>-x86_64.AppImage` / `-aarch64.AppImage`
+   - Linux:   `TikMan-<version>-linux-x86_64.AppImage` / `-linux-aarch64.AppImage`
    - macOS:   `TikMan-<version>-macos.tar.gz`
 4. GitHub → **Releases → Draft a new release**: tag `vX.Y.Z` (matching `<Version>`), write the notes,
    attach the assets. Binaries live in Releases, never in git.

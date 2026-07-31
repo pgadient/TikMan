@@ -72,6 +72,10 @@ public partial class MainWindow : Window
     // snap it shut, and a guard so our own restore isn't mistaken for a user choice.
     private int _preferredDetailTab;
     private bool _restoringDetailTab;
+    // True while the VM is rebuilding the device list (every monitor refresh replaces the selected row,
+    // because Cpu/RAM are in the row signature). During that churn the detail pane transiently snaps to
+    // Details; we must not record that as the user's choice, and we restore the real tab once it settles.
+    private bool _refreshingList;
     private TextBox? _logFilter;
 
     /// <summary>The last fetched log, unfiltered – so typing in the filter box re-filters locally instead of
@@ -109,12 +113,25 @@ public partial class MainWindow : Window
             if (e.PropertyName is "HasMonitoring" or "CanReadLogs" or nameof(_vm.SelectedDevice))
                 SyncDetailTab();
         };
+        // The list rebuild (every monitor refresh) replaces the selected row and churns the pane through
+        // Details. Suppress tab-preference recording for the duration, then restore the user's tab once the
+        // churn (and the by-id reselection) has fully settled – queued at Background priority so it runs
+        // after all the transient selection/visibility changes, not in the middle of them.
+        _vm.ListRefreshing += () => _refreshingList = true;
+        _vm.ListRefreshed += () =>
+        {
+            _refreshingList = false;
+            Dispatcher.UIThread.Post(SyncDetailTab, DispatcherPriority.Background);
+        };
         _logTab = this.FindControl<TabItem>("LogTab");
         _logGrid = this.FindControl<DataGrid>("LogGrid");
         _detailPane = this.FindControl<Border>("DetailPane");
         ApplySimpleMode();
         // Restore the height the user dragged it to last time.
         if (_detailPane is not null) _detailPane.Height = _vm.DetailPaneHeight;
+        // Keep it in bounds as the window resizes (and clamp the restored value once the window has a real
+        // size), so a pane sized large on a big screen can't starve the list when the window shrinks.
+        SizeChanged += (_, _) => ClampDetailPaneToBounds();
         _monitorChart = this.FindControl<HistoryChart>("MonitorChart");
         _logAutoRefresh = this.FindControl<CheckBox>("LogAutoRefresh");
         _logCount = this.FindControl<ComboBox>("LogCount");
@@ -450,8 +467,8 @@ public partial class MainWindow : Window
         return null;
     }
 
-    /// <summary>Opens the Latest cell's link: the vendor page a firmware version was parsed from, or the
-    /// download search when only a "manual search" link is known. Empty Tag ⇒ nothing to open.</summary>
+    /// <summary>Opens the link behind a firmware cell (its Tag): the Latest cell's vendor download page (or
+    /// "manual search"), or the Version cell's per-release changelog. Empty Tag ⇒ nothing to open.</summary>
     private void OnLatestClick(object? sender, PointerPressedEventArgs e)
     {
         if (sender is Control { Tag: string url } && url.Length > 0) _vm.OpenWeb(url);
@@ -485,7 +502,19 @@ public partial class MainWindow : Window
         // Remember a deliberate switch to a visible tab, so a later refresh can put it back (see
         // SyncDetailTab). ⚠️ Not while WE are the one moving it – recording the transient snap-to-Details
         // as the user's preference would defeat the whole restore.
-        if (!_restoringDetailTab && tab.IsVisible) _preferredDetailTab = _detailTabs.SelectedIndex;
+        // ⚠️ And NOT the TabControl's own auto-snap to Details: when a refresh replaces the selected row, the
+        // device blips to null, the Monitoring/Logs tab hides, and the control auto-selects the first visible
+        // tab (Details, index 0). That is not a user choice – recording it wiped the tab the user was reading
+        // (the reported "it jumps back to the first tab on every update"). Tell the two apart: a snap to index
+        // 0 while the tab the user preferred is currently hidden is the auto-snap, so leave the preference be.
+        if (!_restoringDetailTab && !_refreshingList && tab.IsVisible)
+        {
+            var items = _detailTabs.Items.OfType<TabItem>().ToList();
+            var preferredStillVisible = _preferredDetailTab >= 0 && _preferredDetailTab < items.Count
+                                        && items[_preferredDetailTab].IsVisible;
+            if (_detailTabs.SelectedIndex != 0 || preferredStillVisible)
+                _preferredDetailTab = _detailTabs.SelectedIndex;
+        }
         // Start/stop the auto-refresh timer to match whichever tab is now showing – it only ticks while the
         // Logs tab is the visible one.
         UpdateLogAutoRefresh();
@@ -849,12 +878,33 @@ public partial class MainWindow : Window
     private void OnDetailSplitterDrag(object? sender, VectorEventArgs e)
     {
         if (_detailPane is null) return;
-        // Dragging up must make the pane taller, hence the minus. Bounded so it can neither vanish nor
-        // squeeze the device list out of existence.
-        var height = _detailPane.Height - e.Vector.Y;
-        _detailPane.Height = Math.Clamp(height, 120, Math.Max(160, Bounds.Height - 260));
+        // Dragging up must make the pane taller, hence the minus.
+        _detailPane.Height = ClampPaneHeight(_detailPane.Height - e.Vector.Y);
         // Remember it: a pane the user sized to their screen should still be that size next time.
         _vm.DetailPaneHeight = _detailPane.Height;
+    }
+
+    /// <summary>Bounds the detail-pane height. ⚠️ It must never grow so far that the device list is left with
+    /// a single row (or none): past that the bottom-docked pane, its handle and the toggle together exceed
+    /// the DockPanel's height and the layout collapses. Capped at 40 % of the window AND at least ~340 px
+    /// reserved above it (chrome + a few list rows), with a small floor so it can't vanish either.</summary>
+    private double ClampPaneHeight(double wanted)
+    {
+        var max = Math.Max(160, Math.Min(Bounds.Height - 340, Bounds.Height * 0.4));
+        return Math.Clamp(wanted, 120, max);
+    }
+
+    /// <summary>Re-applies the bound after the window changes size – a height dragged large on a big screen
+    /// would otherwise stay that size when the window shrinks and push the list out of existence.</summary>
+    private void ClampDetailPaneToBounds()
+    {
+        if (_detailPane is null || Bounds.Height <= 0 || double.IsNaN(_detailPane.Height)) return;
+        var clamped = ClampPaneHeight(_detailPane.Height);
+        if (Math.Abs(clamped - _detailPane.Height) > 0.5)
+        {
+            _detailPane.Height = clamped;
+            _vm.DetailPaneHeight = clamped;
+        }
     }
 
     // ⚠️ Both of these destroy stored state. With "keep device list" on, the entries (and their saved

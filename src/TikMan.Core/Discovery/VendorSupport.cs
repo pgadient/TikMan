@@ -118,18 +118,29 @@ public static class VendorSupport
             SupportLevel.Yes, SupportLevel.Yes, SupportLevel.NotAvailable, SupportLevel.No,
             SupportLevel.Yes, SupportLevel.Yes),
 
+        // ⚠️ PROVEN against a real USG FLEX 500 on ZLD V5.39, and no longer work-in-progress. Identification,
+        // monitoring, config backup, logs AND topology all read over the ZLD SSH CLI. ZLD is its own dialect
+        // – no "show system-information" (that is ZyNOS); it has a two-image "show version" table (the Running
+        // image is the live model + firmware), "show cpu status" / "show mem status" / "show system uptime" /
+        // "show serial-number", "show running-config", "show logging entries", and "show arp-table" for the
+        // map. Full backup is NotAvailable: the config IS the whole backup, no binary artefact (measured –
+        // only a .conf). Topology is interface-level, not switch-port: the ARP table maps a MAC to the
+        // firewall INTERFACE it is on (lan1 / lan2 / dmz), which segments devices and anchors them under the
+        // gateway – a firewall is a gateway node, not a switch, but that is still real forwarding data.
+        // (Plain "show arp" errors; "show arp-table" is the one that works.) Updates stay a settled No, like
+        // the switches. SNMP is not used – everything comes over the CLI. These boxes miscompute
+        // encrypt-then-MAC, so SshCompat offers only the plain HMACs, or the session dies on the first
+        // encrypted packet. Sits under ZyNOS because both are managed Zyxel boxes read over their SSH CLI.
+        new VendorSupportRow("Zyxel · ZLD", "ZyWALL / USG / USG FLEX firewalls (USG FLEX 500 verified)",
+            SupportLevel.NotAvailable, SupportLevel.Yes, SupportLevel.No,
+            SupportLevel.Yes, SupportLevel.Yes, SupportLevel.NotAvailable, SupportLevel.No,
+            SupportLevel.Yes, SupportLevel.Yes),
+
         new VendorSupportRow("Zyxel · uOS", "Nebula devices (USG FLEX H, current switches and APs)",
             // Identified over ZON and the web fingerprint; the CLI connector is what is being built.
             SupportLevel.NotAvailable, SupportLevel.Partial, SupportLevel.Partial,
             SupportLevel.Planned, SupportLevel.Planned, SupportLevel.Planned, SupportLevel.No,
             SupportLevel.Partial, SupportLevel.Planned, WorkInProgress: true),
-
-        new VendorSupportRow("Zyxel · ZLD", "ZyWALL / USG firewalls",
-            // ⚠️ These are the ones that miscompute encrypt-then-MAC, which is why SshCompat offers only
-            // the plain HMACs – without that the SSH session dies on the first encrypted packet.
-            SupportLevel.NotAvailable, SupportLevel.Partial, SupportLevel.Partial,
-            SupportLevel.Planned, SupportLevel.Planned, SupportLevel.Planned, SupportLevel.No,
-            SupportLevel.Planned, SupportLevel.Planned, WorkInProgress: true),
 
         // Nothing implemented yet – listed so the table says "planned and being worked on" rather than
         // leaving the vendor out and implying it was never considered. Hence Planned throughout: a row of

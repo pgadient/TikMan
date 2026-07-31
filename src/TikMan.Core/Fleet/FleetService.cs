@@ -33,7 +33,7 @@ public sealed record DeviceSnapshot(
     string Cpu, string Memory, string Uptime,
     string MacVendor,
     string LatestVersion, string InstalledRelease, string UpdateRelease, bool UpdateAvailable,
-    string LatestVersionUrl,
+    string LatestVersionUrl, string VersionUrl,
     IReadOnlyDictionary<string, IReadOnlyList<int>> Ipv6Ports,
     IReadOnlyDictionary<string, Ipv6Facts> Ipv6Meta)
     : INotifyPropertyChanged, IExpandableRow
@@ -71,6 +71,9 @@ public sealed record DeviceSnapshot(
     /// <summary>Clicking the Latest cell does something – it has either a parsed version or a manual-search
     /// link behind it.</summary>
     public bool HasLatestLink => LatestVersionUrl.Length > 0;
+
+    /// <summary>The installed-version cell links to that release's notes (MikroTik's per-version changelog).</summary>
+    public bool HasVersionLink => VersionUrl.Length > 0;
 
     /// <summary>What the Latest column shows: the parsed version, or a localised "manual search" when only a
     /// link is known, or nothing.</summary>
@@ -186,9 +189,10 @@ public sealed class FleetService
     /// live view, not a metrics store, and an app left running for days must not grow without bound.</summary>
     private readonly Dictionary<string, List<ResourceSnapshot>> _history = new();
 
-    /// <summary>How many points to keep per device. At the 30 s monitor interval that is about two hours –
-    /// long enough to show a trend, short enough to stay free.</summary>
-    private const int HistoryPoints = 500;
+    /// <summary>How many points to keep per device. Matches the chart's plot width (HistoryChart.Capacity):
+    /// a fuller buffer would only ever show the newest this-many anyway, and 50 across the width keeps each
+    /// sample wide enough to read rather than a hairline. At the 30 s interval that is about 25 minutes.</summary>
+    private const int HistoryPoints = 50;
 
     /// <summary>WebId → the last update check, plus the release dates of the two versions involved.
     /// <para>⚠️ Filled only when a check actually runs (the update assistant, or the context-menu action) –
@@ -440,6 +444,11 @@ public sealed class FleetService
             _scanTarget = string.IsNullOrWhiteSpace(target) ? null : target.Trim();
             _scanCts?.Dispose();
             _scanCts = new CancellationTokenSource();
+            // ⚠️ A user-triggered scan is an explicit "read it again now", so drop the auto-latest-check
+            // rate limiter: the meta phase re-checks the Latest/update column instead of keeping the value
+            // it read within the last 30 minutes. The limiter still throttles the 30 s background monitor,
+            // which does not clear it.
+            _lastLatestCheck.Clear();
         }
         Changed?.Invoke();
         _ = Task.Run(RunScanAsync);
@@ -508,6 +517,8 @@ public sealed class FleetService
                 return await TpLinkSshConnector.GetLogAsync(d.Host, d.SshPort, d.Username, password, maxEntries).ConfigureAwait(false);
             if (IsZyxelSwitch(d))
                 return await ZyxelSsh.GetLogAsync(d.Host, d.SshPort, d.Username, password, maxEntries).ConfigureAwait(false);
+            if (IsZyxelFirewall(d))
+                return await ZldSsh.GetLogAsync(d.Host, d.SshPort, d.Username, password, maxEntries).ConfigureAwait(false);
             return null;
         }
         catch { return null; }
@@ -518,7 +529,7 @@ public sealed class FleetService
     /// <c>CanUpdate</c>, which happens to mean "MikroTik with a login" – so adding a second vendor that can
     /// do logs but not updates would have left its tab greyed out with the data sitting right there.</para></summary>
     public static bool CanReadLogs(Device d) =>
-        d.EncryptedPassword.Length > 0 && (IsMikroTik(d) || IsTpLink(d) || IsZyxelSwitch(d));
+        d.EncryptedPassword.Length > 0 && (IsMikroTik(d) || IsTpLink(d) || IsZyxelSwitch(d) || IsZyxelFirewall(d));
 
     /// <summary>Opens an interactive SSH shell to a device with its stored login. Null when the device is
     /// unknown, has no login, or the connection fails. The password is used only to authenticate.</summary>
@@ -553,8 +564,8 @@ public sealed class FleetService
         var d = RawDevice(id);
         if (d is null) return BackupData.Fail("Device not found.");
         if (d.EncryptedPassword.Length == 0) return BackupData.Fail("No login stored.");
-        if (!IsMikroTik(d) && !IsZyxelSwitch(d) && !IsTpLink(d))
-            return BackupData.Fail("Config backup is only available for MikroTik, Zyxel and TP-Link switches.");
+        if (!IsMikroTik(d) && !IsZyxelSwitch(d) && !IsTpLink(d) && !IsZyxelFirewall(d))
+            return BackupData.Fail("Config backup is only available for MikroTik, Zyxel and TP-Link devices.");
 
         var password = CredentialProtector.Unprotect(d.EncryptedPassword);
         if (password.Length == 0) return BackupData.Fail("No login stored.");
@@ -565,6 +576,14 @@ public sealed class FleetService
             {
                 config = await ZyxelSsh.GetRunningConfigAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
                 ext = ".cfg";
+            }
+            else if (IsZyxelFirewall(d))
+            {
+                // ZLD firewall: "show running-config" over the SSH CLI. ⚠️ Carries "… password … cipher …"
+                // and pre-shared keys; goes straight to the backup file, never logged. ZLD has no binary
+                // backup artefact – this config IS the whole backup.
+                config = await ZldSsh.GetRunningConfigAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
+                ext = ".conf";
             }
             else if (IsTpLink(d))
             {
@@ -661,6 +680,32 @@ public sealed class FleetService
     /// search" link instead of a number. Never throws.</summary>
     private async Task CheckLatestFromWebAsync(Device d)
     {
+        // ⚠️ TP-Link reports its model only over the login CLI ("show system-info"); the passive scan leaves
+        // it blank. So a latest-check that runs before a full scan has read the switch (straight after
+        // setting credentials, or from the Update tab) has no model, and the firmware URL degrades to the
+        // generic download hub. Read the facts on demand first, so "with a login it just works" holds no
+        // matter the order. Best-effort: no login or a failed read simply falls through with what we have.
+        if (IsTpLink(d) && Model(d).Length == 0 && d.EncryptedPassword.Length > 0)
+        {
+            var pw = CredentialProtector.Unprotect(d.EncryptedPassword);
+            if (pw.Length > 0)
+            {
+                try
+                {
+                    d.Port = d.SshPort;   // GetFactsAsync connects to Device.Port; d is a RawDevice clone.
+                    var f = await TpLinkSshConnector.GetFactsAsync(d, pw).ConfigureAwait(false);
+                    lock (_lock)
+                    {
+                        if (f.Model.Length > 0) d.ExtraInfo["Modell"] = f.Model;
+                        if (f.HardwareVersion.Length > 0) d.ExtraInfo["Hardware-Version"] = f.HardwareVersion;
+                        if (f.FirmwareVersion.Length > 0 && !d.ExtraInfo.ContainsKey("Firmware"))
+                            d.ExtraInfo["Firmware"] = f.FirmwareVersion;
+                    }
+                }
+                catch { /* SSH off / wrong creds / unreachable – fall through with what we have */ }
+            }
+        }
+
         string id, vendor, model, hwRev, installed;
         lock (_lock)
         {
@@ -781,6 +826,20 @@ public sealed class FleetService
                 return facts.Model.Length > 0 || facts.FirmwareVersion.Length > 0
                     ? new LoginTest(true, $"{facts.Model} · {facts.FirmwareVersion}".Trim(' ', '·'))
                     : new LoginTest(false, "SSH login failed or the switch did not answer.");
+            }
+            catch (Exception ex) { return new LoginTest(false, ex.Message); }
+        }
+
+        // ⚠️ ZLD firewall through its OWN connector: its "show version" table is the proof the login reached
+        // THIS firewall (model + firmware), and the interactive shell is the transport it supports.
+        if (IsZyxelFirewall(d))
+        {
+            try
+            {
+                var info = await ZldSsh.GetInfoAsync(d.Host, d.SshPort, user, password).ConfigureAwait(false);
+                return info is { } zf && (zf.Model.Length > 0 || zf.Firmware.Length > 0)
+                    ? new LoginTest(true, $"{zf.Model} · {zf.Firmware}".Trim(' ', '·'))
+                    : new LoginTest(false, "SSH login failed or the firewall did not answer.");
             }
             catch (Exception ex) { return new LoginTest(false, ex.Message); }
         }
@@ -1619,9 +1678,9 @@ public sealed class FleetService
 
         string encrypted, user;
         int sshPort;
-        bool isZyxelSwitch, isTpLink;
+        bool isZyxelSwitch, isTpLink, isZyxelFirewall;
         Device probeClone;
-        lock (_lock) { encrypted = d.EncryptedPassword; user = d.Username.Trim(); sshPort = d.SshPort; isZyxelSwitch = IsZyxelSwitch(d); isTpLink = IsTpLink(d); probeClone = d.Clone(); }
+        lock (_lock) { encrypted = d.EncryptedPassword; user = d.Username.Trim(); sshPort = d.SshPort; isZyxelSwitch = IsZyxelSwitch(d); isTpLink = IsTpLink(d); isZyxelFirewall = IsZyxelFirewall(d); probeClone = d.Clone(); }
         if (ports.Contains(22) && encrypted.Length > 0 && user.Length > 0)
         {
             var password = CredentialProtector.Unprotect(encrypted);
@@ -1683,6 +1742,21 @@ public sealed class FleetService
                         if (serial.Length > 0) lock (_lock) { if (d.SerialNumber.Length == 0) d.SerialNumber = serial; }
                     }
                 }
+                else if (isZyxelFirewall)
+                {
+                    // ⚠️ ZLD, NOT ZyNOS: a Zyxel firewall has no "show system-information"; ZldSsh reads its own
+                    // "show version" table (running image = model + firmware) and "show serial-number". Same
+                    // Board caveat as the switch: never set it, or IdentifiedVendor would call this MikroTik.
+                    var zfInfo = await ZldSsh.GetInfoAsync(host, sshPort, user, password, ct).ConfigureAwait(false);
+                    if (zfInfo is { } zf)
+                        lock (_lock)
+                        {
+                            if (zf.Firmware.Length > 0) d.ExtraInfo["Firmware"] = zf.Firmware;
+                            if (zf.Model.Length > 0) d.ExtraInfo["Modell"] = zf.Model;
+                            if (zf.Serial.Length > 0 && d.SerialNumber.Length == 0) d.SerialNumber = zf.Serial;
+                            d.ExtraInfo["OS"] = "ZLD";
+                        }
+                }
                 else if (await SshInfoProbe.QueryAsync(host, sshPort, user, password, hint, ct).ConfigureAwait(false) is { } ssh)
                     lock (_lock)
                     {
@@ -1699,6 +1773,55 @@ public sealed class FleetService
                 lock (_lock) { if (!d.OpenPorts.Contains(53)) d.OpenPorts.Add(53); }
         }
         catch { /* best effort */ }
+
+        // Now that vendor + model (+ any login) are established, fill the Latest column on its own – no need
+        // to open the Update tab. Rate-limited per device so the 30-second background refresh doesn't turn it
+        // into a round trip every half minute.
+        await MaybeCheckLatestAsync(d).ConfigureAwait(false);
+    }
+
+    // ---- automatic "latest firmware" check during the meta phase ---------------------------------
+
+    // WebId → when this device was last checked, so the auto-check fills the Latest column once on a scan
+    // and then leaves it alone until it goes stale, instead of re-checking on every background refresh.
+    private readonly Dictionary<string, long> _lastLatestCheck = new();
+    // ⚠️ Two intervals. Once we have a real version, hold it for a good while (it rarely changes). But a
+    // check that came back with NOTHING – a transient fetch failure, or the page didn't parse that time –
+    // must NOT stick for half an hour: retry it in a couple of minutes so a one-off hiccup doesn't leave the
+    // column reading "manual search" until the next full rescan. (A genuinely EOL/unparseable model just
+    // keeps retrying cheaply; that is fine, it is one small GET.)
+    private const long LatestOkIntervalMs = 30 * 60_000;   // 30 min after a successful parse
+    private const long LatestRetryIntervalMs = 2 * 60_000; //  2 min while still unresolved
+
+    /// <summary>Runs the update / latest-firmware check for a device the moment its model and vendor are
+    /// known, if it's one we can check: MikroTik with a stored login (its own API), or a TP-Link / Zyxel
+    /// switch with a known model (read off the vendor's web page, no login). Best-effort and rate-limited;
+    /// anything else is skipped.</summary>
+    private async Task MaybeCheckLatestAsync(Device d)
+    {
+        string id;
+        lock (_lock)
+        {
+            id = WebId(d);
+            var eligible = (IsMikroTik(d) && d.EncryptedPassword.Length > 0)
+                        || ((IsTpLink(d) || IsZyxelSwitch(d)) && Model(d).Length > 0);
+            if (!eligible) return;
+            if (_lastLatestCheck.TryGetValue(id, out var last))
+            {
+                // Skip only if the previous check produced a real version; an empty/manual-search result
+                // gets the short retry interval so it heals itself without waiting for a rescan.
+                var haveVersion = _updates.TryGetValue(id, out var u) && u.Latest.Length > 0;
+                var interval = haveVersion ? LatestOkIntervalMs : LatestRetryIntervalMs;
+                if (Environment.TickCount64 - last < interval) return;
+            }
+            _lastLatestCheck[id] = Environment.TickCount64;
+        }
+
+        // ⚠️ null channel: read the device's CURRENT update channel (CheckForUpdatesAsync), never set one –
+        // the auto-check must not write the channel behind the user's back. (SetChannelAsync is only for the
+        // explicit channel dropdown.)
+        try { await CheckAndRememberAsync(id).ConfigureAwait(false); }
+        catch { /* best-effort: offline / no answer / rate-limited API */ }
     }
 
     // ---- topology (shared by the headless host and the GUI) --------------------------------------
@@ -1901,6 +2024,14 @@ public sealed class FleetService
                 // and everything behind them hung off "path unknown".
                 var tp = await TpLinkSshConnector.GetFdbAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
                 raw = tp?.Select(kv => (kv.Key, kv.Value)).ToList();
+            }
+            else if (IsZyxelFirewall(d) && password.Length > 0)
+            {
+                // ZLD firewall: its ARP table (show arp-table) maps a device's MAC to the firewall INTERFACE
+                // it is on (lan1 / lan2 / dmz …). Not switch-port granular – a firewall is a gateway, not a
+                // switch – but it segments devices by interface and anchors them under the gateway.
+                var arp = await ZldSsh.GetFdbAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
+                raw = arp?.Select(kv => (kv.Key, kv.Value)).ToList();
             }
         }
         catch { raw = null; }
@@ -2179,17 +2310,17 @@ public sealed class FleetService
         // the history chart too, each read through its own connector below.
         List<Device> targets;
         lock (_lock) targets = (only ?? _devices)
-            .Where(d => d.EncryptedPassword.Length > 0 && (IsMikroTik(d) || IsZyxelSwitch(d) || IsTpLink(d)))
+            .Where(d => d.EncryptedPassword.Length > 0 && (IsMikroTik(d) || IsZyxelSwitch(d) || IsTpLink(d) || IsZyxelFirewall(d)))
             .ToList();
         if (targets.Count == 0) return;
 
         foreach (var d in targets)
         {
-            string host, user, encrypted; int sshPort; bool mt, zy, tp;
+            string host, user, encrypted; int sshPort; bool mt, zy, tp, fw;
             lock (_lock)
             {
                 host = d.Host; user = d.Username; encrypted = d.EncryptedPassword; sshPort = d.SshPort;
-                mt = IsMikroTik(d); zy = IsZyxelSwitch(d); tp = IsTpLink(d);
+                mt = IsMikroTik(d); zy = IsZyxelSwitch(d); tp = IsTpLink(d); fw = IsZyxelFirewall(d);
             }
 
             var password = CredentialProtector.Unprotect(encrypted);
@@ -2201,6 +2332,7 @@ public sealed class FleetService
                 res = mt ? await RouterOsSsh.GetResourceAsync(host, sshPort, user, password).ConfigureAwait(false)
                     : zy ? await ZyxelSsh.GetResourceAsync(host, sshPort, user, password).ConfigureAwait(false)
                     : tp ? await TpLinkSshConnector.GetResourceAsync(host, sshPort, user, password).ConfigureAwait(false)
+                    : fw ? await ZldSsh.GetResourceAsync(host, sshPort, user, password).ConfigureAwait(false)
                     : null;
             }
             catch { /* unreachable / auth changed – keep the previous reading */ }
@@ -2358,11 +2490,32 @@ public sealed class FleetService
         var vendor = Vendor(d);
         if (vendor.Length > 0 && text.StartsWith(vendor, StringComparison.OrdinalIgnoreCase))
             text = text[vendor.Length..].TrimStart(' ', '-', ':', '/', '·', ',');
-        return text.Trim();
+        return PrettyModel(text.Trim());
+    }
+
+    /// <summary>Tidies a discovery model that arrives as a lowercase, underscore-joined token
+    /// ("usg_flex_500", a Zyxel ZON/UPnP style) into the way the vendor writes it ("USG FLEX 500"). A login
+    /// read later gives the proper string anyway; this only makes the pre-login scan-only view read right.
+    /// <para>⚠️ Deliberately generic – no per-model table – so a future "usg_flex_700" formats itself; and
+    /// deliberately narrow – it fires ONLY on a pure lowercase_underscore token, so a real model string that
+    /// is already spaced or mixed-case ("USG FLEX 500", "TL-SG2008", "ThinkPad P52") is returned untouched.</para></summary>
+    public static string PrettyModel(string model)
+    {
+        var m = model ?? "";
+        if (!System.Text.RegularExpressions.Regex.IsMatch(m, @"^[a-z][a-z0-9]*(_[a-z0-9]+)+$"))
+            return m;
+        return string.Join(' ', m.Split('_').Select(t => t.ToUpperInvariant()));
     }
     public static bool IsMikroTik(Device d) => Vendor(d) == "MikroTik";
     public static bool IsZyxelSwitch(Device d) =>
         Vendor(d).Contains("Zyxel", StringComparison.OrdinalIgnoreCase) && Kind(d) == DeviceKind.Switch;
+
+    /// <summary>True for a Zyxel <b>ZLD firewall</b> (USG / ZyWALL / USG FLEX / ATP), which speaks the ZLD
+    /// CLI – a different dialect from the ZyNOS switches (<see cref="IsZyxelSwitch"/>). No chicken-and-egg on
+    /// the model: the firewall's web title alone ("USG FLEX 500") classifies it as a firewall (the
+    /// usg/zywall/atp/… tokens), so this is true before any login, which is what lets the ZLD read run.</summary>
+    public static bool IsZyxelFirewall(Device d) =>
+        Vendor(d).Contains("Zyxel", StringComparison.OrdinalIgnoreCase) && Kind(d) == DeviceKind.Firewall;
 
     /// <summary>True for a TP-Link / Omada managed switch, which speaks the JetStream SSH CLI.
     /// <para>⚠️ Not gated on <see cref="DeviceKind.Switch"/> the way the Zyxel test is: an unmanaged-looking
@@ -2520,6 +2673,16 @@ public sealed class FleetService
         var v6 = d.AltAddresses.Where(a => a.Contains(':'));
         if (hostIsV6) v6 = v6.Prepend(d.Host);
 
+        var firmware = d.ExtraInfo.TryGetValue("Firmware", out var fwv) ? fwv
+            : d.ExtraInfo.TryGetValue("Version", out var vrv) ? vrv : "";
+        var latestVersion = UpdateOf(d)?.Latest ?? "";
+        // MikroTik has no per-model download page but publishes a per-version changelog, so both release
+        // numbers become links to their own notes: the offered version on the Latest cell (already the
+        // stored URL for the web vendors), the installed version on the Version cell.
+        var latestUrl = UpdateOf(d)?.LatestUrl is { Length: > 0 } stored ? stored
+            : IsMikroTik(d) ? FirmwareChangelog.UrlFor("MikroTik", latestVersion) : "";
+        var versionUrl = FirmwareChangelog.UrlFor(Vendor(d), firmware);
+
         return new(
         WebId(d), Display(d), v4, d.MacAddress, Vendor(d), Kind(d), KindWithVm(d), Model(d),
         StatusText(d), Gateways().Contains(d.Host), d.EncryptedPassword.Length > 0,
@@ -2529,7 +2692,7 @@ public sealed class FleetService
         // UI language is English. Values are device data and stay as-is.
         d.ExtraInfo.Select(kv => new KeyValuePair<string, string>(InfoKeyLabels.Localize(kv.Key), kv.Value)).ToList(),
         v6.Distinct().ToList(),
-        IsMikroTik(d) || IsZyxelSwitch(d) || IsTpLink(d), IsMikroTik(d), IsMikroTik(d), CanReadLogs(d),
+        IsMikroTik(d) || IsZyxelSwitch(d) || IsTpLink(d) || IsZyxelFirewall(d), IsMikroTik(d), IsMikroTik(d), CanReadLogs(d),
         _loginFailure.TryGetValue(WebId(d), out var le) ? le : "",
         CanUseCredentials(d),
         d.SerialNumber,
@@ -2544,8 +2707,7 @@ public sealed class FleetService
             // not have (a CRS in SwOS mode). Board is set only by RouterOS (REST/MNDP/SSH resource).
             : IsMikroTik(d) && (Board(d).Length > 0 || d.ExtraInfo.ContainsKey("Firmware") || d.ExtraInfo.ContainsKey("Version"))
                 ? "RouterOS" : "",
-        d.ExtraInfo.TryGetValue("Firmware", out var fw) ? fw
-            : d.ExtraInfo.TryGetValue("Version", out var ver) ? ver : "",
+        firmware,
         d.Shares.ToList(),
         // Only interesting when there is nothing to show: "denied" explains an empty area, "" while the
         // buttons are there would just be noise under them.
@@ -2560,9 +2722,9 @@ public sealed class FleetService
         // about itself (web fingerprint, SNMP, mDNS) and only falls back to the OUI. They differ exactly
         // where it is interesting – an ODM-built box reports its brand but carries the ODM's MAC block.
         OuiLookup.Lookup(d.MacAddress),
-        UpdateOf(d)?.Latest ?? "", UpdateOf(d)?.InstalledDate ?? "",
+        latestVersion, UpdateOf(d)?.InstalledDate ?? "",
         UpdateOf(d)?.LatestDate ?? "", UpdateOf(d)?.Available ?? false,
-        UpdateOf(d)?.LatestUrl ?? "",
+        latestUrl, versionUrl,
         Ipv6PortsOf(d), Ipv6MetaOf(d));
     }
 

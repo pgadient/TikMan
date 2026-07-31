@@ -59,15 +59,21 @@ public static class TpLinkSshConnector
         {
             return await Task.Run(() =>
             {
+                // ⚠️ Generous timeouts on purpose. A real TP-Link takes ~8.3 s just to finish the SSH
+                // handshake, and these switches accept only ONE session at a time – so during a scan, when a
+                // probe and the monitor can reach for the same switch, an attempt sometimes waits on the
+                // other finishing. 15 s connect / 8 s banner occasionally lost that race and the switch
+                // dropped out of the scan; 25 s / 15 s gives it room without hanging the pass (the whole read
+                // is still bounded).
                 var info = new ConnectionInfo(host, port is > 0 and <= 65535 ? port : 22, user,
-                    new PasswordAuthenticationMethod(user, password)) { Timeout = TimeSpan.FromSeconds(15) };
+                    new PasswordAuthenticationMethod(user, password)) { Timeout = TimeSpan.FromSeconds(25) };
                 info.WithCompatibleMacs();
 
                 using var ssh = new SshClient(info);
                 ssh.Connect();
                 using var shell = ssh.CreateShellStream("vt100", 200, 200, 0, 0, 65536);
 
-                ReadUntilPrompt(shell, TimeSpan.FromSeconds(8));      // login banner + first prompt
+                ReadUntilPrompt(shell, TimeSpan.FromSeconds(15));     // login banner + first prompt
                 // Privileged mode: several reads are refused in user-exec. An empty enable password is the
                 // norm for an account that is already an admin; a failure here is harmless.
                 shell.WriteLine("enable");
