@@ -169,9 +169,18 @@ public static class SubnetScanner
         // SSDP, ZON) names them. The option below trades traffic for finding them anyway.
         if (!alive)
         {
-            if (!scanUnpingable) return null;
-            alive = await AnyPortOpenAsync(ip, TripwirePorts, ct).ConfigureAwait(false);
-            if (!alive) return null;
+            // ⚠️ First, a free check: a small embedded device (a web-managed switch, IoT) can DROP the ICMP
+            // echo under the scan's concurrent burst while still having answered the ARP that delivering that
+            // echo required – so its MAC is already in the ARP cache. A cache hit proves the host is present,
+            // with no extra traffic (all three platforms; macOS shares one rate-limited `arp -an` snapshot).
+            // This is what made a pingable GS1200-style switch invisible until the user enabled scanUnpingable.
+            if (ArpCacheHasHost(ip)) alive = true;
+            else if (!scanUnpingable) return null;
+            else
+            {
+                alive = await AnyPortOpenAsync(ip, TripwirePorts, ct).ConfigureAwait(false);
+                if (!alive) return null;
+            }
         }
 
         // Probe the service ports in parallel (only reached for hosts that answered), plus whatever extra
@@ -230,6 +239,83 @@ public static class SubnetScanner
         if (OperatingSystem.IsLinux()) return ProcArpMac(ip);
         if (OperatingSystem.IsMacOS()) return BsdArpMac(ip);
         return "";
+    }
+
+    /// <summary>Is the host in the OS ARP/neighbour CACHE? – a no-active-ARP, no-extra-traffic liveness signal
+    /// after a failed ping: a present host answered ARP while the ping's echo-request was being delivered, even
+    /// if it then dropped the echo. Windows (<c>GetIpNetTable</c>) and Linux (<c>/proc/net/arp</c>) read the
+    /// already-populated table cheaply per host; macOS has neither, so it shares one rate-limited <c>arp -an</c>
+    /// snapshot across the scan (see <see cref="MacArpHas"/>) instead of forking a process per host.</summary>
+    private static bool ArpCacheHasHost(IPAddress ip) =>
+        ip.AddressFamily == AddressFamily.InterNetwork
+        && (OperatingSystem.IsWindows() ? ArpTableMac(ip).Length > 0
+            : OperatingSystem.IsLinux() ? ProcArpMac(ip).Length > 0
+            : OperatingSystem.IsMacOS() ? MacArpHas(ip)
+            : false);
+
+    // A macOS ARP snapshot shared across the scan. macOS has no /proc and no GetIpNetTable, so the only way to
+    // read the neighbour table is to shell out to `arp -an` – forking that per ping-failed host would spawn
+    // thousands of processes on a /21. Instead one snapshot is reused, refreshed at most every TTL, under a
+    // lock so concurrent callers coalesce onto a single spawn. A present host's ARP entry persists for minutes
+    // (far longer than a scan), so once a refresh captures it, every later check sees it.
+    private static readonly object _macArpLock = new();
+    private static HashSet<string> _macArpSnapshot = new();
+    private static DateTime _macArpAt = DateTime.MinValue;
+    private static readonly TimeSpan _macArpTtl = TimeSpan.FromMilliseconds(250);
+
+    private static bool MacArpHas(IPAddress ip)
+    {
+        var key = ip.ToString();
+        lock (_macArpLock)
+        {
+            if (_macArpSnapshot.Contains(key)) return true;
+            if (DateTime.UtcNow - _macArpAt < _macArpTtl) return false;   // just refreshed and still absent
+            _macArpSnapshot = ParseBsdArpIps(RunArpAn());
+            _macArpAt = DateTime.UtcNow;
+            return _macArpSnapshot.Contains(key);
+        }
+    }
+
+    /// <summary>The raw <c>arp -an</c> output, or "" on failure. Bounded so a hung arp can't stall the scan.</summary>
+    private static string RunArpAn()
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("/usr/sbin/arp", "-an")
+            {
+                RedirectStandardOutput = true, RedirectStandardError = true,
+                UseShellExecute = false, CreateNoWindow = true,
+            };
+            using var proc = System.Diagnostics.Process.Start(psi);
+            if (proc is null) return "";
+            var output = proc.StandardOutput.ReadToEnd();
+            if (!proc.WaitForExit(2000)) { try { proc.Kill(); } catch { } return ""; }
+            return output;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
+                                      or IOException or UnauthorizedAccessException)
+        {
+            return "";
+        }
+    }
+
+    /// <summary>All IPs with a RESOLVED MAC in <c>arp -an</c> output (skips "(incomplete)" entries). Pure, so
+    /// it can be pinned by tests. Lines look like <c>? (192.168.1.1) at ac:de:48:0:11:22 on en0 [ethernet]</c>.</summary>
+    public static HashSet<string> ParseBsdArpIps(string arpOutput)
+    {
+        var ips = new HashSet<string>();
+        foreach (var line in (arpOutput ?? "").Split('\n'))
+        {
+            int open = line.IndexOf('('), close = line.IndexOf(')');
+            if (open < 0 || close <= open) continue;
+            var ip = line.Substring(open + 1, close - open - 1);
+            var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var at = Array.IndexOf(parts, "at");
+            if (at < 0 || at + 1 >= parts.Length) continue;
+            if (parts[at + 1].StartsWith("(", StringComparison.Ordinal)) continue;  // "(incomplete)"
+            if (parts[at + 1].Contains(':')) ips.Add(ip);                            // a MAC, not a keyword
+        }
+        return ips;
     }
 
     /// <summary>macOS neighbour table, read by shelling out to <c>arp -an</c>. There is no /proc, and the

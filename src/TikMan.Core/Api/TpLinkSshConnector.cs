@@ -57,28 +57,15 @@ public static class TpLinkSshConnector
     {
         try
         {
-            return await Task.Run(() =>
+            // ⚠️ One held, serialized session per device (see SshSessionPool). This is exactly the fix for
+            // the note that used to live here: a TP-Link takes ~8.3 s to finish the SSH handshake and accepts
+            // only ONE session at a time, so a probe and the monitor reaching for the same switch used to race
+            // and one would drop out of the scan. A single persistent, queued session pays the handshake once
+            // and serialises the two – no race, and the slow handshake is gone from the steady state.
+            var session = SshSessionPool.GetOrCreate(SshSessionPool.KeyFor(host, port),
+                () => new SshSession(() => Info(host, port, user, password), OpenShell));
+            return await session.RunAsync(shell =>
             {
-                // ⚠️ Generous timeouts on purpose. A real TP-Link takes ~8.3 s just to finish the SSH
-                // handshake, and these switches accept only ONE session at a time – so during a scan, when a
-                // probe and the monitor can reach for the same switch, an attempt sometimes waits on the
-                // other finishing. 15 s connect / 8 s banner occasionally lost that race and the switch
-                // dropped out of the scan; 25 s / 15 s gives it room without hanging the pass (the whole read
-                // is still bounded).
-                var info = new ConnectionInfo(host, port is > 0 and <= 65535 ? port : 22, user,
-                    new PasswordAuthenticationMethod(user, password)) { Timeout = TimeSpan.FromSeconds(25) };
-                info.WithCompatibleMacs();
-
-                using var ssh = new SshClient(info);
-                ssh.Connect();
-                using var shell = ssh.CreateShellStream("vt100", 200, 200, 0, 0, 65536);
-
-                ReadUntilPrompt(shell, TimeSpan.FromSeconds(15));     // login banner + first prompt
-                // Privileged mode: several reads are refused in user-exec. An empty enable password is the
-                // norm for an account that is already an admin; a failure here is harmless.
-                shell.WriteLine("enable");
-                ReadUntilPrompt(shell, TimeSpan.FromSeconds(5));
-
                 var outputs = new List<string>(commands.Count);
                 foreach (var cmd in commands)
                 {
@@ -86,14 +73,31 @@ public static class TpLinkSshConnector
                     shell.WriteLine(cmd);
                     outputs.Add(ReadUntilPrompt(shell, TimeSpan.FromSeconds(45), enough));
                 }
-
-                try { shell.WriteLine("exit"); } catch { }
-                ssh.Disconnect();
                 return outputs;
             }, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception) { return null; }   // unreachable, SSH off, bad login – the caller decides
+    }
+
+    // ⚠️ Generous connect timeout on purpose: a real TP-Link takes ~8.3 s just to finish the SSH handshake,
+    // so 25 s gives the one-time (now persistent) connect room without hanging the pass.
+    private static ConnectionInfo Info(string host, int port, string user, string password) =>
+        new ConnectionInfo(host, port is > 0 and <= 65535 ? port : 22, user,
+            new PasswordAuthenticationMethod(user, password)) { Timeout = TimeSpan.FromSeconds(25) }
+            .WithCompatibleMacs();
+
+    /// <summary>Opens and readies a TP-Link shell on a freshly connected client: a "vt100" PTY, swallow the
+    /// banner/first prompt, then step into privileged mode ("enable"; several reads are refused in user-exec,
+    /// and an empty enable password is the norm for an admin account – a failure here is harmless). Run once
+    /// per (re)connect by <see cref="SshSession"/>, not per command.</summary>
+    private static Renci.SshNet.ShellStream OpenShell(SshClient ssh)
+    {
+        var shell = ssh.CreateShellStream("vt100", 200, 200, 0, 0, 65536);
+        ReadUntilPrompt(shell, TimeSpan.FromSeconds(15));     // login banner + first prompt
+        shell.WriteLine("enable");
+        ReadUntilPrompt(shell, TimeSpan.FromSeconds(5));
+        return shell;
     }
 
     /// <summary>Reads a command's output, answering the pager immediately and stopping as soon as the shell

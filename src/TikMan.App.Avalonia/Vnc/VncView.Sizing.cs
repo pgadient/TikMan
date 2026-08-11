@@ -98,7 +98,7 @@ namespace MarcusW.VncClient.Avalonia
             }
 
             // Maybe we can send the initial size later when we know the server supports it
-            void PropertyChangedHandler(object sender, PropertyChangedEventArgs e)
+            void PropertyChangedHandler(object? sender, PropertyChangedEventArgs e)
             {
                 if (e.PropertyName != nameof(connection.DesktopIsResizable))
                     return;

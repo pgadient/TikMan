@@ -13,23 +13,17 @@ public static class SshConfigExport
     {
         try
         {
-            return await Task.Run(() =>
+            // Reuses the device's held, serialized session (see SshSessionPool), exec-only like the other
+            // RouterOS reads – so a config backup right after a monitoring read pays no second handshake.
+            ConnectionInfo Info() => new ConnectionInfo(host, port is > 0 and <= 65535 ? port : 22, user,
+                new PasswordAuthenticationMethod(user, password)) { Timeout = TimeSpan.FromSeconds(12) }.WithCompatibleMacs();
+            var session = SshSessionPool.GetOrCreate(SshSessionPool.KeyFor(host, port), () => new SshSession(Info));
+            return await session.RunClientAsync(ssh =>
             {
-                var info = new ConnectionInfo(host, port is > 0 and <= 65535 ? port : 22, user,
-                    new PasswordAuthenticationMethod(user, password))
-                {
-                    Timeout = TimeSpan.FromSeconds(12),
-                }.WithCompatibleMacs();
-                using var ssh = new SshClient(info);
-                ssh.Connect();
-                try
-                {
-                    using var cmd = ssh.CreateCommand("/export");
-                    cmd.CommandTimeout = TimeSpan.FromSeconds(40);
-                    var output = cmd.Execute();
-                    return string.IsNullOrWhiteSpace(output) ? null : output;
-                }
-                finally { if (ssh.IsConnected) ssh.Disconnect(); }
+                using var cmd = ssh.CreateCommand("/export");
+                cmd.CommandTimeout = TimeSpan.FromSeconds(40);
+                var output = cmd.Execute();
+                return string.IsNullOrWhiteSpace(output) ? null : output;
             }, ct).ConfigureAwait(false);
         }
         catch (Exception) { return null; } // SSH off / bad creds / not RouterOS

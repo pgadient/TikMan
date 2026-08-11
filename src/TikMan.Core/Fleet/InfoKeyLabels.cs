@@ -25,6 +25,8 @@ public static class InfoKeyLabels
         ["mDNS-Modell"] = "Ik_MdnsModel",
         ["Druckerfreigabe"] = "Ik_PrinterShare",
         ["Weitere MAC"] = "Ik_ExtraMac",
+        ["MAC-Bereich"] = "Ik_MacRange",
+        ["MAC-Zuordnung"] = "Ik_MacAssign",
     };
 
     /// <summary>The localised label for an ExtraInfo key, or the key itself when it needs no translation.</summary>

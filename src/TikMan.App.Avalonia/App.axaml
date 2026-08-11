@@ -8,6 +8,24 @@
     <Application.Styles>
         <semi:SemiTheme Locale="en-US" />
         <semi:DataGridSemiTheme />
+        <!-- ⚠️ The DataGrid's scrollbars are OVERLAY bars (they float over the content) and auto-hide. On the
+             device list that made the HORIZONTAL bar float over the bottom rows and, on a short window, be
+             clipped/hidden by the overlap – it reads as "the bar is gone" even though the content still
+             scrolls. The fix is the ScrollViewer.AllowAutoHide ATTACHED property ON the DataGrid (a plain
+             `DataGrid /template/ ScrollBar` setter did NOT take – the grid configures its bars from the
+             attached value): false turns them into classic, space-RESERVING bars, so the horizontal one sits
+             in its own strip below the rows instead of overlapping them, and stays put. -->
+        <Style Selector="DataGrid">
+            <Setter Property="ScrollViewer.AllowAutoHide" Value="False" />
+        </Style>
+        <!-- ⚠️ Give the horizontal scrollbar its OWN strip instead of floating over the last row. The v12.1
+             DataGrid overlays the h-bar on the bottom of the rows presenter (measured: rows presenter spans
+             the full height, the 8px bar sits on its bottom edge) – on a short window that overlap clips the
+             bar away. A bottom margin on the rows presenter reserves the strip, so the bar sits BELOW the
+             rows, Win32-style, never over them. -->
+        <Style Selector="DataGrid /template/ DataGridRowsPresenter#PART_RowsPresenter">
+            <Setter Property="Margin" Value="0,0,0,12" />
+        </Style>
         <!-- The action button: a light plate with dark ink, readable in both theme variants where the
              theme's own pale accent was not.
              ⚠️ Defined once here, application-wide. It used to be copied into each view's own
@@ -47,6 +65,11 @@
                     <SolidColorBrush x:Key="HintBorderBrush" Color="#EAD9A6" />
                     <SolidColorBrush x:Key="HintInkBrush" Color="#7A5C10" />
                     <SolidColorBrush x:Key="HintLinkBrush" Color="#5C6BC0" />
+                    <!-- Map "working on it" / error card: nearly opaque so the message reads clearly over the
+                         map behind it (the old 8%-alpha grey was almost invisible). A hair of translucency
+                         (0xF2 ≈ 95%) keeps a hint of the map showing through. -->
+                    <SolidColorBrush x:Key="OverlayCardBrush" Color="#F2F6F7F9" />
+                    <SolidColorBrush x:Key="OverlayCardBorderBrush" Color="#D2D7DE" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
                     <SolidColorBrush x:Key="GlyphBrush" Color="#F2F2F2" />
@@ -66,6 +89,9 @@
                     <SolidColorBrush x:Key="HintBorderBrush" Color="#5C4A20" />
                     <SolidColorBrush x:Key="HintInkBrush" Color="#F0C860" />
                     <SolidColorBrush x:Key="HintLinkBrush" Color="#9FB3E8" />
+                    <!-- Dark-theme counterpart: near-opaque dark card so the (light) text stays readable. -->
+                    <SolidColorBrush x:Key="OverlayCardBrush" Color="#F22B2E33" />
+                    <SolidColorBrush x:Key="OverlayCardBorderBrush" Color="#454A52" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 

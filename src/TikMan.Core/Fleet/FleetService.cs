@@ -397,6 +397,7 @@ public sealed class FleetService
     /// <summary>Sets (or clears) a device's login. Returns false if the device is gone.</summary>
     public bool SetLogin(string id, string user, string password)
     {
+        string host; int sshPort;
         lock (_lock)
         {
             var d = Find(id);
@@ -407,8 +408,13 @@ public sealed class FleetService
             // broken until the re-read finishes. Otherwise fixing a typo still shows a cross for a while,
             // which reads as "still wrong".
             _loginFailure.Remove(WebId(d));
+            host = d.Host; sshPort = d.SshPort;
             Persist();
         }
+        // Drop any held SSH session for this device so the next read reconnects with the NEW credentials (and
+        // releases the old login). Outside the lock: disposing waits out an in-flight command, and we must not
+        // hold the fleet lock while it does.
+        SshSessionPool.Invalidate(SshSessionPool.KeyFor(host, sshPort));
         Changed?.Invoke();
         return true;
     }
@@ -639,11 +645,12 @@ public sealed class FleetService
     /// three days ago" when deciding whether to install now or wait.</summary>
     public async Task<UpdateInfo?> CheckAndRememberAsync(string id, string? channel = null)
     {
-        // Non-MikroTik switches have no update API. For the vendors whose public download page carries the
+        // Non-MikroTik gear has no update API. For the vendors whose public download page carries the
         // version (TP-Link reliably, Zyxel best-effort), read the latest off it and remember it the same way,
         // so the Latest column fills in and its click has a target. No MikroTik-style UpdateInfo comes back.
+        // The ZLD firewalls ride the same Zyxel download page as the switches – same logic, same URL shape.
         var dev = RawDevice(id);
-        if (dev is not null && !IsMikroTik(dev) && (IsTpLink(dev) || IsZyxelSwitch(dev)))
+        if (dev is not null && !IsMikroTik(dev) && (IsTpLink(dev) || IsZyxelSwitch(dev) || IsZyxelFirewall(dev)))
         {
             await CheckLatestFromWebAsync(dev).ConfigureAwait(false);
             return null;
@@ -787,6 +794,13 @@ public sealed class FleetService
         if (d is null) return new LoginTest(false, "Device not found.");
         if (password.Length == 0) return new LoginTest(false, "Enter a password first.");
 
+        // ⚠️ Drop any held SSH session to this device FIRST, so the SSH-based checks below authenticate the
+        // CANDIDATE password on a fresh session instead of silently reusing an already-authenticated one (a
+        // wrong password would otherwise "pass" while the old session lives). One session, not a second
+        // login – some of these boxes (ZLD firewalls) allow only one and lock out after too many attempts,
+        // so an extra throwaway connection is exactly the wrong move.
+        SshSessionPool.Invalidate(SshSessionPool.KeyFor(d.Host, d.SshPort));
+
         // MikroTik speaks REST; everything else we can only check by opening an SSH session.
         if (IsMikroTik(d))
         {
@@ -800,7 +814,8 @@ public sealed class FleetService
             catch (Exception ex)
             {
                 // A broken TLS handshake is the usual RouterOS story – fall back to SSH before calling it
-                // a bad password, since that is the transport a backup would use anyway.
+                // a bad password, since that is the transport a backup would use anyway. The session was
+                // just invalidated above, so this authenticates the candidate password fresh.
                 try
                 {
                     var res = await RouterOsSsh.GetResourceAsync(d.Host, d.SshPort, user, password).ConfigureAwait(false);
@@ -822,6 +837,8 @@ public sealed class FleetService
             d.Port = d.SshPort; d.Username = user;   // d is a private clone (RawDevice) – safe to adjust
             try
             {
+                // The session was invalidated above, so GetFactsAsync authenticates the candidate password
+                // fresh – a model/firmware coming back means the credentials work.
                 var facts = await TpLinkSshConnector.GetFactsAsync(d, password).ConfigureAwait(false);
                 return facts.Model.Length > 0 || facts.FirmwareVersion.Length > 0
                     ? new LoginTest(true, $"{facts.Model} · {facts.FirmwareVersion}".Trim(' ', '·'))
@@ -831,7 +848,9 @@ public sealed class FleetService
         }
 
         // ⚠️ ZLD firewall through its OWN connector: its "show version" table is the proof the login reached
-        // THIS firewall (model + firmware), and the interactive shell is the transport it supports.
+        // THIS firewall (model + firmware). The session was invalidated above, so this GetInfoAsync
+        // authenticates the candidate password on a fresh session – and it is the SAME one held connection
+        // the box allows, not a second login.
         if (IsZyxelFirewall(d))
         {
             try
@@ -1749,13 +1768,37 @@ public sealed class FleetService
                     // Board caveat as the switch: never set it, or IdentifiedVendor would call this MikroTik.
                     var zfInfo = await ZldSsh.GetInfoAsync(host, sshPort, user, password, ct).ConfigureAwait(false);
                     if (zfInfo is { } zf)
+                    {
                         lock (_lock)
                         {
                             if (zf.Firmware.Length > 0) d.ExtraInfo["Firmware"] = zf.Firmware;
                             if (zf.Model.Length > 0) d.ExtraInfo["Modell"] = zf.Model;
                             if (zf.Serial.Length > 0 && d.SerialNumber.Length == 0) d.SerialNumber = zf.Serial;
                             d.ExtraInfo["OS"] = "ZLD";
+                            // ⚠️ The firewall's own MAC BLOCK: one MAC per interface GROUP (sfp/wan1/lan1/…,
+                            // measured – all physical ports of a group share the group's MAC). Its traffic
+                            // carries a group MAC from this block, so the block is what a switch's forwarding
+                            // table sees of the firewall, and therefore the evidence that places it on the
+                            // physical map (TopoInputs turns it into the device's alternate MACs).
+                            if (zf.MacRange.Length > 0) d.ExtraInfo["MAC-Bereich"] = zf.MacRange;
                         }
+                        // Which block MAC is which interface ("BC:… = lan1"): lets the map say WHICH group
+                        // faces the switch that sees it. Best-effort, over the same held SSH session.
+                        var macMap = await ZldSsh.GetInterfaceMacMapAsync(host, sshPort, user, password, ct).ConfigureAwait(false);
+                        if (macMap.Count > 0)
+                            lock (_lock)
+                                d.ExtraInfo["MAC-Zuordnung"] = string.Join(", ",
+                                    macMap.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}={kv.Value}"));
+
+                        // WLAN-controller facts, like the MikroTik SSID read. ⚠️ Only shown when at least one
+                        // AP is actually MANAGED: the SSID profiles are configuration and exist on every ZLD
+                        // box (factory default carries SSID "ZyXEL") – a plain firewall must not claim a WLAN
+                        // it does not broadcast.
+                        var (apsManaged, ssids) = await ZldSsh.GetWlanAsync(host, sshPort, user, password, ct).ConfigureAwait(false);
+                        if (apsManaged && ssids.Count > 0)
+                            lock (_lock)
+                                d.ExtraInfo["WLAN-SSIDs"] = string.Join(", ", ssids.Select(s => s.Ssid).Distinct());
+                    }
                 }
                 else if (await SshInfoProbe.QueryAsync(host, sshPort, user, password, hint, ct).ConfigureAwait(false) is { } ssh)
                     lock (_lock)
@@ -1804,7 +1847,7 @@ public sealed class FleetService
         {
             id = WebId(d);
             var eligible = (IsMikroTik(d) && d.EncryptedPassword.Length > 0)
-                        || ((IsTpLink(d) || IsZyxelSwitch(d)) && Model(d).Length > 0);
+                        || ((IsTpLink(d) || IsZyxelSwitch(d) || IsZyxelFirewall(d)) && Model(d).Length > 0);
             if (!eligible) return;
             if (_lastLatestCheck.TryGetValue(id, out var last))
             {
@@ -1838,10 +1881,104 @@ public sealed class FleetService
     /// it on demand. Gateway from <see cref="TraceRoute.DefaultGateway"/> (cross-platform).</summary>
     public async Task<TopoLayout> BuildPhysicalTopologyAsync()
     {
-        var (fdb, ssids) = await GatherFdbAsync().ConfigureAwait(false);
+        // ⚠️ Build from SETTLED data. While a scan (or a just-saved-login re-read) is still running the device
+        // list isn't fully classified/credentialed and the forwarding-table reads come back thin – which is
+        // exactly why the first physical map used to be one big "Path unknown" that only a rearrange, once
+        // things had settled, turned into the real tree. Wait it out first; the loading card is already up, so
+        // the caller shows "building the map…" meanwhile instead of drawing a wrong one.
+        await WaitWhileAsync(() => _scanning || Rescanning).ConfigureAwait(false);
+
         var gatewayIp = TraceRoute.DefaultGateway();
+
+        // ⚠️ Warm the switches' MAC tables BEFORE reading them, and read them fresh.
+        //
+        // A switch's forwarding table (FDB) is a live, traffic-driven snapshot: it lists a device's MAC on a
+        // port only after it has recently seen a frame from that device on that port. On a cold table a
+        // just-added switch (or a host that has been quiet) is simply absent, so the device attaches to
+        // whichever switch HAS seen it – an uplink switch nearer the root – instead of its true edge switch.
+        //
+        // Tracing every host stirs exactly the right traffic: each reply travels source→edge-switch→…→here,
+        // so every switch on the path learns each device on its real port. The old order read the FDB first
+        // and traced second, so the warming only ever helped the NEXT build – which is why the map needed a
+        // rearrange or two to converge even though all the data had "already been fetched". Trace first, then
+        // clear the cached tables so the fresh, warmed state is what actually gets read.
         var traces = await GatherTracesAsync().ConfigureAwait(false);
-        return PhysicalTopology.Build(TopoInputs(), fdb, gatewayIp, ssids, traces);
+        ClearFdbCache();
+        var (fdb, ssids) = await GatherFdbAsync().ConfigureAwait(false);
+        var adjacency = await GatherAdjacencyAsync().ConfigureAwait(false);
+        var lldp = await GatherLldpAsync().ConfigureAwait(false);
+
+        // Opt-in diagnostic, appended to the same dump GatherFdbAsync writes: the witness half of the
+        // shared-witness placement. An empty section here means the ARP read yielded nothing (no login /
+        // unreadable), which is why a firewall stays under "path unknown".
+        if (Environment.GetEnvironmentVariable("TIKMAN_TOPO_DEBUG") == "1")
+        {
+            try
+            {
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine($"\n# ZLD adjacency (witness half) — {adjacency.Count} device(s)");
+                foreach (var (id, hosts) in adjacency)
+                    sb.AppendLine($"  {id}: " + string.Join(", ", hosts.Select(h => $"{h.Mac}@{h.Label}")));
+                sb.AppendLine($"\n# ZLD LLDP neighbours — {lldp.Count} device(s)");
+                foreach (var (id, nbs) in lldp)
+                    sb.AppendLine($"  {id}: " + string.Join(", ", nbs.Select(n => $"{n.Name}@{n.Port} ({n.Ip})")));
+                System.IO.File.AppendAllText(
+                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "tikman-fdb.txt"), sb.ToString());
+            }
+            catch { /* diagnostic only */ }
+        }
+
+        return PhysicalTopology.Build(TopoInputs(), fdb, gatewayIp, ssids, traces, adjacency, lldp);
+    }
+
+    /// <summary>The L3-adjacency claims of the ZLD firewalls with a login (their ARP, MAC → interface) – the
+    /// witness half of the shared-witness placement (see <see cref="PhysicalTopology.Build"/>). Only gathered
+    /// for firewalls, only with credentials, and kept strictly apart from the forwarding tables.</summary>
+    private async Task<Dictionary<string, IReadOnlyList<(string Mac, string Label)>>> GatherAdjacencyAsync()
+    {
+        List<Device> firewalls;
+        lock (_lock) firewalls = _devices.Where(d => IsZyxelFirewall(d) && d.EncryptedPassword.Length > 0).ToList();
+
+        var result = new Dictionary<string, IReadOnlyList<(string Mac, string Label)>>();
+        foreach (var d in firewalls)
+        {
+            var password = CredentialProtector.Unprotect(d.EncryptedPassword);
+            if (password.Length == 0) continue;
+            try
+            {
+                var hosts = await ZldSsh.GetAdjacencyAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
+                if (hosts.Count > 0) result[WebId(d)] = hosts;
+            }
+            catch { /* best-effort – an unreadable firewall just stays under "path unknown" */ }
+        }
+        return result;
+    }
+
+    /// <summary>The LLDP neighbours of the ZLD firewalls with a login (their <c>show zon lldp neighbors</c>) –
+    /// direct link evidence with the exact far-end port, driving step-1a placement. Empty for a firewall that
+    /// has <c>zon lldp server</c> off. Reuses the same pooled SSH session as the ARP read. Only the neighbour
+    /// name/IP/port are handed on – enough to resolve the neighbour to a placed device and label the port.</summary>
+    private async Task<Dictionary<string, IReadOnlyList<(string Name, string Ip, string Port)>>> GatherLldpAsync()
+    {
+        List<Device> firewalls;
+        lock (_lock) firewalls = _devices.Where(d => IsZyxelFirewall(d) && d.EncryptedPassword.Length > 0).ToList();
+
+        var result = new Dictionary<string, IReadOnlyList<(string Name, string Ip, string Port)>>();
+        foreach (var d in firewalls)
+        {
+            var password = CredentialProtector.Unprotect(d.EncryptedPassword);
+            if (password.Length == 0) continue;
+            try
+            {
+                var neighbours = await ZldSsh.GetLldpNeighborsAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
+                var mapped = neighbours
+                    .Where(n => n.Name.Length > 0 || n.Ip.Length > 0)
+                    .Select(n => (n.Name, n.Ip, n.Port)).ToList();
+                if (mapped.Count > 0) result[WebId(d)] = mapped;
+            }
+            catch { /* best-effort – LLDP off or unreadable just means we fall back to shared-witness */ }
+        }
+        return result;
     }
 
     /// <summary>The devices as the map builders want them.
@@ -1856,7 +1993,28 @@ public sealed class FleetService
     private List<TopoInputDevice> TopoInputs() =>
         RawDevices().Select(d => new TopoInputDevice(
             WebId(d), d.Host, d.MacAddress, Display(d), d.Host, IsBridge(d),
-            Vendor(d).Trim(), Model(d).Trim(), KindWithVm(d))).ToList();
+            Vendor(d).Trim(), Model(d).Trim(), KindWithVm(d),
+            // A ZLD firewall's own MAC block (one MAC per interface group, learned via `show mac` during the
+            // facts read). Its frames carry a group MAC from this block, so these alternates are what lets
+            // the map place it; the labels name the matched group ("lan1") on the node.
+            d.ExtraInfo.TryGetValue("MAC-Bereich", out var range) ? ZldSsh.ExpandMacRange(range) : null,
+            d.ExtraInfo.TryGetValue("MAC-Zuordnung", out var assign) ? ParseMacLabels(assign) : null)).ToList();
+
+    /// <summary>"MAC=name, MAC=name" (as the ZLD facts read stores it) → normalized-MAC → name. Null when
+    /// nothing parses, so the map carries no empty dictionaries around.</summary>
+    private static Dictionary<string, string>? ParseMacLabels(string assign)
+    {
+        var d = new Dictionary<string, string>();
+        foreach (var pair in assign.Split(','))
+        {
+            var eq = pair.IndexOf('=');
+            if (eq <= 0) continue;
+            var mac = PhysicalTopology.NormalizeMac(pair[..eq].Trim());
+            var name = pair[(eq + 1)..].Trim();
+            if (mac.Length > 0 && name.Length > 0) d[mac] = name;
+        }
+        return d.Count > 0 ? d : null;
+    }
 
     /// <summary>Devices that can hold a forwarding table – the ones worth asking for the physical map.
     /// <para>One definition, used by the map's inputs and by the gathering, so the two cannot disagree
@@ -1907,6 +2065,49 @@ public sealed class FleetService
             catch { /* one unreachable switch must not cost us the whole map */ }
             finally { gate.Release(); }
         })).ConfigureAwait(false);
+
+        // Opt-in diagnostic (env TIKMAN_TOPO_DEBUG=1): dump every bridge's forwarding table plus the
+        // infrastructure MACs to %TEMP%\tikman-fdb.txt, so a placement puzzle (why did device X attach to Y?)
+        // can be read off the real evidence instead of guessed. Off by default; local file, never sent
+        // anywhere. Best-effort – a diagnostic must never affect the map.
+        if (Environment.GetEnvironmentVariable("TIKMAN_TOPO_DEBUG") == "1")
+        {
+            try
+            {
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine($"# TikMan FDB dump — {fdb.Count} bridge(s) with a forwarding table");
+                foreach (var (bid, table) in fdb)
+                {
+                    var b = bridges.FirstOrDefault(x => WebId(x) == bid);
+                    sb.AppendLine($"BRIDGE {bid}  {(b is null ? "" : $"{Display(b)} [{Vendor(b)} {Kind(b)}]")}  ({table.Count} entries)");
+                    foreach (var kv in table.OrderBy(k => k.Value, StringComparer.OrdinalIgnoreCase))
+                        sb.AppendLine($"    {kv.Key}  ->  {kv.Value}");
+                }
+                sb.AppendLine("\n# infrastructure device MACs (which MAC is whom)");
+                foreach (var b in bridges)
+                    sb.AppendLine($"    {PhysicalTopology.NormalizeMac(b.MacAddress)}  =  {Display(b)} ({b.Host}) [{Kind(b)}]");
+
+                // Devices carrying a MAC block (ZLD firewalls): which of their block MACs does any bridge
+                // actually see, and where? This is the placement evidence – an empty section here means no
+                // switch has learned any block MAC and the firewall can only land under "Path unknown".
+                sb.AppendLine("\n# MAC-block devices (alt-MAC placement evidence)");
+                foreach (var d in RawDevices())
+                {
+                    if (!d.ExtraInfo.TryGetValue("MAC-Bereich", out var range)) continue;
+                    sb.AppendLine($"  {Display(d)} ({d.Host})  inventory={PhysicalTopology.NormalizeMac(d.MacAddress)}  block={range}");
+                    foreach (var alt in ZldSsh.ExpandMacRange(range))
+                    {
+                        var norm = PhysicalTopology.NormalizeMac(alt);
+                        foreach (var (bid, table) in fdb)
+                            if (table.TryGetValue(norm, out var port))
+                                sb.AppendLine($"      {alt}  seen by {bid}  on port {port}");
+                    }
+                }
+                System.IO.File.WriteAllText(
+                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "tikman-fdb.txt"), sb.ToString());
+            }
+            catch { /* diagnostic only */ }
+        }
 
         return (fdb, ssids);
     }
@@ -2025,14 +2226,15 @@ public sealed class FleetService
                 var tp = await TpLinkSshConnector.GetFdbAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
                 raw = tp?.Select(kv => (kv.Key, kv.Value)).ToList();
             }
-            else if (IsZyxelFirewall(d) && password.Length > 0)
-            {
-                // ZLD firewall: its ARP table (show arp-table) maps a device's MAC to the firewall INTERFACE
-                // it is on (lan1 / lan2 / dmz …). Not switch-port granular – a firewall is a gateway, not a
-                // switch – but it segments devices by interface and anchors them under the gateway.
-                var arp = await ZldSsh.GetFdbAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
-                raw = arp?.Select(kv => (kv.Key, kv.Value)).ToList();
-            }
+            // ⚠️ A ZLD firewall is deliberately NOT an FDB source. Its "show arp-table" is L3 adjacency ("this
+            // host is on my lan1 L2 segment"), not L2 forwarding position ("this host is physically behind
+            // me"). Fed into the physical map it does real harm, MEASURED against a live network: every host
+            // the firewall had ARPed – the scanning PC included – appeared on its lan1 with count 1, which
+            // beats every switch's busy uplink port in the emptiest-port heuristic, so those hosts were pulled
+            // under the firewall although they hang off a switch. And the firewall's own lan1 IP MAC never
+            // shows in a switch table anyway (it egresses LAN frames with a physical-port MAC from its block),
+            // so it cannot be placed from it either. Monitoring/facts/backup/logs still use ZldSsh; topology
+            // does not.
         }
         catch { raw = null; }
 
@@ -2085,6 +2287,17 @@ public sealed class FleetService
     // interval speeds up CPU/RAM without re-fingerprinting every device just as often.
     private long _lastMetaRefresh;
 
+    /// <summary>Blocks while the given condition is true – used to hold credential-based SSH reads and the
+    /// physical-map build back until a scan (and any just-saved-login re-read) has finished. Piling reads
+    /// onto an in-flight scan opens sessions to devices still being discovered/enriched, which is where the
+    /// "weird states" and the empty first map came from. A ~2-minute safety cap means a scan that somehow
+    /// never ends can't wedge the caller forever.</summary>
+    private static async Task WaitWhileAsync(Func<bool> busy, CancellationToken ct = default)
+    {
+        for (int i = 0; i < 600 && busy(); i++)
+            await Task.Delay(200, ct).ConfigureAwait(false);
+    }
+
     /// <returns>How many seconds to wait before the next cycle.</returns>
     private async Task<int> MonitorOnceAsync()
     {
@@ -2108,6 +2321,11 @@ public sealed class FleetService
 
         // The alive check may tick every few seconds; the resource read runs at the user's monitoring
         // interval (default 30 s, as low as 5 s).
+        // ⚠️ But NOT while a scan or a just-saved-login re-read is in flight: those are already opening
+        // sessions to the devices, and the heavy resource read on top is the "SSH tunnels before the scan is
+        // even done" that produced weird half-read states. Skip WITHOUT advancing the timer, so it runs on
+        // the first cycle after things settle rather than a full interval later.
+        if (_scanning || Rescanning) return NextWait();
         if (Environment.TickCount64 - _lastHeavyMonitor < monitorSecs * 1000L) return NextWait();
         _lastHeavyMonitor = Environment.TickCount64;
 
@@ -2166,6 +2384,13 @@ public sealed class FleetService
             community = SnmpCommunityLocked();
         }
         if (targets.Count == 0) return;
+
+        // ⚠️ Hold until any in-progress SCAN has finished. Entering a login mid-scan used to fire these
+        // credential-based SSH reads immediately, overlapping the discovery/enrichment still running – the
+        // "SSH tunnels before the scan is done" that left devices in odd half-read states. The read is not
+        // urgent to the second; letting the scan finish first keeps the state clean. (Other re-reads may
+        // still overlap each other – that is the shared-bar design; only the scan is the real hazard.)
+        await WaitWhileAsync(() => _scanning).ConfigureAwait(false);
 
         int parallel;
         lock (_lock) parallel = _appData.ParallelDeviceReads is >= 1 and <= 32 ? _appData.ParallelDeviceReads : 8;
@@ -2260,6 +2485,11 @@ public sealed class FleetService
     public bool Rescanning { get; private set; }
     public double RescanProgress { get; private set; }
 
+    /// <summary>Fires (on the last-finishing re-read's thread) when EVERY credential-based re-read has
+    /// finished – no batch still running. The UI uses it to auto-rebuild the topology from the now-complete
+    /// evidence, so entering a login and getting the fresh map needs no manual "rearrange".</summary>
+    public event Action? RescanCompleted;
+
     // ⚠️ One bar for all concurrent re-reads, not one per call. Saving credentials on a few MikroTiks and
     // then on a few TP-Links used to run the bar to the end, reset it, and run it again – which reads as
     // "it started over" when in truth there is simply more work now. The counters are shared, so a second
@@ -2292,6 +2522,10 @@ public sealed class FleetService
             _rescanTotal = _rescanDone = 0;
         }
         PublishRescan();
+        // Every credential-based re-read has now finished – let the UI rebuild anything that depended on that
+        // fresh evidence (the topology map above all), so a saved login yields the up-to-date map with no
+        // manual "rearrange". Fired outside the lock; a throwing subscriber must not corrupt the counters.
+        try { RescanCompleted?.Invoke(); } catch { }
     }
 
     private void PublishRescan()
@@ -2350,6 +2584,7 @@ public sealed class FleetService
                     Timestamp = DateTime.Now,
                     CpuLoad = res.CpuLoad,
                     MemoryUsedPercent = res.MemoryUsedPercent,
+                    HasMemory = res.HasMemory,
                 });
                 if (points.Count > HistoryPoints) points.RemoveRange(0, points.Count - HistoryPoints);
             }
@@ -2801,11 +3036,14 @@ public sealed class FleetService
 
     private string MemoryText(Device d)
     {
-        if (!_resources.TryGetValue(WebId(d), out var r)) return "";
-        // Byte totals (MikroTik, Zyxel) → "19% (5 MiB/29 MiB)"; a percentage only (TP-Link) → "19%".
+        if (!_resources.TryGetValue(WebId(d), out var r)) return "";   // never polled → blank ("unknown")
+        // Byte totals (MikroTik, Zyxel) → "19% (5 MiB/29 MiB)"; a percentage only (TP-Link, ZLD) → "19%".
         if (r.TotalMemory > 0)
             return $"{r.MemoryUsedPercent:0}% ({Mib(r.TotalMemory - r.FreeMemory)}/{Mib(r.TotalMemory)})";
-        return r.MemoryPercent is { } p ? $"{p:0}%" : "";
+        if (r.MemoryPercent is { } p) return $"{p:0}%";
+        // Polled, CPU came back, but this device has no memory metric (an old ZyNOS switch): say so, rather
+        // than a bare blank that reads as "still loading" or a "0%" that reads as a real empty-memory figure.
+        return T("Mon_MemUnavailable");
     }
 
     private string UptimeText(Device d) =>

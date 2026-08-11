@@ -77,7 +77,7 @@ public static class VendorSupport
         // Its SSH offers an interactive shell and nothing else, and the CLI's own `copy` can only push to a
         // TFTP server. There is no file to pull. (That measurement is also why the command runner here
         // drives a shell instead of exec channels.)
-        new VendorSupportRow("TP-Link / Omada", "JetStream managed switches",
+        new VendorSupportRow("TP-Link / Omada", "JetStream managed switches\n(TL-SG2008 verified)",
             // REST: the box has a web interface, but no API behind it – nothing to connect to.
             SupportLevel.NotAvailable, SupportLevel.Yes, SupportLevel.No,
             // Full backup: not a gap, it does not exist. Confirmed from both ends – no transport over SSH
@@ -102,41 +102,57 @@ public static class VendorSupport
         // no API behind it, so there is no endpoint for TikMan to miss. Updates stay a settled No for the
         // same reason as TP-Link – pushing firmware is the one action that can leave a device unreachable.
         // Everything else still missing on a row being built is Planned, not No.
-        // ⚠️ No longer work-in-progress: every Yes here is proven against TWO real switches spanning two
-        // firmware generations – an XGS1930-52HP on ZyNOS V5.00 and a GS1920-48 on V4.50 – and the connector
-        // was hardened for the differences between them (the older sshd's fatal exec channel, its ESC 7
-        // output prefix, its blank port-name column, and a pager that never sits at the end of the line).
-        // System information, running-config, the forwarding table AND the log all read over the SSH CLI;
-        // the serial, which the GS1920 CLI omits, is read from the Zyxel-private OID the web GUI uses.
-        // Full backup is NotAvailable, not a gap: measured on both, these switches offer no binary artefact
-        // – the downloadable .cfg IS the running-config the config-backup already fetches, exactly as on
-        // TP-Link. Updates stay a settled No – pushing firmware to a switch is the one act that can strand
+        // ⚠️ No longer work-in-progress: every Yes here is proven against THREE real switches spanning three
+        // firmware generations – an XGS1930-52HP on ZyNOS V5.00, a GS1920-48 on V4.50, and a GS2200-48 on
+        // V3.80 (2009) – and the connector was hardened for the differences between them (the older sshd's
+        // fatal exec channel, its ESC 7 output prefix, its blank port-name column, and a pager that never
+        // sits at the end of the line). The V3.80 GS2200 needed two more shapes: `show cpu-utilization` has
+        // no headline percentage there but a per-second sec/ticks/util table (the util column is averaged
+        // into one figure), and `show logging` carries a day-of-week + year + word-level line rather than the
+        // 2-letter class; it also exposes no memory command at all, so monitoring on that generation is
+        // CPU-only (the memory column reads 0, not a bug). System information, running-config, the forwarding
+        // table AND the log all read over the SSH CLI; the serial, which the GS1920/GS2200 CLI omits, is read
+        // from the Zyxel-private OID the web GUI uses.
+        // Full backup is NotAvailable, not a gap: measured on all three, these switches offer no binary
+        // artefact – the downloadable .cfg IS the running-config the config-backup already fetches, exactly as
+        // on TP-Link. Updates stay a settled No – pushing firmware to a switch is the one act that can strand
         // it. SNMP is Yes: TikMan reads what it needs from it – the serial the CLI omits – and it answered on
-        // both; everything richer just happens to come over the SSH CLI, which does not make SNMP partial.
-        new VendorSupportRow("Zyxel · ZyNOS", "GS / XGS switches (GS1920, XGS1930 verified)",
+        // all; everything richer just happens to come over the SSH CLI, which does not make SNMP partial.
+        new VendorSupportRow("Zyxel · ZyNOS", "GS / XGS switches\n(GS2200, GS1920, XGS1930 verified)",
             SupportLevel.NotAvailable, SupportLevel.Yes, SupportLevel.Yes,
             SupportLevel.Yes, SupportLevel.Yes, SupportLevel.NotAvailable, SupportLevel.No,
             SupportLevel.Yes, SupportLevel.Yes),
 
         // ⚠️ PROVEN against a real USG FLEX 500 on ZLD V5.39, and no longer work-in-progress. Identification,
-        // monitoring, config backup, logs AND topology all read over the ZLD SSH CLI. ZLD is its own dialect
-        // – no "show system-information" (that is ZyNOS); it has a two-image "show version" table (the Running
-        // image is the live model + firmware), "show cpu status" / "show mem status" / "show system uptime" /
-        // "show serial-number", "show running-config", "show logging entries", and "show arp-table" for the
-        // map. Full backup is NotAvailable: the config IS the whole backup, no binary artefact (measured –
-        // only a .conf). Topology is interface-level, not switch-port: the ARP table maps a MAC to the
-        // firewall INTERFACE it is on (lan1 / lan2 / dmz), which segments devices and anchors them under the
-        // gateway – a firewall is a gateway node, not a switch, but that is still real forwarding data.
-        // (Plain "show arp" errors; "show arp-table" is the one that works.) Updates stay a settled No, like
-        // the switches. SNMP is not used – everything comes over the CLI. These boxes miscompute
-        // encrypt-then-MAC, so SshCompat offers only the plain HMACs, or the session dies on the first
-        // encrypted packet. Sits under ZyNOS because both are managed Zyxel boxes read over their SSH CLI.
-        new VendorSupportRow("Zyxel · ZLD", "ZyWALL / USG / USG FLEX firewalls (USG FLEX 500 verified)",
+        // monitoring, config backup AND logs all read over the ZLD SSH CLI. ZLD is its own dialect – no "show
+        // system-information" (that is ZyNOS); it has a two-image "show version" table (the Running image is
+        // the live model + firmware), "show cpu status" / "show mem status" / "show system uptime" / "show
+        // serial-number", "show running-config" and "show logging entries". Full backup is NotAvailable: the
+        // config IS the whole backup, no binary artefact (measured – only a .conf).
+        // ⚠️ Topology is Yes, and every mechanism behind it was MEASURED, not assumed. The firewall is PLACED
+        // three ways, most-trusted first. (1) `show zon lldp neighbors` (when the user has enabled `zon lldp
+        // server`): a DIRECT link, naming the placed neighbour and the exact far-end port ("combo4"). It also
+        // gives the firewall's own uplink port, which — with `show port status` (link-up ports) and `show
+        // port-grouping` (which physical ports a group spans) — narrows a client's label from the whole group
+        // "P2-P8 (lan1)" down to the real port "P6 (lan1)". (2) `show mac` reveals its own MAC block, matched
+        // against the switches' forwarding tables. (3) The shared-witness rule for a firewall no switch has
+        // ever seen (a workbench switch talks only to the hosts behind it, all switched locally): its ARP
+        // names its hosts, the switches prove where those attach, and a unanimous attach point places it
+        // between them (its hosts re-home beneath it). What deliberately does NOT feed the map: the ARP as a
+        // forwarding table – it is L3 adjacency, and fed in as L2 evidence it pulled every ARPed host under
+        // the firewall. The ZLD CLI has no switch-MAC-table command at all (the full `show ?` list was
+        // walked), so the firewall contributes no forwarding table of its own – placed, but not a source.
+        // LLDP is read only when the user turns it on; TikMan never flips that config itself. Without it the
+        // firewall still places (mechanisms 2+3) and the client label falls back to the active-port set, then
+        // the whole group. Updates stay a settled No, like the switches. SNMP is not used – everything comes
+        // over the CLI. These boxes miscompute encrypt-then-MAC, so SshCompat offers only the plain HMACs, or
+        // the session dies on the first encrypted packet. Sits under ZyNOS because both are managed Zyxel SSH.
+        new VendorSupportRow("Zyxel · ZLD", "ZyWALL / USG / USG FLEX firewalls\n(USG FLEX 500 verified)",
             SupportLevel.NotAvailable, SupportLevel.Yes, SupportLevel.No,
             SupportLevel.Yes, SupportLevel.Yes, SupportLevel.NotAvailable, SupportLevel.No,
             SupportLevel.Yes, SupportLevel.Yes),
 
-        new VendorSupportRow("Zyxel · uOS", "Nebula devices (USG FLEX H, current switches and APs)",
+        new VendorSupportRow("Zyxel · uOS", "Nebula devices\n(USG FLEX H, current switches and APs)",
             // Identified over ZON and the web fingerprint; the CLI connector is what is being built.
             SupportLevel.NotAvailable, SupportLevel.Partial, SupportLevel.Partial,
             SupportLevel.Planned, SupportLevel.Planned, SupportLevel.Planned, SupportLevel.No,

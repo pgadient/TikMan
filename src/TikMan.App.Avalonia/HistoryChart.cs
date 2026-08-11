@@ -86,7 +86,10 @@ public class HistoryChart : Control
             double X(int p) => rightX - (count - 1 - p) * step;
 
             DrawSeries(dc, data, start, count, s => s.CpuLoad, CpuBrush, X, marginTop, plotH);
-            DrawSeries(dc, data, start, count, s => s.MemoryUsedPercent, MemBrush, X, marginTop, plotH);
+            // A device that reports no memory (an old ZyNOS switch) must not draw a flat 0 % RAM line – skip
+            // the series entirely, and DrawLegend below drops its swatch to match.
+            if (data[^1].HasMemory)
+                DrawSeries(dc, data, start, count, s => s.MemoryUsedPercent, MemBrush, X, marginTop, plotH);
 
             var newest = Text(data[^1].Timestamp.ToString("HH:mm:ss"), 10, labelBrush);
             dc.DrawText(newest, new Point(rightX - newest.Width, h - marginBottom + 4));
@@ -104,8 +107,11 @@ public class HistoryChart : Control
             dc.DrawText(Text(T("Chart_NoData"), 11, labelBrush), new Point(marginLeft + 8, marginTop + 8));
         }
 
-        // In the reserved top band (above the plot), vertically centred – "outside the graph".
-        DrawLegend(dc, w - marginRight, 4, labelBrush);
+        // In the reserved top band (above the plot), vertically centred – "outside the graph". The RAM entry
+        // is dropped for a device known to report no memory (newest sample says so); when there is no data
+        // yet we can't know, so both are shown.
+        var showMem = data is not { Count: >= 1 } || data[^1].HasMemory;
+        DrawLegend(dc, w - marginRight, 4, labelBrush, showMem);
     }
 
     private static void DrawSeries(DrawingContext dc, IReadOnlyList<ResourceSnapshot> data, int start, int count,
@@ -137,14 +143,17 @@ public class HistoryChart : Control
     }
 
     /// <summary>Colour swatches with labels, laid out right-to-left from the plot's right edge.</summary>
-    private void DrawLegend(DrawingContext dc, double right, double top, IBrush labelBrush)
+    private void DrawLegend(DrawingContext dc, double right, double top, IBrush labelBrush, bool showMem)
     {
         const double swatch = 12, gap = 4, spacing = 14;
 
         // Right-most entry first, moving left by each entry's own width – so the labels can be any length
-        // and in any language without the two colliding.
+        // and in any language without the two colliding. RAM is omitted when the device reports no memory.
+        var entries = showMem
+            ? new[] { ("Chart_Ram", MemBrush), ("Chart_Cpu", CpuBrush) }
+            : new[] { ("Chart_Cpu", CpuBrush) };
         var x = right;
-        foreach (var (key, brush) in new[] { ("Chart_Ram", MemBrush), ("Chart_Cpu", CpuBrush) })
+        foreach (var (key, brush) in entries)
         {
             var label = Text(T(key), 10, labelBrush);
             x -= label.Width;

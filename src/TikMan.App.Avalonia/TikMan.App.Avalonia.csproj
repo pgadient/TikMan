@@ -12,13 +12,31 @@
     <AssemblyName>TikMan.Avalonia</AssemblyName>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationIcon>tikman-red.ico</ApplicationIcon>
-    <Version>2.3.3</Version>
+    <Version>2.3.4</Version>
     <Product>TikMan</Product>
     <Company>Pascal Montico-Gadient</Company>
     <!-- Build date stamped into the informational version ("2.2.2+build.2026-07-18") so the window title can
          say when this binary was produced. Read back via AssemblyInformationalVersionAttribute. -->
     <InformationalVersion>$(Version)+build.$([System.DateTime]::UtcNow.ToString("yyyy-MM-dd"))</InformationalVersion>
+    <!-- Dev-build counter file. Lives in the WORK root (outside src\), so it can never reach the git mirror;
+         in the public clone it simply doesn't exist and the stamp below never runs. -->
+    <BuildCounterFile>$(MSBuildProjectDirectory)\..\..\build-counter-avalonia.txt</BuildCounterFile>
   </PropertyGroup>
+
+  <!-- Debug builds get an auto-incrementing counter ("2.3.4.17" in the title), so during an iterate-test
+       loop it is unambiguous WHICH build is running – a bare version plus build date could not distinguish
+       several builds on the same day. Release/publish builds never carry it: the released version stays a
+       clean three-part number the updater can compare. -->
+  <Target Name="StampBuildCounter" BeforeTargets="BeforeBuild"
+          Condition="'$(Configuration)' == 'Debug' AND Exists('$(BuildCounterFile)')">
+    <PropertyGroup>
+      <_BuildNo>$([System.IO.File]::ReadAllText('$(BuildCounterFile)').Trim())</_BuildNo>
+      <_BuildNo Condition="'$(_BuildNo)' == ''">0</_BuildNo>
+      <_BuildNo>$([MSBuild]::Add($(_BuildNo), 1))</_BuildNo>
+      <InformationalVersion>$(Version)+build.$([System.DateTime]::UtcNow.ToString("yyyy-MM-dd")).$(_BuildNo)</InformationalVersion>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(BuildCounterFile)" Lines="$(_BuildNo)" Overwrite="true" />
+  </Target>
 
   <ItemGroup>
     <AvaloniaResource Include="Assets/**" />

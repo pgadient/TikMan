@@ -39,6 +39,7 @@
                     <CheckBox Content="{loc:Loc Av_SetNoScan}" IsChecked="{Binding NoInitialScan, Mode=TwoWay}" />
                     <CheckBox Content="{loc:Loc Av_SetCheckUpd}" IsChecked="{Binding CheckForUpdates, Mode=TwoWay}" />
                     <CheckBox Content="{loc:Loc Av_SetExpand}" IsChecked="{Binding ExpandRowsByDefault, Mode=TwoWay}" />
+                    <CheckBox Content="{loc:Loc Set_AutoRevealDetail}" IsChecked="{Binding AutoRevealDetailPane, Mode=TwoWay}" />
                     <!-- The "combined progress bar" switch used to sit here. There is only one progress
                          display now – one bar 0→100 % with the protocol row under it – so it had nothing
                          left to switch between. AppData keeps the field for the WPF client. -->

@@ -220,10 +220,15 @@ public class AppData
     /// <para>⚠️ Read once at startup when the renderer is chosen – changing it needs a restart.</para></summary>
     public bool SoftwareRendering { get; set; }
 
-    /// <summary>Whether the device detail pane is shown, and how tall the user dragged it. Kept because a
-    /// pane sized to one screen is wrong on the next start otherwise.</summary>
+    /// <summary>How tall the user dragged the detail pane – kept because a pane sized to one screen is wrong
+    /// on the next start otherwise. (ShowDetailPane is legacy: the pane's open/closed state is session-only
+    /// now – it starts hidden and reveals on the first device selection, see AutoRevealDetailPane.)</summary>
     public bool ShowDetailPane { get; set; } = true;
     public double DetailPaneHeight { get; set; } = 270;
+
+    /// <summary>Reveal the detail pane automatically the first time a device is selected in a session (then
+    /// leave it to the user). Off ⇒ the pane only ever opens via the chevron. On by default.</summary>
+    public bool AutoRevealDetailPane { get; set; } = true;
 
     /// <summary>Hand the stored device password to an external client (WinSCP …) so the session opens
     /// without a prompt. <b>Off by default, deliberately:</b> the password travels as part of the session

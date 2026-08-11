@@ -22,17 +22,18 @@ public static class RouterOsSsh
     {
         try
         {
-            return await Task.Run(() =>
+            // One held, serialized session per device (see SshSessionPool), driven over the SSH EXEC channel
+            // (RunClientAsync) since RouterOS reads run "/…/print" as commands, not through an interactive
+            // shell – so this session is exec-only (no shell delegate). RouterOS allows several sessions, so
+            // holding one isn't the hazard it is on the old switches; the win here is reuse and no repeated
+            // handshake on the SSH-fallback path.
+            var session = SshSessionPool.GetOrCreate(SshSessionPool.KeyFor(host, port),
+                () => new SshSession(() => Info(host, port, user, password)));
+            return await session.RunClientAsync(ssh =>
             {
-                using var ssh = new SshClient(Info(host, port, user, password));
-                ssh.Connect();
-                try
-                {
-                    using var cmd = ssh.CreateCommand(command);
-                    cmd.CommandTimeout = timeout ?? TimeSpan.FromSeconds(30);
-                    return cmd.Execute();
-                }
-                finally { if (ssh.IsConnected) ssh.Disconnect(); }
+                using var cmd = ssh.CreateCommand(command);
+                cmd.CommandTimeout = timeout ?? TimeSpan.FromSeconds(30);
+                return cmd.Execute();
             }, ct).ConfigureAwait(false);
         }
         catch (Exception) { return null; } // SSH off / bad creds / not RouterOS

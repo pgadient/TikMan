@@ -9,8 +9,16 @@ public enum TopoRole { Internet, Gateway, Infrastructure, Client, Segment }
 /// <param name="Model">The model on its own line ("CCR2004-16G-2S+"), with the manufacturer stripped off
 /// the front when it repeats it.</param>
 /// <param name="Kind">The device category label, in the user's language.</param>
+/// <param name="AltMacs">Additional MACs this device is known to transmit with. ⚠️ Exists for the ZLD
+/// firewalls: they own a MAC block, one per interface group (all physical ports of a group share the
+/// group's MAC), and their frames carry the group MAC – which may not be the inventory MAC their IP answers
+/// ARP with. Only via these does a switch's forwarding table contain the firewall reliably.</param>
+/// <param name="MacLabels">Optional names for those MACs, keyed by <see cref="PhysicalTopology.NormalizeMac"/>
+/// form ("lan1", "wan2"). When the placement matched an alternate MAC that has a label, the label joins the
+/// node's port text – "ether5 (lan1)" reads as "hangs off ether5, with its lan1 group".</param>
 public sealed record TopoInputDevice(string Id, string Ip, string Mac, string Title, string Detail,
-    bool IsInfrastructure, string Vendor = "", string Model = "", string Kind = "");
+    bool IsInfrastructure, string Vendor = "", string Model = "", string Kind = "",
+    IReadOnlyList<string>? AltMacs = null, IReadOnlyDictionary<string, string>? MacLabels = null);
 
 /// <summary>A laid-out box: position, size and CSS-ready hex colours – the same draw data the GUI's
 /// nodes and the PDF export carry, so the web SVG renders it directly.</summary>
@@ -156,12 +164,20 @@ public static class PhysicalTopology
         return new TopoLayout(order.Select(k => placed[k]).ToList(), links);
     }
 
+    /// <param name="adjacency">L3-adjacency claims of bridges that have no forwarding table (ZLD firewalls):
+    /// deviceId → the (MAC, interface) pairs its ARP knows. Drives the shared-witness placement – see the
+    /// step-1b comment. Never treated as a forwarding table.</param>
+    /// <param name="lldp">LLDP neighbours a bridge reports (ZLD firewalls with <c>zon lldp server</c> on):
+    /// deviceId → the (neighbour name, neighbour IP, neighbour port) it hears. DIRECT link evidence with the
+    /// exact far-end port – used as the primary placement in step 1a, ahead of the shared-witness heuristic.</param>
     public static TopoLayout Build(
         IReadOnlyList<TopoInputDevice> devices,
         IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> fdb, // bridgeId → (normMAC → port)
         string gatewayIp,
         IReadOnlyDictionary<(string BridgeId, string Port), string>? ssids = null,
-        IReadOnlyDictionary<string, IReadOnlyList<string>>? traces = null)   // deviceIp → hop IPs
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? traces = null,   // deviceIp → hop IPs
+        IReadOnlyDictionary<string, IReadOnlyList<(string Mac, string Label)>>? adjacency = null,
+        IReadOnlyDictionary<string, IReadOnlyList<(string Name, string Ip, string Port)>>? lldp = null)
     {
         var boxes = new List<TopoBox>();
         var links = new List<TopoLink>();
@@ -208,12 +224,11 @@ public static class PhysicalTopology
             uplink[bridgeId] = gwDev is not null && bridgeId == gwDev.Id ? ""
                 : gwMac.Length > 0 && table.TryGetValue(gwMac, out var up) ? up : "";
 
-        (string BridgeId, string Port)? AttachOf(string macRaw, string? selfId)
+        (string BridgeId, string Port)? AttachOf(string macRaw, string? selfId, ref int bestCount)
         {
             var mac = NormalizeMac(macRaw);
             if (mac.Length == 0) return null;
             (string BridgeId, string Port)? best = null;
-            int bestCount = int.MaxValue;
             foreach (var (bridgeId, table) in fdb)
             {
                 if (bridgeId == selfId || !table.TryGetValue(mac, out var port)) continue;
@@ -224,9 +239,42 @@ public static class PhysicalTopology
             return best;
         }
 
+        // The device-level attach: tries the inventory MAC AND every alternate MAC, keeping the overall
+        // emptiest-port winner. The alternates are how a ZLD firewall is found at all – its frames carry an
+        // interface-group MAC from its own block (see TopoInputDevice.AltMacs). Label = the matched MAC's
+        // name when one is known ("lan1"), so the map can say which group faces the switch.
+        (string BridgeId, string Port, string Label)? AttachOfDevice(TopoInputDevice d)
+        {
+            int bestCount = int.MaxValue;
+            var best = AttachOf(d.Mac, d.Id, ref bestCount);
+            var bestMac = best is not null ? d.Mac : "";
+            if (d.AltMacs is not null)
+                foreach (var alt in d.AltMacs)
+                    if (AttachOf(alt, d.Id, ref bestCount) is { } hit) { best = hit; bestMac = alt; }
+            if (best is null) return null;
+            var label = d.MacLabels is not null &&
+                        d.MacLabels.TryGetValue(NormalizeMac(bestMac), out var l) ? l : "";
+            return (best.Value.BridgeId, best.Value.Port, label);
+        }
+
         string PortLabel(string bridgeId, string port) =>
             port.Length > 0 && ssids is not null && ssids.TryGetValue((bridgeId, port), out var ssid)
                 ? $"{port} ({ssid})" : port;
+
+        // The honest catch-all for anything the forwarding tables can't place. Created once, shared by the
+        // bridge pass and the leftover pass below.
+        string? unknownKey = null;
+        string UnknownKey()
+        {
+            if (unknownKey is null)
+            {
+                unknownKey = "::unknown";
+                Add(unknownKey, null, "Path unknown", "", "", TopoRole.Internet);
+                PlaceAt(1, unknownKey);
+                Connect(gwKey, unknownKey);
+            }
+            return unknownKey;
+        }
 
         // 1) The bridges, each under its proven parent (recursively, cycles guarded).
         var nodeKeyOf = new Dictionary<string, string>(); // deviceId → placed key
@@ -236,12 +284,23 @@ public static class PhysicalTopology
         {
             if (nodeKeyOf.TryGetValue(bridgeId, out var existing)) return existing;
             var dev = byId.TryGetValue(bridgeId, out var b) ? b : null;
-            string parentKey = gwKey;
+            string parentKey;
             string port = "";
-            if (path.Add(bridgeId) && dev is not null && AttachOf(dev.Mac, bridgeId) is { } at)
+            if (path.Add(bridgeId) && dev is not null && AttachOfDevice(dev) is { } at)
             {
                 parentKey = gwDev is not null && at.BridgeId == gwDev.Id ? gwKey : EnsureBridge(at.BridgeId, path);
                 port = PortLabel(at.BridgeId, at.Port);
+                // "ether5 (lan1)": the switch port it hangs off, plus which of ITS interface groups faces it.
+                if (at.Label.Length > 0) port = port.Length > 0 ? $"{port} ({at.Label})" : at.Label;
+            }
+            else
+            {
+                // ⚠️ No forwarding-table evidence of where this bridge connects. Do NOT optimistically hang it
+                // off the gateway – that is how a firewall ended up drawn directly on the gateway when it is
+                // not: a firewall's ARP is L3 (its MAC never appears in a switch's L2 table), so nothing at
+                // layer 2 proves its uplink. Put it under "path unknown", the same honest place an unplaceable
+                // device goes; its own downstream devices still hang off it, so their port labels are kept.
+                parentKey = UnknownKey();
             }
             var key = bridgeId;
             Add(key, dev?.Id, dev?.Title ?? bridgeId, JoinDetail(dev?.Detail, port), dev?.Mac ?? "", TopoRole.Infrastructure, dev?.Vendor ?? "", dev?.Model ?? "", dev?.Kind ?? "");
@@ -254,20 +313,137 @@ public static class PhysicalTopology
         foreach (var bridgeId in fdb.Keys.Where(id => gwDev is null || id != gwDev.Id).ToList())
             EnsureBridge(bridgeId, new HashSet<string>());
 
+        // 1b) Shared-witness placement, for a bridge that is INVISIBLE to every switch. A firewall used as a
+        // workbench switch (PC → firewall lan1 → uplink switch) exchanges frames only with the hosts behind
+        // it, all switched locally – no switch ever learns its MAC (measured on the live net), so step 1 can
+        // never place it. But its ARP names those hosts, and the switches DO see them: if every witness the
+        // firewall claims attaches at ONE switch port, the firewall must sit between that port and the
+        // witnesses. It is then placed on that port and the witnesses are re-homed beneath it.
+        // ⚠️ Unanimity required, deliberately: ARP is L3 adjacency, not "behind me" – any host that merely
+        // TALKED to the firewall is in there too. Scattered witnesses therefore prove nothing, and the bridge
+        // honestly stays under "path unknown" (the 2026-08-01 lesson: fed as forwarding evidence, ARP pulled
+        // every ARPed host under the firewall).
+        var witnessHome = new Dictionary<string, (string ParentKey, string Label)>(); // normMAC → re-home target
+
+        // Resolves an LLDP neighbour (name/IP) to an ALREADY-PLACED device. IP first (a switch's own IP is
+        // unambiguous), name second (the neighbour's system name vs the device title, normalised).
+        static string Norm(string s) => new string((s ?? "").Where(c => !char.IsWhiteSpace(c)).ToArray()).ToLowerInvariant();
+        string? ResolvePlacedNeighbour(string name, string ip)
+        {
+            foreach (var t in devices)
+            {
+                if (!nodeKeyOf.ContainsKey(t.Id)) continue;
+                bool ipHit = ip.Length > 0 && !string.IsNullOrEmpty(t.Ip) && string.Equals(t.Ip, ip, StringComparison.OrdinalIgnoreCase);
+                bool nameHit = name.Length > 0 && Norm(t.Title).Length > 0 && Norm(t.Title) == Norm(name);
+                if (ipHit || nameHit) return nodeKeyOf[t.Id];
+            }
+            return null;
+        }
+
+        // 1a) LLDP placement + 1b) shared-witness placement, in one pass over the ZLD firewalls' adjacency.
+        // ⚠️ Placement is tried LLDP-first (a direct link with the exact far-end port), then the ARP
+        // shared-witness heuristic. Re-homing of the firewall's downstream hosts stays gated on ARP UNANIMITY
+        // either way (see the 2026-08-01 lesson: ARP is L3, so a host that merely TALKED to the firewall is in
+        // there too – scattered witnesses prove nothing and must not be pulled under it).
+        if (adjacency is not null)
+            foreach (var (devId, hosts) in adjacency)
+            {
+                if (hosts.Count == 0) continue;
+                var dev = byIdOrNull(devId);
+                if (dev is null) continue;
+
+                var points = new List<((string BridgeId, string Port) At, string Mac, string Label)>();
+                foreach (var (mac, label) in hosts)
+                {
+                    int c = int.MaxValue;
+                    if (AttachOf(mac, devId, ref c) is { } at) points.Add((at, mac, label));
+                }
+                bool unanimous = points.Count > 0 && points.Select(p => p.At).Distinct().Count() == 1;
+
+                bool isPlaced = nodeKeyOf.ContainsKey(devId);   // step 1 already put it somewhere with real evidence
+                if (!isPlaced)
+                {
+                    // 1a) LLDP: the firewall directly named its neighbours and the far-end port it hangs off.
+                    // ⚠️ Pick the SHALLOWEST placed neighbour (closest to the gateway). A firewall can also see
+                    // its own downstream switches over LLDP; hanging it off one of those would invert the tree.
+                    if (lldp is not null && lldp.TryGetValue(devId, out var neighbours))
+                    {
+                        string? bestKey = null, bestPort = "";
+                        int bestLevel = int.MaxValue;
+                        foreach (var nb in neighbours)
+                            if (ResolvePlacedNeighbour(nb.Name, nb.Ip) is { } pk && pk != devId
+                                && levels.TryGetValue(pk, out var lv) && lv < bestLevel)
+                            { bestKey = pk; bestPort = nb.Port; bestLevel = lv; }
+                        if (bestKey is not null)
+                        {
+                            // Convention: a node shows the PARENT's port – here the neighbour's port ("combo4").
+                            Add(devId, dev.Id, dev.Title, JoinDetail(dev.Detail, bestPort), dev.Mac,
+                                TopoRole.Infrastructure, dev.Vendor, dev.Model, dev.Kind);
+                            nodeKeyOf[devId] = devId;
+                            PlaceAt(bestLevel + 1, devId);
+                            Connect(bestKey, devId);
+                            isPlaced = true;
+                        }
+                    }
+
+                    // 1b) Shared-witness fallback: every ARP witness attaches at ONE switch port ⇒ the firewall
+                    // sits between that port and them.
+                    if (!isPlaced && unanimous)
+                    {
+                        var (bridgeId, port) = points[0].At;
+                        if (nodeKeyOf.TryGetValue(bridgeId, out var parentKey))
+                        {
+                            // ⚠️ Convention: the firewall hangs off the SWITCH, so its label is the switch port
+                            // ("combo4") – NOT its own interface (that is what its downstream hosts show below).
+                            Add(devId, dev.Id, dev.Title, JoinDetail(dev.Detail, PortLabel(bridgeId, port)), dev.Mac,
+                                TopoRole.Infrastructure, dev.Vendor, dev.Model, dev.Kind);
+                            nodeKeyOf[devId] = devId;
+                            PlaceAt(levels[parentKey] + 1, devId);
+                            Connect(parentKey, devId);
+                            isPlaced = true;
+                        }
+                    }
+                }
+
+                // Re-home the firewall's downstream hosts beneath it – but ONLY when the ARP witnesses agree on
+                // a single port (unanimity), regardless of how the firewall itself got placed.
+                if (isPlaced && unanimous)
+                    foreach (var pt in points) witnessHome[NormalizeMac(pt.Mac)] = (devId, pt.Label);
+            }
+
+        TopoInputDevice? byIdOrNull(string id) => byId.TryGetValue(id, out var b) ? b : null;
+
         // 2) Every other device: grouped by (bridge, port); ≥3 on one port ⇒ a shared port node.
-        var attachGroups = new Dictionary<(string, string), List<TopoInputDevice>>();
+        // ⚠️ The matched-MAC label travels WITH each member: a ZLD firewall that contributes no forwarding
+        // table of its own is placed through THIS pass (EnsureBridge only handles devices that appear in
+        // fdb.Keys), so dropping the label here is dropping it entirely – which is exactly what happened
+        // before the smoke pin caught it.
+        var attachGroups = new Dictionary<(string, string), List<(TopoInputDevice D, string Label)>>();
+        var attachedViaFdb = new HashSet<string>();
         foreach (var d in devices)
         {
             if ((gwDev is not null && d.Id == gwDev.Id) || nodeKeyOf.ContainsKey(d.Id)) continue;
-            if (AttachOf(d.Mac, d.Id) is { } at && nodeKeyOf.ContainsKey(at.BridgeId))
+            // A host claimed by a witness-placed bridge hangs under THAT bridge, not the switch port both of
+            // them resolve to – the bridge sits between them (see step 1b). Label = the bridge's port group
+            // that faces it ("P2-P8 (lan1)"): the ZLD can't pin the exact physical port, so the whole group
+            // is named – never wrong, since the host is on one of them.
+            if (witnessHome.TryGetValue(NormalizeMac(d.Mac), out var home))
+            {
+                Add(d.Id, d.Id, d.Title, JoinDetail(d.Detail, home.Label), d.Mac,
+                    d.IsInfrastructure ? TopoRole.Infrastructure : TopoRole.Client, d.Vendor, d.Model, d.Kind);
+                nodeKeyOf[d.Id] = d.Id;
+                PlaceAt(levels[home.ParentKey] + 1, d.Id);
+                Connect(home.ParentKey, d.Id);
+                attachedViaFdb.Add(d.Id);
+                continue;
+            }
+            if (AttachOfDevice(d) is { } at && nodeKeyOf.ContainsKey(at.BridgeId))
             {
                 var key = (at.BridgeId, at.Port);
                 if (!attachGroups.TryGetValue(key, out var list)) attachGroups[key] = list = new();
-                list.Add(d);
+                list.Add((d, at.Label));
             }
         }
-
-        var attachedViaFdb = new HashSet<string>();
         foreach (var ((bridgeId, port), members) in attachGroups)
         {
             var bridgeKey = nodeKeyOf[bridgeId];
@@ -282,9 +458,12 @@ public static class PhysicalTopology
                 parentForLeaves = portKey;
                 leafLevel += 1;
             }
-            foreach (var d in members.OrderBy(x => Ipv4SortKey(x.Ip)))
+            foreach (var (d, macLabel) in members.OrderBy(x => Ipv4SortKey(x.D.Ip)))
             {
                 var label = members.Count >= PortGroupThreshold ? "" : PortLabel(bridgeId, port);
+                // "p5 (lan1)": the matched-MAC group name joins the port text (or stands alone when the port
+                // text was grouped away) – see the group comment above.
+                if (macLabel.Length > 0) label = label.Length > 0 ? $"{label} ({macLabel})" : macLabel;
                 // ⚠️ Hardware and Kind travel with EVERY device node, not just the infrastructure ones.
                 // These two arguments were missing here and in the "path unknown" branch below – the two
                 // paths every ordinary client takes – so the map named vendor and model on the switches and
@@ -303,33 +482,59 @@ public static class PhysicalTopology
         var byIp = devices.Where(d => d.Ip.Length > 0)
             .GroupBy(d => d.Ip, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First());
         var hopNodes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); // hopIp → placed key
-        string? unknownKey = null;
         foreach (var d in devices.OrderBy(x => Ipv4SortKey(x.Ip)))
         {
             if ((gwDev is not null && d.Id == gwDev.Id) || nodeKeyOf.ContainsKey(d.Id) || attachedViaFdb.Contains(d.Id))
                 continue;
 
-            // A traced route: chain its routers (each hop != the gateway) under the root, then the leaf.
-            if (traces is not null && traces.TryGetValue(d.Ip, out var hops) && hops.Count > 0)
+            // A traced route: chain its routers under the root, then the leaf. Only the INTERMEDIATE hops
+            // count as evidence – the gateway (it is already the root) and the destination itself (a trace
+            // always ends on it) prove nothing about structure.
+            //
+            // ⚠️ A trace with NO intermediate hops that never passed the gateway is no evidence at all: a
+            // same-L2 destination answers "one hop: itself", and the machine running the scan answers that
+            // for ITSELF too. The old code took that path anyway and chained the device DIRECTLY under the
+            // gateway – which is how the scanning PC ended up dangling alone at the far right of the map
+            // (the layout puts the gateway's own leaves after the whole path-unknown subtree). No hops, no
+            // gateway crossing ⇒ fall through to "path unknown", where the FDB-less honestly belong. A trace
+            // that DID cross the gateway keeps hanging under it – that much really was measured.
+            var chain = traces is not null && traces.TryGetValue(d.Ip, out var hops)
+                ? hops.Where(h => !string.Equals(h, gatewayIp, StringComparison.OrdinalIgnoreCase)
+                               && !string.Equals(h, d.Ip, StringComparison.OrdinalIgnoreCase)).ToList()
+                : null;
+            var crossedGateway = traces is not null && traces.TryGetValue(d.Ip, out var hops2) &&
+                hops2.Any(h => string.Equals(h, gatewayIp, StringComparison.OrdinalIgnoreCase));
+            if (chain is { Count: > 0 } || (crossedGateway && chain is not null))
             {
                 var parentKey = gwKey;
                 int level = 0;
-                foreach (var hop in hops.Where(h => !string.Equals(h, gatewayIp, StringComparison.OrdinalIgnoreCase)))
+                foreach (var hop in chain)
                 {
                     level++;
                     if (!hopNodes.TryGetValue(hop, out var hopKey))
                     {
-                        // Reuse a known device as the hop when we have one and it isn't placed yet.
-                        if (byIp.TryGetValue(hop, out var hopDev) && !nodeKeyOf.ContainsKey(hopDev.Id))
+                        // A hop that is a known device: reuse its existing node when it is already on the
+                        // map (⚠️ creating a "::hop:" twin for it put the same router on the map twice –
+                        // once wherever it had landed, once as a phantom hop box); otherwise add it here.
+                        if (byIp.TryGetValue(hop, out var hopDev))
                         {
-                            hopKey = hopDev.Id;
-                            Add(hopKey, hopDev.Id, hopDev.Title, hopDev.Detail, hopDev.Mac, TopoRole.Infrastructure, hopDev.Vendor, hopDev.Model, hopDev.Kind);
-                            nodeKeyOf[hopDev.Id] = hopKey;
+                            if (!nodeKeyOf.TryGetValue(hopDev.Id, out hopKey))
+                            {
+                                hopKey = hopDev.Id;
+                                Add(hopKey, hopDev.Id, hopDev.Title, hopDev.Detail, hopDev.Mac, TopoRole.Infrastructure, hopDev.Vendor, hopDev.Model, hopDev.Kind);
+                                nodeKeyOf[hopDev.Id] = hopKey;
+                                PlaceAt(level, hopKey);
+                                Connect(parentKey, hopKey);
+                            }
                         }
-                        else { hopKey = "::hop:" + hop; Add(hopKey, null, hop, hop, "", TopoRole.Infrastructure); }
+                        else
+                        {
+                            hopKey = "::hop:" + hop;
+                            Add(hopKey, null, hop, hop, "", TopoRole.Infrastructure);
+                            PlaceAt(level, hopKey);
+                            Connect(parentKey, hopKey);
+                        }
                         hopNodes[hop] = hopKey;
-                        PlaceAt(level, hopKey);
-                        Connect(parentKey, hopKey);
                     }
                     parentKey = hopKey;
                 }
@@ -340,18 +545,12 @@ public static class PhysicalTopology
                 continue;
             }
 
-            if (unknownKey is null)
-            {
-                unknownKey = "::unknown";
-                Add(unknownKey, null, "Path unknown", "", "", TopoRole.Internet);
-                PlaceAt(1, unknownKey);
-                Connect(gwKey, unknownKey);
-            }
+            var uk = UnknownKey();
             Add(d.Id, d.Id, d.Title, d.Detail, d.Mac,
                 d.IsInfrastructure ? TopoRole.Infrastructure : TopoRole.Client, d.Vendor, d.Model, d.Kind);
             nodeKeyOf[d.Id] = d.Id;
             PlaceAt(2, d.Id);
-            Connect(unknownKey, d.Id);
+            Connect(uk, d.Id);
         }
 
         // ⚠️ Everything above assigned positions the moment a node was discovered, filling each tier from

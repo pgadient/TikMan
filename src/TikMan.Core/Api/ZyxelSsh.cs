@@ -44,35 +44,71 @@ public static partial class ZyxelSsh
     private static async Task<string?> RunAsync(string host, int port, string user, string password,
         string command, CancellationToken ct, TimeSpan? timeout = null, Action<string>? onError = null)
     {
+        var r = await RunManyAsync(host, port, user, password, new[] { command }, ct,
+            timeout ?? TimeSpan.FromSeconds(30), onError).ConfigureAwait(false);
+        if (r is not null && r[0] is null) onError?.Invoke("SSH connected, but the CLI produced no output");
+        return r?[0];
+    }
+
+    /// <summary>Runs SEVERAL CLI commands over ONE held, serialized SSH session, returning one cleaned output
+    /// per command (null where a command produced nothing).
+    ///
+    /// <para>⚠️ Through the <see cref="SshSessionPool"/>: the connection is opened once per device and kept,
+    /// and the whole read is serialized behind any other read to the same box. Opening a fresh connection per
+    /// command means a fresh key-exchange per command, and on this hardware that is both slow (1–2 s of
+    /// handshake on a Zyxel, more on a TP-Link) and – on a 2009 GS2200 with 64 MB RAM – a hazard: several
+    /// near-simultaneous KEXs, especially alongside an open HTTPS web session, can exhaust the embedded SSH
+    /// server and fault it ("newkeys: no keys for mode 0" → Data abort → reboot). One held, serialized
+    /// session pays the handshake once and keeps TikMan the lightest possible guest.</para>
+    ///
+    /// <para>⚠️ The persistent session captures the FIRST caller's credentials; a credential change must
+    /// <see cref="InvalidateSession"/> the device so the next read rebuilds with the new ones.</para></summary>
+    private static async Task<string?[]?> RunManyAsync(string host, int port, string user, string password,
+        IReadOnlyList<string> commands, CancellationToken ct, TimeSpan? timeout = null, Action<string>? onError = null)
+    {
         try
         {
-            var result = await Task.Run(() =>
+            var session = SshSessionPool.GetOrCreate(SshSessionPool.KeyFor(host, port),
+                () => new SshSession(() => Info(host, port, user, password), OpenShell));
+            var limit = timeout ?? TimeSpan.FromSeconds(45);
+            return await session.RunAsync(shell =>
             {
-                using var ssh = new SshClient(Info(host, port, user, password));
-                ssh.Connect();
-                try { return RunInShell(ssh, command, timeout ?? TimeSpan.FromSeconds(30)); }
-                finally { if (ssh.IsConnected) ssh.Disconnect(); }
+                // Deadline computed HERE, after the queue wait – a session busy with another read must not
+                // eat this read's time budget before it even starts.
+                var deadline = DateTime.UtcNow + limit;
+                var outs = new string?[commands.Count];
+                for (int i = 0; i < commands.Count; i++) outs[i] = ReadOneCommand(shell, commands[i], deadline);
+                return outs;
             }, ct).ConfigureAwait(false);
-            if (result is null) onError?.Invoke("SSH connected, but the CLI produced no output");
-            return result;
         }
         catch (Exception ex) { onError?.Invoke(ex.Message); return null; } // SSH off / bad creds / not a Zyxel
     }
 
-    /// <summary>The interactive-shell transport: request a PTY, let the login banner and prompt pass,
-    /// type the command, keep feeding the pager a space, and stop when the prompt returns (or the
-    /// output has been quiet for a while). Wide PTY (512 columns) so long config lines don't wrap.</summary>
-    private static string? RunInShell(SshClient ssh, string command, TimeSpan limit)
-    {
-        var deadline = DateTime.UtcNow + limit;
-        using var shell = ssh.CreateShellStream("dumb", 512, 60, 4096, 480, 65536);
+    /// <summary>Drops the held SSH session to a device – call when its credentials change, so the next read
+    /// rebuilds the session (and its login) with the new ones instead of reusing the stale connection.</summary>
+    public static void InvalidateSession(string host, int port) =>
+        SshSessionPool.Invalidate(SshSessionPool.KeyFor(host, port));
 
-        // Swallow banner + first prompt; some firmwares also honour a pager-off command – if this one
-        // doesn't exist its error message is flushed along with the banner and harms nothing.
+    /// <summary>Opens and readies a Zyxel shell on a freshly connected client: a wide "dumb" PTY (so long
+    /// config lines don't wrap and the pager stays quiet), then swallow the banner/first prompt and turn the
+    /// pager off ("terminal length 0"; if a firmware lacks it the error flushes with the banner and harms
+    /// nothing). Run once per (re)connect by <see cref="SshSession"/>, not per command.</summary>
+    private static Renci.SshNet.ShellStream OpenShell(SshClient ssh)
+    {
+        var shell = ssh.CreateShellStream("dumb", 512, 60, 4096, 480, 65536);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
         DrainUntilIdle(shell, deadline, TimeSpan.FromMilliseconds(900));
         shell.WriteLine("terminal length 0");
         DrainUntilIdle(shell, deadline, TimeSpan.FromMilliseconds(700));
+        return shell;
+    }
 
+    /// <summary>Types one command and reads its output off the shell until the CLI prompt returns (or the
+    /// stream falls quiet), feeding the pager a space whenever it stalls. Returns the cleaned output, or null
+    /// when the command produced nothing. Leaves the shell sitting at the prompt, ready for the next
+    /// command.</summary>
+    private static string? ReadOneCommand(Renci.SshNet.ShellStream shell, string command, DateTime deadline)
+    {
         shell.WriteLine(command);
         var sb = new StringBuilder();
         var lastData = DateTime.UtcNow;
@@ -222,12 +258,13 @@ public static partial class ZyxelSsh
     public static async Task<Dictionary<string, string>?> GetFdbAsync(string host, int port, string user,
         string password, CancellationToken ct = default, Action<string>? onError = null)
     {
-        var macs = await RunAsync(host, port, user, password, "show mac address-table all", ct, onError: onError);
-        if (macs is null) return null;
-
-        // Port names in the same read: a user who labelled port 20 "Uplink-Server" should see that on
-        // the map, not "20". Best-effort – the number is a fine label on its own.
-        var status = await RunAsync(host, port, user, password, "show interfaces status", ct);
+        // Both reads down ONE SSH session (one handshake). The port names are a best-effort second command
+        // on the same connection – the number is a fine label on its own if the switch doesn't answer it.
+        var outputs = await RunManyAsync(host, port, user, password,
+            new[] { "show mac address-table all", "show interfaces status" }, ct, onError: onError);
+        if (outputs is null || outputs[0] is null) return null;
+        var macs = outputs[0]!;
+        var status = outputs[1];
         var names = status is null ? new Dictionary<string, string>() : ParseInterfaceNames(status);
 
         var fdb = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -243,10 +280,15 @@ public static partial class ZyxelSsh
     public static async Task<ResourceInfo?> GetResourceAsync(string host, int port, string user, string password,
         CancellationToken ct = default, Action<string>? onError = null)
     {
-        var cpu = await RunAsync(host, port, user, password, "show cpu-utilization", ct, onError: onError);
-        if (cpu is null) return null;   // one failed read is enough to know it is unreachable / wrong login
-        var mem = await RunAsync(host, port, user, password, "show memory", ct).ConfigureAwait(false);
-        var sys = await RunAsync(host, port, user, password, "show system-information", ct).ConfigureAwait(false);
+        // ⚠️ All three reads down ONE SSH session (one handshake), not three – see RunManyAsync. A monitoring
+        // poll used to open three connections every interval; on a fragile old switch that is three chances
+        // to fault its SSH stack, and three lots of KEX latency.
+        var outputs = await RunManyAsync(host, port, user, password,
+            new[] { "show cpu-utilization", "show memory", "show system-information" }, ct, onError: onError);
+        if (outputs is null || outputs[0] is null) return null;   // couldn't read ⇒ unreachable / wrong login
+        var cpu = outputs[0]!;
+        var mem = outputs[1];
+        var sys = outputs[2];
 
         var (total, used) = mem is null ? (0L, 0L) : ParseMemory(mem);
         var info = sys is null ? null : ParseSystemInformation(sys);
@@ -260,13 +302,35 @@ public static partial class ZyxelSsh
         };
     }
 
-    /// <summary>The percentage out of <c>show cpu-utilization</c>'s headline: "CPU usage status:  52.78%".
-    /// Rounded to a whole percent (ResourceInfo carries an int, like RouterOS's cpu-load). 0 when absent.</summary>
+    /// <summary>CPU load out of <c>show cpu-utilization</c>, in two shapes, one number out either way:
+    /// <list type="bullet">
+    /// <item><b>XGS1930 / GS1920 (ZyNOS V4.50/V5.00):</b> a headline "CPU usage status:  52.78%".</item>
+    /// <item><b>GS2200 (ZyNOS V3.80):</b> NO headline percentage – "CPU usage status:" is followed by a
+    /// <c>baseline NNN ticks</c> line and a per-second table whose <c>util</c> column is the load each of the
+    /// last ~63 seconds. Averaged into one representative figure (the box swings 25↔100% second to second, so
+    /// a single sample is noise; the window mean is the honest reading, and it feeds a 30 s-sampled chart).</item>
+    /// </list>
+    /// Rounded to a whole percent (ResourceInfo carries an int, like RouterOS's cpu-load). 0 when neither shape
+    /// is present.</summary>
     public static int ParseCpuUtilisation(string text)
     {
         var m = CpuHeadline().Match(text);
-        return m.Success && double.TryParse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var v)
-            ? (int)Math.Round(v) : 0;
+        if (m.Success && double.TryParse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var v))
+            return (int)Math.Round(v);
+        return ParseCpuUtilisationTable(text);
+    }
+
+    /// <summary>The GS2200 V3.80 fallback: average every <c>NN.dd</c> utilisation reading in the per-second
+    /// table. The percentages are the only two-decimal tokens in that output (the sec/ticks columns are plain
+    /// integers, the baseline count too), so matching <c>\d+\.\d\d</c> after the "CPU usage status:" line and
+    /// averaging is enough. 0 when the table isn't there. Pure, so the smoke test pins it.</summary>
+    public static int ParseCpuUtilisationTable(string text)
+    {
+        double sum = 0; int n = 0;
+        foreach (Match hit in CpuTablePercent().Matches(text))
+            if (double.TryParse(hit.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var p))
+            { sum += p; n++; }
+        return n == 0 ? 0 : Math.Clamp((int)Math.Round(sum / n), 0, 100);
     }
 
     /// <summary>Total and used bytes out of <c>show memory</c> (shape verbatim from a GS1920):
@@ -291,6 +355,11 @@ public static partial class ZyxelSsh
 
     [GeneratedRegex(@"CPU usage status:\s*([\d.]+)\s*%", RegexOptions.IgnoreCase)]
     private static partial Regex CpuHeadline();
+
+    // A two-decimal utilisation reading in the V3.80 per-second table, e.g. " 25.49" or "100.00". The
+    // surrounding sec/ticks columns are integers with no decimal point, so this only catches the util%.
+    [GeneratedRegex(@"(\d+\.\d\d)")]
+    private static partial Regex CpuTablePercent();
 
     [GeneratedRegex(@"(\d+)\(B\)")]
     private static partial Regex MemoryBytes();
@@ -341,27 +410,52 @@ public static partial class ZyxelSsh
 
     // ---- parsers (pure, pinned to real output) ----
 
-    /// <summary>Parses <c>show logging</c> (shape verbatim from a GS1920, address anonymised):
+    /// <summary>Parses <c>show logging</c>, in two ZyNOS shapes:
+    /// <list type="bullet">
+    /// <item><b>GS1920 / XGS1930 (V4.50/V5.00), address anonymised:</b>
     /// <code>
     ///     1 Jan 01 01:23:22 IN authentication: SSH user admin login [IP address = 10.0.0.9]
     ///     4 Jan 01 01:21:04 IN system: Save system configuration 1 successfully
     /// </code>
-    /// Columns: running index, "Mon DD HH:MM:SS", a class code (IN = info, ER = error, …), the category up
-    /// to a colon, then the message. Newest first; <paramref name="maxEntries"/> keeps the first N.</summary>
+    /// Columns: index, "Mon DD HH:MM:SS", a 2-letter class (IN = info, ER = error, …), category, message.</item>
+    /// <item><b>GS2200 (V3.80):</b>
+    /// <code>
+    ///   858 Thu Jan  1 00:00:14 1970 PINI  INFO  main: system bootup
+    ///   862 Thu Jan  1 00:03:38 1970 PP18  WARN  rt_drop_on_vps: target = 0 nmask=32 code=05
+    ///   864 Thu Jan  1 00:04:08 1970 PP33 -WARN  SNMP TRAP 26: Event On Trap
+    /// </code>
+    /// Extra day-of-week and year, a process token (PINI/PP18) and a word-level (INFO/WARN/ERROR, sometimes
+    /// dash-glued as "-WARN"). Topics keeps the level + category; the process token is internal noise.</item>
+    /// </list>
+    /// Both are newest-first, so <paramref name="maxEntries"/> keeps the first N.</summary>
     public static List<LogEntry> ParseLog(string text, int maxEntries = 0)
     {
         var list = new List<LogEntry>();
         foreach (var raw in text.Split('\n'))
         {
-            var m = LogLine().Match(raw.TrimEnd('\r'));
-            if (!m.Success) continue;
-            list.Add(new LogEntry
-            {
-                Time = m.Groups[1].Value,
+            var line = raw.TrimEnd('\r');
+            LogEntry? entry = null;
+
+            var m = LogLine().Match(line);
+            if (m.Success)
                 // Class + category together: "IN authentication" – the severity is worth keeping.
-                Topics = (m.Groups[2].Value + " " + m.Groups[3].Value.Trim()).Trim(),
-                Message = m.Groups[4].Value.Trim(),
-            });
+                entry = new LogEntry
+                {
+                    Time = m.Groups[1].Value,
+                    Topics = (m.Groups[2].Value + " " + m.Groups[3].Value.Trim()).Trim(),
+                    Message = m.Groups[4].Value.Trim(),
+                };
+            else if ((m = DatedLogLine().Match(line)).Success)
+                // Level + category: "WARN rt_drop_on_vps"; drop a stray leading dash on the level.
+                entry = new LogEntry
+                {
+                    Time = m.Groups[1].Value.Trim(),
+                    Topics = (m.Groups[3].Value.TrimStart('-').Trim() + " " + m.Groups[4].Value.Trim()).Trim(),
+                    Message = m.Groups[5].Value.Trim(),
+                };
+
+            if (entry is null) continue;
+            list.Add(entry);
             if (maxEntries > 0 && list.Count >= maxEntries) break;   // newest first ⇒ keep the first N
         }
         return list;
@@ -369,6 +463,12 @@ public static partial class ZyxelSsh
 
     [GeneratedRegex(@"^\s*\d+\s+([A-Z][a-z]{2}\s+\d{1,2}\s+\d{1,2}:\d{2}:\d{2})\s+(\S+)\s+([^:]+?):\s*(.*)$")]
     private static partial Regex LogLine();
+
+    // V3.80: index, day-of-week, then "Mon DD HH:MM:SS YYYY", a process token, a word-level (maybe "-WARN"),
+    // category up to the first colon, message. The DOW + year distinguish it from the 2-letter-class form
+    // above, so the two regexes never both match a line.
+    [GeneratedRegex(@"^\s*\d+\s+[A-Z][a-z]{2}\s+([A-Z][a-z]{2}\s+\d{1,2}\s+\d{1,2}:\d{2}:\d{2}\s+\d{4})\s+(\S+)\s+(-?\S+)\s+([^:]+?):\s*(.*)$")]
+    private static partial Regex DatedLogLine();
 
     /// <summary>Parses <c>show mac address-table all</c> (shape verbatim from an XGS1930-52HP,
     /// MACs anonymised):

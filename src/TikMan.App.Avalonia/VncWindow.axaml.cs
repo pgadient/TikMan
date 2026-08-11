@@ -149,7 +149,7 @@ public partial class VncWindow : Window
                     new PasswordPromptWindow(T("Av_VncPwPrompt", owner._host)).ShowDialog<string?>(owner)) ?? "";
                 return (TInput)(object)new PasswordAuthenticationInput(pwd);
             }
-            throw new InvalidOperationException("Nicht unterstützte VNC-Authentifizierung: " + typeof(TInput).Name);
+            throw new InvalidOperationException(T("Av_VncUnsupportedAuth", typeof(TInput).Name));
         }
     }
 }

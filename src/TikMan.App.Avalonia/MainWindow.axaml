@@ -412,6 +412,7 @@
              :checked setter below could never take effect – the arrow would keep pointing up with the pane
              open. Two styles of differing specificity is the only way this switches. -->
         <ToggleButton DockPanel.Dock="Bottom" IsChecked="{Binding ShowDetailPane, Mode=TwoWay}"
+                      IsVisible="{Binding DetailPaneAllowed}"
                       Classes="action"
                       HorizontalAlignment="Center" Margin="0,2,0,4"
                       Width="46" Height="18" MinWidth="46" MinHeight="18"
@@ -456,7 +457,7 @@
 
         <!-- Device detail. Hidden together with its splitter when switched off, so the list gets the room. -->
         <Border x:Name="DetailPane" DockPanel.Dock="Bottom" Height="270" Margin="16,0,16,10" Padding="14"
-                Background="#14808080" CornerRadius="10" IsVisible="{Binding ShowDetailPane}">
+                Background="#14808080" CornerRadius="10" IsVisible="{Binding EffectiveShowDetailPane}">
             <Grid RowDefinitions="Auto,*">
                 <StackPanel Grid.Row="0" Spacing="8">
                     <TextBlock Text="{loc:Loc Av_NoSelection}" Opacity="0.6"
@@ -611,7 +612,7 @@
              it has no row to work on, so it rendered as a strip that could be grabbed but changed nothing.
              A Thumb just reports the drag and we set the height ourselves. -->
         <Thumb DockPanel.Dock="Bottom" Height="8" HorizontalAlignment="Stretch" Margin="16,0"
-               Cursor="SizeNorthSouth" IsVisible="{Binding ShowDetailPane}"
+               Cursor="SizeNorthSouth" IsVisible="{Binding EffectiveShowDetailPane}"
                ToolTip.Tip="{loc:Loc Av_DetailResizeTip}"
                DragDelta="OnDetailSplitterDrag">
             <Thumb.Template>
@@ -1395,7 +1396,7 @@
             <!-- Topology (logical) -->
             <TabItem Header="{loc:Loc Av_TabMapLogical}" Tag="logical">
                 <DockPanel>
-                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,8,0,10">
                         <Button Content="{loc:Loc Av_Fit}" Click="OnTopoFit" Tag="logical" Classes="action" />
                         <Button Content="{loc:Loc Av_Relayout}" Click="OnTopoRelayout" Tag="logical" ToolTip.Tip="{loc:Loc Av_RelayoutTip}" Classes="action" />
                         <Button Content="{loc:Loc Av_Export}" Click="OnTopoExport" Tag="logical" Classes="action" />
@@ -1433,7 +1434,9 @@
                                  of the viewport. IsHitTestVisible=False so it never eats a drag. -->
                             <Border x:Name="LogicalOverlay" IsVisible="False" IsHitTestVisible="False"
                                     HorizontalAlignment="Center" VerticalAlignment="Center"
-                                    Background="#14808080" CornerRadius="10" Padding="22,18">
+                                    Background="{DynamicResource OverlayCardBrush}" BorderThickness="1"
+                                    BorderBrush="{DynamicResource OverlayCardBorderBrush}"
+                                    BoxShadow="0 4 16 0 #33000000" CornerRadius="10" Padding="22,18">
                                 <StackPanel x:Name="LogicalOverlayBody" Spacing="10" />
                             </Border>
                         </Panel>
@@ -1444,7 +1447,7 @@
             <!-- Topology (physical) -->
             <TabItem Header="{loc:Loc Av_TabMapPhysical}" Tag="physical">
                 <DockPanel>
-                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,8,0,10">
                         <Button Content="{loc:Loc Av_Fit}" Click="OnTopoFit" Tag="physical" Classes="action" />
                         <Button Content="{loc:Loc Av_Relayout}" Click="OnTopoRelayout" Tag="physical" ToolTip.Tip="{loc:Loc Av_RelayoutTip}" Classes="action" />
                         <Button Content="{loc:Loc Av_Export}" Click="OnTopoExport" Tag="physical" Classes="action" />
@@ -1468,9 +1471,18 @@
                                  was written for: the physical build reads every bridge and takes seconds. -->
                             <Border x:Name="PhysicalOverlay" IsVisible="False" IsHitTestVisible="False"
                                     HorizontalAlignment="Center" VerticalAlignment="Center"
-                                    Background="#14808080" CornerRadius="10" Padding="22,18">
+                                    Background="{DynamicResource OverlayCardBrush}" BorderThickness="1"
+                                    BorderBrush="{DynamicResource OverlayCardBorderBrush}"
+                                    BoxShadow="0 4 16 0 #33000000" CornerRadius="10" Padding="22,18">
                                 <StackPanel x:Name="PhysicalOverlayBody" Spacing="10" />
                             </Border>
+                            <!-- Quiet caveat, pinned to the corner (does not pan/zoom with the map): without
+                                 ZON Smart Connect the ZLD's port data is a group guess. Shown only when a
+                                 Zyxel device is on the physical map; the exports carry the same line. -->
+                            <TextBlock x:Name="SmartConnectHint" IsVisible="False" IsHitTestVisible="False"
+                                       Text="{loc:Loc Av_TopoSmartConnectHint}" FontStyle="Italic" FontSize="11"
+                                       Foreground="#9AA0A6" TextWrapping="Wrap" MaxWidth="380"
+                                       HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10,8,0,0" />
                         </Panel>
                     </Border>
                 </DockPanel>

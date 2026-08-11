@@ -47,6 +47,7 @@ public partial class MainWindow : Window
     private TabControl _tabs = null!;
     private Canvas _logicalCanvas = null!;
     private Canvas _physicalCanvas = null!;
+    private TextBlock? _smartConnectHint;
     private MenuItem? _themeAutoItem, _themeLightItem, _themeDarkItem;
     private bool _topoBuilding;
     private TabControl? _detailTabs;
@@ -95,6 +96,7 @@ public partial class MainWindow : Window
         _tabs = this.FindControl<TabControl>("Tabs")!;
         _logicalCanvas = this.FindControl<Canvas>("LogicalCanvas")!;
         _physicalCanvas = this.FindControl<Canvas>("PhysicalCanvas")!;
+        _smartConnectHint = this.FindControl<TextBlock>("SmartConnectHint");
         _themeAutoItem = this.FindControl<MenuItem>("ThemeAutoItem");
         _themeLightItem = this.FindControl<MenuItem>("ThemeLightItem");
         _themeDarkItem = this.FindControl<MenuItem>("ThemeDarkItem");
@@ -132,6 +134,12 @@ public partial class MainWindow : Window
         // Keep it in bounds as the window resizes (and clamp the restored value once the window has a real
         // size), so a pane sized large on a big screen can't starve the list when the window shrinks.
         SizeChanged += (_, _) => ClampDetailPaneToBounds();
+        // ⚠️ Re-clamp to the screen whenever the window moves to another display (dragged across monitors,
+        // or an RDP/streamed session whose resolution changed on reconnect) OR its state changes. The
+        // Opened-time clamp alone missed the 720p beamer and the iOS RDP client, where the usable height only
+        // becomes small AFTER the first layout, or changes mid-session.
+        PositionChanged += (_, _) => ClampToScreen();
+        PropertyChanged += (_, e) => { if (e.Property == WindowStateProperty) ClampToScreen(); };
         _monitorChart = this.FindControl<HistoryChart>("MonitorChart");
         _logAutoRefresh = this.FindControl<CheckBox>("LogAutoRefresh");
         _logCount = this.FindControl<ComboBox>("LogCount");
@@ -179,6 +187,10 @@ public partial class MainWindow : Window
         DataContext = _vm;
         _backupView.Attach(_vm.Fleet);
         _updateView.Attach(_vm.Fleet, _vm.Settings);
+        // When every credential-based re-read has finished, the topology's evidence is complete – rebuild it
+        // automatically so a saved login yields the fresh map with no manual "rearrange". Marshalled to the
+        // UI thread (the event fires on the last read's worker thread).
+        _vm.Fleet.RescanCompleted += () => Dispatcher.UIThread.Post(OnRescanCompleted);
         // The chart is not bindable to a method result, and the log has no reason to refetch on every
         // fleet tick unless the user asked for it – so both are driven from the view model's notifications.
         _vm.PropertyChanged += async (_, args) =>
@@ -197,6 +209,8 @@ public partial class MainWindow : Window
 
         Opened += async (_, _) =>
         {
+            ClampToScreen();
+
             // ⚠️ After Load, not in the ctor: the columns exist by then, so DisplayIndex and Width take.
             GridLayout.Restore(_deviceGrid, _vm.Settings);
             GridLayout.Track(_deviceGrid);
@@ -236,6 +250,29 @@ public partial class MainWindow : Window
     /// <summary>"TikMan 2.2.2 · 2026-07-18" – version plus the date this binary was built. The date rides in
     /// the informational version as "+build.yyyy-MM-dd" (stamped by the csproj); if it isn't there, the title
     /// simply drops it rather than showing a made-up date.</summary>
+    /// <summary>Caps MinHeight/MinWidth to the CURRENT screen's usable area, and pulls the window itself back
+    /// on-screen if it already overshoots. The XAML MinHeight (830) is taller than a small display's work
+    /// area – a 720p beamer (720 px), or an iOS RDP client streaming a resolution below 830 – so a maximised
+    /// window gets FORCED taller than the screen and its bottom strip (horizontal scrollbar + status bar)
+    /// hangs invisibly below the edge. Runs at Opened and on every screen/state change, since the streamed
+    /// resolution can drop only after the first layout or change mid-session.</summary>
+    private void ClampToScreen()
+    {
+        if (Screens.ScreenFromWindow(this) is not { } screen) return;
+        var scale = screen.Scaling <= 0 ? 1 : screen.Scaling;
+        var usableH = screen.WorkingArea.Height / scale - 8;
+        var usableW = screen.WorkingArea.Width / scale - 8;
+        if (usableH > 200 && MinHeight > usableH) MinHeight = usableH;
+        if (usableW > 300 && MinWidth > usableW) MinWidth = usableW;
+        // Not while maximised (the OS owns the size then, and it already fits the work area); only a normal
+        // window that a shrunken screen left overshooting gets pulled back so its bottom edge is visible.
+        if (WindowState == WindowState.Normal)
+        {
+            if (usableH > 200 && Height > usableH) Height = usableH;
+            if (usableW > 300 && Width > usableW) Width = usableW;
+        }
+    }
+
     private static string BuildTitle()
     {
         var asm = typeof(MainWindow).Assembly;
@@ -245,7 +282,13 @@ public partial class MainWindow : Window
         var marker = info.IndexOf("+build.", StringComparison.Ordinal);
         var built = marker >= 0 ? info[(marker + "+build.".Length)..] : "";
 
-        var title = version.Length > 0 ? $"TikMan {version}" : "TikMan";
+        // A Debug build carries the auto-incremented dev counter after the date ("2026-08-11.17") – shown as
+        // a fourth version part ("TikMan 2.3.4.17"), so during an iterate-test loop the title says exactly
+        // which build is running. Releases have no counter and keep the clean three-part version.
+        var counter = "";
+        if (built.IndexOf('.') is > 0 and var dot) { counter = "." + built[(dot + 1)..]; built = built[..dot]; }
+
+        var title = version.Length > 0 ? $"TikMan {version}{counter}" : "TikMan";
         // Label the build date so it reads as one ("Build 2026-07-30"), not a bare number after a dot – the
         // point is to see at a glance how old the running executable is.
         return built.Length > 0 ? $"{title}  ·  Build {built}" : title;
@@ -572,7 +615,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>How many entries to pull. "All" is 0, which the fleet reads as "no cap".</summary>
-    private int LogRowCap() => _logCount?.SelectedItem as string switch
+    private int LogRowCap() => (_logCount?.SelectedItem as string) switch
     {
         "100" => 100,
         "500" => 500,
@@ -591,7 +634,7 @@ public partial class MainWindow : Window
     private async void OnLogCountChanged(object? sender, SelectionChangedEventArgs e)
     {
         // Persist the choice (100 / 500 / all) so it survives a restart.
-        if (IsLoaded) _vm.LogRowCap = _logCount?.SelectedItem as string switch
+        if (IsLoaded) _vm.LogRowCap = (_logCount?.SelectedItem as string) switch
         {
             "500" => 500,
             _ when ReferenceEquals(_logCount?.SelectedItem, null) => _vm.LogRowCap,
@@ -873,6 +916,9 @@ public partial class MainWindow : Window
 
         MinWidth = Math.Max(900, Math.Ceiling(wanted));
         if (Width < MinWidth) Width = MinWidth;
+        // Never force the window wider/taller than the screen it is on (see ClampToScreen): a minimum beyond
+        // the work area pushes window edges – and the scrollbars that live there – off-screen.
+        ClampToScreen();
     }
 
     private void OnDetailSplitterDrag(object? sender, VectorEventArgs e)
@@ -1174,6 +1220,9 @@ public partial class MainWindow : Window
     {
         if (sender is not DataGrid grid) return;
         _vm.SetMarked(grid.SelectedItems.OfType<DeviceSnapshot>());
+        // First time a device is actually selected, reveal the detail pane once (unless switched off). The
+        // window starts with the pane hidden for a cleaner overview; after this one reveal the chevron rules.
+        if (grid.SelectedItems.Count > 0) _vm.MaybeRevealDetailPane();
     }
 
     /// <summary>Double-click a cell to copy its text – the fastest way to get a MAC or an address out of
@@ -1271,10 +1320,28 @@ public partial class MainWindow : Window
         // ⚠️ Switch on the tab's Tag, not its index: tabs come and go (the IPv6 tab is optional), and an
         // index-based switch silently drew the wrong map the moment a tab was inserted above these.
         var tag = (_tabs.SelectedItem as TabItem)?.Tag as string;
+        // The detail pane belongs to the device lists only – on the maps/assistants it showed stale device
+        // facts under unrelated content. The user's open/closed choice itself is kept (EffectiveShowDetailPane).
+        _vm.DetailPaneAllowed = tag is "ipv4" or "ipv6";
         // The assistants pick up devices found since they were last shown.
         if (tag == "backups") { _backupView.Reload(); return; }
         if (tag == "updates") { _updateView.Reload(); return; }
         if (tag is not "logical" and not "physical") return;
+
+        // ⚠️ Reuse an already-built map on a plain tab switch instead of rebuilding it. The physical build
+        // now warms every switch's MAC table (traceroute sweep) and re-reads it fresh so the FIRST map is
+        // correct – but that is seconds of device load, and doing it on every flick between tabs would be
+        // both slow and pointless. So: build once (here, when there is nothing yet), and thereafter only
+        // "Rearrange" forces a fresh sweep. A rescan's new devices land on the next rearrange, same as before.
+        var existing = tag == "physical" ? _physicalLayout : _logicalLayout;
+        if (existing is not null)
+        {
+            Draw(existing, tag == "physical" ? _physicalCanvas : _logicalCanvas, tag);
+            HideOverlay(tag);
+            Dispatcher.UIThread.Post(() => FitCanvasWhenReady(tag == "physical" ? _physicalCanvas : _logicalCanvas),
+                DispatcherPriority.Background);
+            return;
+        }
 
         // ⚠️ One build at a time. Every physical build polls every bridge over SSH/SNMP and traceroutes
         // every host; switching tabs during one started a second full sweep, multiplying the load on the
@@ -1324,6 +1391,23 @@ public partial class MainWindow : Window
             }
             else
             {
+                // ⚠️ The physical map is built from the credential-based forwarding-table reads, so it can
+                // only be drawn once the scan and any device re-reads have finished. Say that explicitly
+                // while we wait, instead of a bare "building…" that looks stuck. (The Core build gates on the
+                // same condition; this just makes the reason visible.)
+                // ⚠️ The overlay is set ONCE, outside the polling loop – rebuilding it every 300 ms re-created
+                // its progress control and restarted the animation each time, which read as "the build keeps
+                // starting over". And it is a SPINNER, not a bar: waiting-for-a-turn and actually-reading-
+                // the-devices now look different (the read phase keeps the bar, see ShowLoading).
+                if (_vm.Fleet.Status.Scanning || _vm.Fleet.Rescanning)
+                {
+                    SetOverlay("physical",
+                        new Spinner(),
+                        new TextBlock { Text = T("Av_MapWaitReads"), FontWeight = FontWeight.SemiBold,
+                                        TextWrapping = TextWrapping.Wrap, MaxWidth = 340 });
+                    while (_vm.Fleet.Status.Scanning || _vm.Fleet.Rescanning)
+                        await Task.Delay(300);
+                }
                 ShowLoading("physical");
                 _physicalLayout = await _vm.BuildPhysicalTopologyAsync();
                 Draw(_physicalLayout, _physicalCanvas, "physical");
@@ -1344,6 +1428,20 @@ public partial class MainWindow : Window
             });
         }
         finally { _topoBuilding = false; }
+    }
+
+    /// <summary>All credential-based re-reads just finished (<see cref="FleetService.RescanCompleted"/>). The
+    /// maps that reflect that evidence are now stale caches, so drop them; if a topology tab is showing,
+    /// rebuild it right away (the gated physical build pulls fresh forwarding tables), otherwise it rebuilds
+    /// the next time it is opened. The logical map uses no credentials but its device set may have changed,
+    /// so it is refreshed too – it's instant.</summary>
+    private void OnRescanCompleted()
+    {
+        _physicalLayout = null;
+        _logicalLayout = null;
+        var tag = (_tabs?.SelectedItem as TabItem)?.Tag as string;
+        if (tag is "physical" or "logical")
+            _ = BuildTopologyAsync(tag);
     }
 
     /// <summary>A proper "working on it" card instead of a bare line of text – the physical map reads every
@@ -1376,6 +1474,46 @@ public partial class MainWindow : Window
 
     private void HideOverlay(string tag) => SetOverlay(tag);
 
+    /// <summary>Collision-avoidance for the map: anchored nodes (hand-placed or with a saved position) are
+    /// fixed obstacles; each free node (positioned by the automatic layout) that lands on an anchored one is
+    /// moved to the nearest clear grid slot. This keeps a saved arrangement intact while a device that has
+    /// appeared since it was saved gets a spot of its own instead of overlapping – no rearrange needed.
+    /// <para>Free-vs-free never collides (the automatic layout is already tidy), and anchored-vs-anchored is
+    /// deliberately left alone – that is the user's own arrangement. A resolved free node then becomes an
+    /// obstacle too, so two nodes pushed off the same anchor don't stack on each other.</para></summary>
+    private static void NudgeFreeNodesOffAnchored(List<(TopoBox box, bool anchored)> nodes)
+    {
+        const double gap = 16;
+        var obstacles = new List<TopoBox>();
+        foreach (var t in nodes) if (t.anchored) obstacles.Add(t.box);
+
+        bool Hits(double x, double y, double w, double h) =>
+            obstacles.Any(o => x < o.X + o.W + gap && x + w + gap > o.X &&
+                               y < o.Y + o.H + gap && y + h + gap > o.Y);
+
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            if (nodes[i].anchored) continue;
+            var b = nodes[i].box;
+            if (Hits(b.X, b.Y, b.W, b.H))
+            {
+                double stepX = b.W + gap, stepY = b.H + gap, bx = b.X, by = b.Y;
+                // Spiral outward from the fresh position in node-sized steps to the nearest free slot.
+                for (int ring = 1; ring <= 40 && Hits(bx, by, b.W, b.H); ring++)
+                    for (int dy = -ring; dy <= ring && Hits(bx, by, b.W, b.H); dy++)
+                        for (int dx = -ring; dx <= ring; dx++)
+                        {
+                            if (Math.Max(Math.Abs(dx), Math.Abs(dy)) != ring) continue;   // ring perimeter only
+                            double x = b.X + dx * stepX, y = b.Y + dy * stepY;
+                            if (!Hits(x, y, b.W, b.H)) { bx = x; by = y; break; }
+                        }
+                b = b with { X = bx, Y = by };
+                nodes[i] = (b, false);
+            }
+            obstacles.Add(b);
+        }
+    }
+
     /// <summary>Renders a topology layout onto a canvas: edges as lines behind the boxes, each node as a
     /// coloured rounded rectangle at its computed position. The colours are the shared hex strings the Core
     /// builder produced, so the map looks the same here, in the web UI and in the WPF/PDF export.</summary>
@@ -1392,11 +1530,23 @@ public partial class MainWindow : Window
 
         var edit = _vm.TopoEdit;
 
-        // Measured nodes, with any hand-set position applied, plus the user's own nodes.
-        var nodes = layout.Nodes
-            .Select(n => edit.PositionOf(view, n.Key) is { } p ? n with { X = p.X, Y = p.Y } : n)
-            .Concat(edit.ManualNodes(view).Select(TopoEditing.ToBox))
+        // Measured nodes, with any hand-set position applied, plus the user's own nodes. A node the user
+        // placed (a saved position, or a manual node) is "anchored"; one the automatic layout positioned is
+        // "free".
+        var tagged = layout.Nodes
+            .Select(n => edit.PositionOf(view, n.Key) is { } p
+                ? (box: n with { X = p.X, Y = p.Y }, anchored: true)
+                : (box: n, anchored: false))
+            .Concat(edit.ManualNodes(view).Select(m => (box: TopoEditing.ToBox(m), anchored: true)))
             .ToList();
+
+        // Keep every hand-placed node exactly where the user put it, but nudge a FREE node off any anchored
+        // node it happens to land on. That is what stops a topology which gained a box (a switch added since
+        // the arrangement was saved) from drawing it on top of an anchored one – the overlap that used to
+        // need a "rearrange" to clear. Anchored-vs-anchored is left untouched: that is the user's own layout.
+        NudgeFreeNodesOffAnchored(tagged);
+
+        var nodes = tagged.Select(t => t.box).ToList();
 
         var byKey = new Dictionary<string, TopoBox>();
         foreach (var n in nodes) byKey[n.Key] = n;
@@ -1507,7 +1657,19 @@ public partial class MainWindow : Window
 
         canvas.Width = maxX + 40;
         canvas.Height = maxY + 40;
+
+        // The Smart-Connect caveat rides on the physical map only, and only when a Zyxel box is actually on it
+        // (that is where the ZLD's port data is a group guess). Kept off the canvas so it stays pinned to the
+        // corner while the map pans and zooms.
+        if (view == "physical" && _smartConnectHint is not null)
+            _smartConnectHint.IsVisible = nodes.Any(n => n.Vendor.Contains("Zyxel", StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>The Smart-Connect caveat for an export, or "" when it does not apply (logical view, or no
+    /// Zyxel device on the map). Same rule as the on-screen caption.</summary>
+    private static string SmartConnectHintFor(TopoLayout layout, bool physical) =>
+        physical && layout.Nodes.Any(n => n.Vendor.Contains("Zyxel", StringComparison.OrdinalIgnoreCase))
+            ? T("Av_TopoSmartConnectHint") : "";
 
     /// <summary>What a node shows on hover: the parts that don't fit in the box. The MAC is the useful one –
     /// it is what the forwarding tables actually matched on to place the device here.</summary>
@@ -1829,7 +1991,8 @@ public partial class MainWindow : Window
         if (!System.IO.Path.HasExtension(path)) path += ".pdf";
         try
         {
-            if (path.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) ExportPng(layout, path);
+            var hint = SmartConnectHintFor(layout, physical);
+            if (path.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) ExportPng(layout, path, hint);
             else if (path.EndsWith(".graphml", StringComparison.OrdinalIgnoreCase) ||
                      path.EndsWith(".drawio", StringComparison.OrdinalIgnoreCase) ||
                      path.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
@@ -1846,7 +2009,7 @@ public partial class MainWindow : Window
                     : DrawIoExport.Build(shown, view, manualNodes, manualLinks);
                 await System.IO.File.WriteAllTextAsync(path, xml);
             }
-            else ExportPdf(layout, path);
+            else ExportPdf(layout, path, hint);
             _vm.ReportAction(T("Av_MapExported", System.IO.Path.GetFileName(path)));
         }
         catch (Exception ex) { _vm.ReportAction(T("Av_ExportFailed", ex.Message)); }
@@ -1875,13 +2038,15 @@ public partial class MainWindow : Window
 
     /// <summary>Renders the whole graph to a PNG via a RenderTargetBitmap + DrawingContext – independent of
     /// the on-screen zoom/pan, so it always captures the full map at 1:1.</summary>
-    private static void ExportPng(TopoLayout layout, string path)
+    private static void ExportPng(TopoLayout layout, string path, string hint = "")
     {
         var (w, h) = GraphSize(layout);
         var rtb = new RenderTargetBitmap(new PixelSize((int)Math.Ceiling(w), (int)Math.Ceiling(h)), new Vector(96, 96));
         using (var ctx = rtb.CreateDrawingContext())
         {
             ctx.FillRectangle(Brushes.White, new Rect(0, 0, w, h));
+            if (hint.Length > 0)   // quiet italic-grey caveat in the top margin, above the first node
+                ctx.DrawText(Formatted(hint, 11, false, "#9AA0A6", w - 2 * ExportPad, italic: true), new Point(ExportPad, 5));
             var byKey = layout.Nodes.ToDictionary(n => n.Key);
             var edgePen = new Pen(Brush("#C4CCD2"), 1.4);
             foreach (var edge in layout.Edges)
@@ -1925,15 +2090,19 @@ public partial class MainWindow : Window
 #pragma warning restore CS0618
     }
 
-    private static FormattedText Formatted(string text, double size, bool bold, string colorHex, double maxWidth) =>
-        new(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
-            new Typeface(FontFamily.Default, FontStyle.Normal, bold ? FontWeight.SemiBold : FontWeight.Normal),
+    private static FormattedText Formatted(string text, double size, bool bold, string colorHex, double maxWidth, bool italic = false) =>
+        // ⚠️ MaxTextHeight caps it to ONE line. Without it a FormattedText WRAPS at MaxTextWidth (trimming only
+        // ellipsises each line AFTER wrapping) – so a long metadata chain spilled onto a second line that the
+        // fixed per-field y-step then drew the next field on top of: the "letters overlapping" in the PNG.
+        // Newlines stripped for the same reason – one field is always one line.
+        new((text ?? "").Replace('\r', ' ').Replace('\n', ' '), CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+            new Typeface(FontFamily.Default, italic ? FontStyle.Italic : FontStyle.Normal, bold ? FontWeight.SemiBold : FontWeight.Normal),
             size, Brush(colorHex))
-        { MaxTextWidth = Math.Max(1, maxWidth), Trimming = TextTrimming.CharacterEllipsis };
+        { MaxTextWidth = Math.Max(1, maxWidth), MaxTextHeight = size * 1.6, Trimming = TextTrimming.CharacterEllipsis };
 
     /// <summary>Renders the whole graph to a true vector PDF via PdfSharp – same primitives and colours as
     /// the WPF export, drawn straight from the layout data.</summary>
-    private static void ExportPdf(TopoLayout layout, string path)
+    private static void ExportPdf(TopoLayout layout, string path, string hint = "")
     {
         PdfExportFonts.EnsureRegistered();
         var (w, h) = GraphSize(layout);
@@ -1945,6 +2114,12 @@ public partial class MainWindow : Window
         using var gfx = PdfSharp.Drawing.XGraphics.FromPdfPage(page);
 
         gfx.DrawRectangle(new PdfSharp.Drawing.XSolidBrush(PdfSharp.Drawing.XColor.FromArgb(255, 255, 255, 255)), 0, 0, w, h);
+        if (hint.Length > 0)   // same quiet italic-grey caveat as the PNG / on-screen caption, in the top margin
+        {
+            var hintFont = new PdfSharp.Drawing.XFont("Arial", 8.5, PdfSharp.Drawing.XFontStyleEx.Italic);
+            gfx.DrawString(hint, hintFont, new PdfSharp.Drawing.XSolidBrush(Xc("#9AA0A6")),
+                new PdfSharp.Drawing.XPoint(ExportPad, 13));
+        }
 
         var byKey = layout.Nodes.ToDictionary(n => n.Key);
         var edgePen = new PdfSharp.Drawing.XPen(Xc("#C4CCD2"), 1.4);

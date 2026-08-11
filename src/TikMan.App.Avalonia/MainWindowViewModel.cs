@@ -491,13 +491,65 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     // display that does not exist. Action outcomes now go exactly two places: a failure to LastError (the
     // Connection errors tab, where it persists), and the few things worth interrupting for to a toast.
 
-    /// <summary>Whether the detail pane is shown at all. Off gives the whole window to the list. Persisted,
-    /// like its height – both are layout choices the user made once and should not have to repeat.</summary>
+    // ⚠️ Session-only now, and starts HIDDEN. The window opens with the whole height on the list (better
+    // overview), and the pane reveals itself the first time a device is selected (see MaybeRevealDetailPane),
+    // unless AutoRevealDetailPane is off. After that one reveal it follows the user's chevron only. Its HEIGHT
+    // is still persisted (DetailPaneHeight) – that is the layout choice worth remembering, not open/closed.
+    private bool _showDetailPane;
+    /// <summary>Whether the detail pane is shown. Off gives the whole window to the list.</summary>
     public bool ShowDetailPane
     {
-        get => _appData.ShowDetailPane;
-        set { _appData.ShowDetailPane = value; SaveSettings(); Raise(nameof(ShowDetailPane)); }
+        get => _showDetailPane;
+        set
+        {
+            if (_showDetailPane == value) return;
+            _showDetailPane = value;
+            // A manual toggle also counts as "the user has decided" – don't auto-reveal on top of it later.
+            _detailRevealDone = true;
+            Raise(nameof(ShowDetailPane));
+            Raise(nameof(EffectiveShowDetailPane));
+        }
     }
+
+    private bool _detailRevealDone;
+    /// <summary>Reveals the detail pane ONCE, the first time a device is selected this session – then never
+    /// auto-touches it again, so clicking around later can't fight the user's chevron. No-op when the user
+    /// has switched the behaviour off (<see cref="AutoRevealDetailPane"/>) or already interacted.</summary>
+    public void MaybeRevealDetailPane()
+    {
+        if (_detailRevealDone) return;
+        _detailRevealDone = true;
+        if (AutoRevealDetailPane) ShowDetailPane = true;
+    }
+
+    /// <summary>Setting: reveal the detail pane automatically the first time a device is clicked/selected.
+    /// On by default; off means the pane only ever opens via the chevron.</summary>
+    public bool AutoRevealDetailPane
+    {
+        get => _appData.AutoRevealDetailPane;
+        set { _appData.AutoRevealDetailPane = value; SaveSettings(); Raise(nameof(AutoRevealDetailPane)); }
+    }
+
+    private bool _detailPaneAllowed = true;
+    /// <summary>Whether the CURRENT tab has a detail pane at all: only the device lists (IPv4/IPv6) do – on
+    /// the maps, backups and updates the pane showed stale device facts under unrelated content and just ate
+    /// height. Set by the tab-change handler; not persisted (it follows the tab, not a user choice).</summary>
+    public bool DetailPaneAllowed
+    {
+        get => _detailPaneAllowed;
+        set
+        {
+            if (_detailPaneAllowed == value) return;
+            _detailPaneAllowed = value;
+            Raise(nameof(DetailPaneAllowed));
+            Raise(nameof(EffectiveShowDetailPane));
+        }
+    }
+
+    /// <summary>What the pane (and its resize thumb) actually bind to: the user's toggle AND the tab
+    /// allowing one. The chevron button binds to <see cref="DetailPaneAllowed"/> only, so the user's choice
+    /// survives visiting a tab without a pane.</summary>
+    public bool EffectiveShowDetailPane => ShowDetailPane && DetailPaneAllowed;
 
     public double DetailPaneHeight
     {
@@ -713,7 +765,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     /// back for the caller to save; they can hold secrets, so they are never logged.</summary>
     public Task<FleetService.BackupData> BackupConfigAsync() =>
         _selected is null
-            ? Task.FromResult(FleetService.BackupData.Fail("Kein Gerät ausgewählt."))
+            ? Task.FromResult(FleetService.BackupData.Fail(T("Av_NoDeviceSelected")))
             : _fleet.BackupConfigAsync(_selected.Id);
 
     /// <summary>Opens an interactive SSH shell to the selected device (needs a login). Returns the session

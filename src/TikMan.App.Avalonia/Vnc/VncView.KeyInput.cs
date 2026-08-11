@@ -22,7 +22,7 @@ namespace MarcusW.VncClient.Avalonia
                 return;
 
             // Send chars one by one
-            foreach (char c in e.Text)
+            foreach (char c in e.Text ?? string.Empty)
             {
                 KeySymbol keySymbol = KeyMapping.GetSymbolFromChar(c);
 
