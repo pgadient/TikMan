@@ -167,6 +167,8 @@ public static class SubnetScanner
         // ⚠️ ICMP is a hard gate by default, and plenty of hosts block it – Windows does out of the box.
         // Those devices are invisible to this scan unless one of the discovery protocols (MNDP, mDNS,
         // SSDP, ZON) names them. The option below trades traffic for finding them anyway.
+        // How the sweep first proved this host alive – shown in the source column as the initial origin.
+        string foundVia = alive ? "ICMP" : "";
         if (!alive)
         {
             // ⚠️ First, a free check: a small embedded device (a web-managed switch, IoT) can DROP the ICMP
@@ -174,12 +176,13 @@ public static class SubnetScanner
             // echo required – so its MAC is already in the ARP cache. A cache hit proves the host is present,
             // with no extra traffic (all three platforms; macOS shares one rate-limited `arp -an` snapshot).
             // This is what made a pingable GS1200-style switch invisible until the user enabled scanUnpingable.
-            if (ArpCacheHasHost(ip)) alive = true;
+            if (ArpCacheHasHost(ip)) { alive = true; foundVia = "ARP"; }
             else if (!scanUnpingable) return null;
             else
             {
                 alive = await AnyPortOpenAsync(ip, TripwirePorts, ct).ConfigureAwait(false);
                 if (!alive) return null;
+                foundVia = "TCP";
             }
         }
 
@@ -198,7 +201,7 @@ public static class SubnetScanner
         return new DiscoveredDevice
         {
             IpAddress = ip.ToString(),
-            Source = "Scan",
+            Source = foundVia,          // "ICMP" / "ARP" / "TCP" – the sweep's detection method
             OpenPorts = openPorts,
             IsLikelyMikroTik = openPorts.Contains(8291) || openPorts.Contains(8728),
             MacAddress = mac,

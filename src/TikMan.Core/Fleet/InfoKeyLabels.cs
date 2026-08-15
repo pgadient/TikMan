@@ -27,6 +27,11 @@ public static class InfoKeyLabels
         ["Weitere MAC"] = "Ik_ExtraMac",
         ["MAC-Bereich"] = "Ik_MacRange",
         ["MAC-Zuordnung"] = "Ik_MacAssign",
+        ["Adoptiert"] = "Ik_Adopted",
+        ["Inform-URL"] = "Ik_InformUrl",
+        ["Herstelldatum"] = "Ik_MfgDate",
+        ["Druckserver"] = "Ik_PrintServer",
+        ["Firmware-Dateien"] = "Ik_FirmwareFiles",
     };
 
     /// <summary>The localised label for an ExtraInfo key, or the key itself when it needs no translation.</summary>

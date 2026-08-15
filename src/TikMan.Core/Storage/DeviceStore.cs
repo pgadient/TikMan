@@ -82,8 +82,9 @@ public class AppData
     public AppTheme Theme { get; set; } = AppTheme.System;
     public BackupMethod BackupMethod { get; set; } = BackupMethod.Auto;
     public int SshPort { get; set; } = 22;
-    /// <summary>Default username offered for devices added from a scan.</summary>
-    public string DefaultUsername { get; set; } = "admin";
+    // The global "default username" setting was removed: the login dialog pre-fills the vendor's factory
+    // account itself (FleetService.DefaultUsername – "admin", or "ubnt" for Ubiquiti). An old devices.json
+    // that still carries a "DefaultUsername" key just has it ignored on load.
     /// <summary>Default password (DPAPI-encrypted) for devices added from a scan.</summary>
     public string DefaultEncryptedPassword { get; set; } = "";
     /// <summary>How many devices a targeted re-read talks to at once (context-menu rescan, and the pass
@@ -222,13 +223,22 @@ public class AppData
 
     /// <summary>How tall the user dragged the detail pane – kept because a pane sized to one screen is wrong
     /// on the next start otherwise. (ShowDetailPane is legacy: the pane's open/closed state is session-only
-    /// now – it starts hidden and reveals on the first device selection, see AutoRevealDetailPane.)</summary>
+    /// now – it starts hidden and is toggled from the Appearance menu / the chevron.)</summary>
     public bool ShowDetailPane { get; set; } = true;
     public double DetailPaneHeight { get; set; } = 270;
+    /// <summary>False until the user has dragged the pane splitter themselves. While false the opening height
+    /// is a window-aware DEFAULT (taller on a tall window); once the user sizes it, that exact height is kept.</summary>
+    public bool DetailPaneHeightSet { get; set; }
 
-    /// <summary>Reveal the detail pane automatically the first time a device is selected in a session (then
-    /// leave it to the user). Off ⇒ the pane only ever opens via the chevron. On by default.</summary>
-    public bool AutoRevealDetailPane { get; set; } = true;
+    /// <summary>Last window placement, restored on the next start so it opens where the user left it. Width/
+    /// Height/X/Y are always the NORMAL-state bounds (tracked even while maximised, so un-maximising restores
+    /// them); Maximized restores fullscreen on top. A non-positive size means "never saved" → the XAML default
+    /// is used, and the position stays OS-chosen.</summary>
+    public double WindowWidth { get; set; }
+    public double WindowHeight { get; set; }
+    public int WindowX { get; set; } = int.MinValue;
+    public int WindowY { get; set; } = int.MinValue;
+    public bool WindowMaximized { get; set; }
 
     /// <summary>Hand the stored device password to an external client (WinSCP …) so the session opens
     /// without a prompt. <b>Off by default, deliberately:</b> the password travels as part of the session
@@ -414,6 +424,13 @@ public static class DeviceStore
                 // and without the JsonStringEnumConverter deserialisation throws – which used to be swallowed
                 // as "corrupt" and silently reset every setting to its default (settings never persisted).
                 var data = JsonSerializer.Deserialize<AppData>(text, JsonOptions) ?? new AppData();
+                // ⚠️ One-time cleanup: the old Device.Username default was "admin", so every discovered device
+                // was persisted with a username nobody set. A username without a password is not a login, so
+                // purge it here – otherwise the phantom "admin" survives restarts and keeps shadowing the
+                // per-vendor default ("ubnt" for Ubiquiti). A real login (password present) is left untouched.
+                foreach (var dev in data.Devices)
+                    if (dev.EncryptedPassword.Length == 0 && dev.Username.Length > 0)
+                        dev.Username = "";
                 // Grandfather existing users: a config written before the persistence toggle existed
                 // and that already holds devices must keep persisting them – otherwise upgrading to a
                 // build with the (default-off) toggle would silently wipe the device list on the next save.

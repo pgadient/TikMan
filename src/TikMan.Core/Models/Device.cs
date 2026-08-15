@@ -33,7 +33,11 @@ public class Device
     /// <summary>SSH port for backups / the info probe / the terminal (separate from the REST
     /// <see cref="Port"/>, which is 443/80 for MikroTik).</summary>
     public int SshPort { get; set; } = 22;
-    public string Username { get; set; } = "admin";
+    /// <summary>⚠️ Empty by default, NOT "admin". A default of "admin" silently stamped every discovered device
+    /// with a username nobody set – it then showed up as the stored login (and shadowed the per-vendor default,
+    /// e.g. "ubnt" for Ubiquiti). A username only exists once a real login is saved (<see cref="EncryptedPassword"/>
+    /// set); the login dialog fills the per-vendor factory default itself (FleetService.DefaultUsername).</summary>
+    public string Username { get; set; } = "";
     /// <summary>DPAPI-encrypted (Base64), never plaintext.</summary>
     public string EncryptedPassword { get; set; } = "";
     public bool MonitoringEnabled { get; set; } = true;

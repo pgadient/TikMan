@@ -491,10 +491,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     // display that does not exist. Action outcomes now go exactly two places: a failure to LastError (the
     // Connection errors tab, where it persists), and the few things worth interrupting for to a toast.
 
-    // ⚠️ Session-only now, and starts HIDDEN. The window opens with the whole height on the list (better
-    // overview), and the pane reveals itself the first time a device is selected (see MaybeRevealDetailPane),
-    // unless AutoRevealDetailPane is off. After that one reveal it follows the user's chevron only. Its HEIGHT
-    // is still persisted (DetailPaneHeight) – that is the layout choice worth remembering, not open/closed.
+    // ⚠️ Session-only, and starts HIDDEN – the window opens with the whole height on the list for a clean
+    // overview. Opening/closing is purely the user's choice now: the Appearance-menu toggle and the chevron.
+    // There is NO auto-reveal any more – the pane springing open on a click was annoying. Its HEIGHT is still
+    // persisted (DetailPaneHeight) – that is the layout choice worth remembering, not open/closed.
     private bool _showDetailPane;
     /// <summary>Whether the detail pane is shown. Off gives the whole window to the list.</summary>
     public bool ShowDetailPane
@@ -504,30 +504,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             if (_showDetailPane == value) return;
             _showDetailPane = value;
-            // A manual toggle also counts as "the user has decided" – don't auto-reveal on top of it later.
-            _detailRevealDone = true;
             Raise(nameof(ShowDetailPane));
             Raise(nameof(EffectiveShowDetailPane));
         }
-    }
-
-    private bool _detailRevealDone;
-    /// <summary>Reveals the detail pane ONCE, the first time a device is selected this session – then never
-    /// auto-touches it again, so clicking around later can't fight the user's chevron. No-op when the user
-    /// has switched the behaviour off (<see cref="AutoRevealDetailPane"/>) or already interacted.</summary>
-    public void MaybeRevealDetailPane()
-    {
-        if (_detailRevealDone) return;
-        _detailRevealDone = true;
-        if (AutoRevealDetailPane) ShowDetailPane = true;
-    }
-
-    /// <summary>Setting: reveal the detail pane automatically the first time a device is clicked/selected.
-    /// On by default; off means the pane only ever opens via the chevron.</summary>
-    public bool AutoRevealDetailPane
-    {
-        get => _appData.AutoRevealDetailPane;
-        set { _appData.AutoRevealDetailPane = value; SaveSettings(); Raise(nameof(AutoRevealDetailPane)); }
     }
 
     private bool _detailPaneAllowed = true;
@@ -553,8 +532,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public double DetailPaneHeight
     {
-        get => _appData.DetailPaneHeight is >= 120 and <= 2000 ? _appData.DetailPaneHeight : 270;
+        get => _appData.DetailPaneHeight is >= 70 and <= 2000 ? _appData.DetailPaneHeight : 220;
         set { _appData.DetailPaneHeight = value; SaveSettings(); }
+    }
+
+    /// <summary>True once the user has dragged the pane splitter, so the opening height is their exact size
+    /// rather than the window-aware default.</summary>
+    public bool DetailPaneHeightSet
+    {
+        get => _appData.DetailPaneHeightSet;
+        set { _appData.DetailPaneHeightSet = value; SaveSettings(); }
     }
 
     /// <summary>⚠️ The detail pane describes exactly one device. With several marked it shows a note
@@ -739,10 +726,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     /// <summary>The physical topology from forwarding tables – slow (reads every bridge), so awaited.</summary>
     public Task<TopoLayout> BuildPhysicalTopologyAsync() => _fleet.BuildPhysicalTopologyAsync();
 
-    /// <summary>The username to pre-fill a login dialog with: the device's current one, or the app's
-    /// default. The selected device's <see cref="DeviceSnapshot.User"/> is used when it already has one.</summary>
+    /// <summary>The username to pre-fill a login dialog with: the device's current one, or the vendor's factory
+    /// default ("admin" for most, "ubnt" for Ubiquiti). The selected device's
+    /// <see cref="DeviceSnapshot.User"/> is used when it already has one.</summary>
     public string LoginUserFor(DeviceSnapshot? d) =>
-        d is { User.Length: > 0 } ? d.User : (_appData.DefaultUsername ?? "");
+        // A username exists only when a real login was saved (Device.Username is empty otherwise, and a
+        // password-less one is purged on load), so a set username IS the user's choice – keep it. Otherwise
+        // suggest the vendor's factory default ("admin" for most, "ubnt" for Ubiquiti).
+        d is { User.Length: > 0 } ? d.User : FleetService.DefaultUsername(d?.Vendor ?? "");
 
     /// <summary>Stores (or clears, when the password is empty) the login for the selected device via the
     /// fleet, which DPAPI/AES-encrypts it and persists – the password is never held in plaintext here.</summary>
@@ -895,9 +886,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public void LaunchRdp(DeviceSnapshot d) =>
         Report(Launchers.Rdp(d.Ip, d.OpenPorts.Contains(3389) ? 3389 : 0));
 
-    /// <summary>Opens an SSH session in an external client (the built-in terminal handles stored logins).</summary>
+    /// <summary>Opens an SSH session in an external client (the built-in terminal handles stored logins).
+    /// ⚠️ Pass an explicit username – the stored one if any, otherwise the vendor default (ubnt for Ubiquiti,
+    /// admin elsewhere) via <see cref="LoginUserFor"/>. Handing OpenSSH a bare host would make it silently log
+    /// in as the local OS account, which is never right for a network device; with a username it prompts only
+    /// for the password ("ask in the SSH window") instead of leaking the operator's own login name.</summary>
     public void LaunchSsh(DeviceSnapshot d) =>
-        Report(Launchers.Ssh(d.Ip, d.SshPort, d.User.Trim(),
+        Report(Launchers.Ssh(d.Ip, d.SshPort, LoginUserFor(d),
             _appData.UseExternalSshClient, _appData.ExternalSshClientPath ?? ""));
 
     /// <summary>Opens an SFTP session – WinSCP when configured, else the desktop's sftp:// handler.

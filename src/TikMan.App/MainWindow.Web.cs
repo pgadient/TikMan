@@ -302,7 +302,10 @@ public partial class MainWindow : IWebBackend
             // The colour comes from the shared table, not from p.Color: that is a WPF Brush, and the web
             // needs the hex the rest of the product already agrees on.
             .Select(p => new BadgeDto(p.Name, p.IsClickable ? p.Url : "",
-                ServiceBadges.ColourFor(p.Name), p.Tooltip)).ToList());
+                ServiceBadges.ColourFor(p.Name), p.Tooltip)).ToList(),
+        // The legacy WPF client runs its own discovery (not the shared FleetService), so it doesn't track the
+        // "Quelle" origin – left empty here; the Avalonia/Host web path carries the real value.
+        Source: "");
 
     /// <summary>One row per IPv6 address for the dashboard's IPv6 tab.
     /// <para>⚠️ The WPF client has no per-address service probing (that lives in the shared FleetService,

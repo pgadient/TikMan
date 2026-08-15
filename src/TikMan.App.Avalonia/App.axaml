@@ -8,23 +8,215 @@
     <Application.Styles>
         <semi:SemiTheme Locale="en-US" />
         <semi:DataGridSemiTheme />
-        <!-- ⚠️ The DataGrid's scrollbars are OVERLAY bars (they float over the content) and auto-hide. On the
-             device list that made the HORIZONTAL bar float over the bottom rows and, on a short window, be
-             clipped/hidden by the overlap – it reads as "the bar is gone" even though the content still
-             scrolls. The fix is the ScrollViewer.AllowAutoHide ATTACHED property ON the DataGrid (a plain
-             `DataGrid /template/ ScrollBar` setter did NOT take – the grid configures its bars from the
-             attached value): false turns them into classic, space-RESERVING bars, so the horizontal one sits
-             in its own strip below the rows instead of overlapping them, and stays put. -->
+        <!-- ⚠️ Semi's DataGrid uses FLOATING (overlay) scrollbars: even with ScrollViewer.AllowAutoHide=False
+             the horizontal bar floats over the bottom rows and the vertical bar over the last column. When the
+             list is maximised AND has more rows than fit, the h-bar lands on top of the last (partial) row and
+             is all but invisible – it reads as "the scrollbar is gone in fullscreen". The earlier fixes did
+             nothing: AllowAutoHide=False only stops the FADE, not the overlay, and the `#PART_RowsPresenter`
+             bottom-margin setter was a plain no-op (verified in a minimal repro – identical with and without it).
+             The fix is a custom ControlTemplate that pulls both scrollbars OUT of the table frame, Win32-style:
+             the BorderBrush frame wraps ONLY the data (column headers + rows); the vertical bar sits in its own
+             column to the RIGHT of the frame and the horizontal bar in its own row BELOW the frame. So they
+             RESERVE space, never overlap the table, and are plainly visible in their own gutters (Semi's bars
+             tucked inside the frame were almost invisible). All visual styling still comes from Semi's
+             type-selector styles on the header / row / cell / scrollbar parts; only the parts' PLACEMENT changes.
+             Reproduced against a 15-column DataGrid under Semi 12.1. -->
         <Style Selector="DataGrid">
             <Setter Property="ScrollViewer.AllowAutoHide" Value="False" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <!-- Outer grid: data-frame (0,0) + vertical bar gutter (col 1) + horizontal bar gutter (row 1). -->
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="*,Auto">
+                        <Border Grid.Row="0" Grid.Column="0"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="{TemplateBinding CornerRadius}"
+                                ClipToBounds="True">
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,*">
+                                <DataGridColumnHeader Name="PART_TopLeftCornerHeader" Grid.Row="0" Grid.Column="0" />
+                                <DataGridColumnHeadersPresenter Name="PART_ColumnHeadersPresenter"
+                                    Grid.Row="0" Grid.Column="1" />
+                                <Rectangle Name="PART_ColumnHeadersAndRowsSeparator" Grid.Row="0" Grid.Column="0"
+                                    Grid.ColumnSpan="2" VerticalAlignment="Bottom" Height="1"
+                                    Fill="{DynamicResource DataGridGridLinesBrush}" />
+                                <DataGridRowsPresenter Name="PART_RowsPresenter"
+                                    Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" />
+                            </Grid>
+                        </Border>
+                        <ScrollBar Name="PART_VerticalScrollbar" Orientation="Vertical"
+                            Grid.Row="0" Grid.Column="1" Width="14" />
+                        <!-- ⚠️ Fixed Height on this row: PART_FrozenColumnScrollBarSpacer is a DataGridColumnHeader
+                             whose default height (~36 px) would inflate the row and leave a gap ABOVE the
+                             14 px h-scrollbar (the vertical bar has no such spacer, so it was already flush).
+                             Pinning the row to the scrollbar's height makes the h-bar sit flush against the grid. -->
+                        <Grid Grid.Row="1" Grid.Column="0" ColumnDefinitions="Auto,*" Height="14">
+                            <DataGridColumnHeader Name="PART_FrozenColumnScrollBarSpacer" Grid.Column="0" />
+                            <ScrollBar Name="PART_HorizontalScrollbar" Grid.Column="1"
+                                Orientation="Horizontal" Height="14" />
+                        </Grid>
+                        <Rectangle Name="PART_BottomRightCorner" Grid.Row="1" Grid.Column="1" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter>
         </Style>
-        <!-- ⚠️ Give the horizontal scrollbar its OWN strip instead of floating over the last row. The v12.1
-             DataGrid overlays the h-bar on the bottom of the rows presenter (measured: rows presenter spans
-             the full height, the 8px bar sits on its bottom edge) – on a short window that overlap clips the
-             bar away. A bottom margin on the rows presenter reserves the strip, so the bar sits BELOW the
-             rows, Win32-style, never over them. -->
-        <Style Selector="DataGrid /template/ DataGridRowsPresenter#PART_RowsPresenter">
-            <Setter Property="Margin" Value="0,0,0,12" />
+        <!-- Classic Win32-style scrollbar for the DataGrid: single-step arrow buttons at the two ends
+             (PART_LineUpButton / PART_LineDownButton, wired by the ScrollBar itself), then a faint track with a
+             solid handle in the middle. The handle drags 1:1 and a click on the track pages. ⚠️ The Track MUST
+             carry its DecreaseButton and IncreaseButton: without them the thumb is mis-sized and the drag is not
+             1:1 (that was the "can't drag it properly" bug). Solid handle, no grip lines (they read cheap); the
+             track and handle sit flush against the grid; AllowAutoHide=False keeps it steady and the DataGrid
+             shows/hides the whole bar by content. -->
+        <Style Selector="DataGrid /template/ ScrollBar">
+            <Setter Property="AllowAutoHide" Value="False" />
+        </Style>
+        <!-- Whole-bar hover: the pointer anywhere over the scrollbar lifts every part one shade (faint track,
+             arrow boxes, and the solid handle) – the classic subtle scrollbar hover. The arrow boxes otherwise
+             share the track's faint fill (no visible box/seam); pressing an arrow flashes it darker still.
+             ⚠️ Each hop crosses ONE template boundary, so the arrow Border needs three /template/ hops
+             (DataGrid → ScrollBar → RepeatButton → its Border); a plain descendant combinator would not reach in. -->
+        <Style Selector="DataGrid /template/ ScrollBar:pointerover:not(.dragging) /template/ Border.trackband">
+            <Setter Property="Background" Value="#40808080" />
+        </Style>
+        <Style Selector="DataGrid /template/ ScrollBar:pointerover:not(.dragging) /template/ RepeatButton.scrollarrow /template/ Border">
+            <Setter Property="Background" Value="#40808080" />
+        </Style>
+        <Style Selector="DataGrid /template/ ScrollBar:pointerover:not(.dragging) /template/ Thumb /template/ Border">
+            <Setter Property="Background" Value="#79808A" />
+        </Style>
+        <Style Selector="RepeatButton.scrollarrow:pressed /template/ Border">
+            <Setter Property="Background" Value="#66808080" />
+        </Style>
+        <Style Selector="DataGrid /template/ ScrollBar:vertical">
+            <Setter Property="Width" Value="14" />
+            <!-- ⚠️ Track-click pages by LargeChange (LargeDecrement does Value -= LargeChange). The DataGrid
+                 leaves the vertical bar's LargeChange at its tiny default, so a track click crept one row
+                 instead of a page (the horizontal bar gets a viewport-sized LargeChange and paged fine). Bind
+                 it to the bar's own ViewportSize so one click moves a full visible page. ⚠️ This does NOT
+                 affect the thumb drag (the earlier drift was the thumb's main-axis margin, since moved to the
+                 track); the drag stayed broken even with this reverted, so it is safe here. -->
+            <Setter Property="LargeChange" Value="{Binding ViewportSize, RelativeSource={RelativeSource Self}}" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <!-- ▲ [ faint track + handle ] ▼  – track in the middle; a SQUARE 14x14 arrow button at each
+                         end (14 = the bar's width, so the buttons are as wide as the bar). -->
+                    <Grid RowDefinitions="14,*,14">
+                        <RepeatButton Classes="scrollarrow" Name="PART_LineUpButton" Grid.Row="0" Background="Transparent" Margin="0" Padding="0" MinWidth="0" MinHeight="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                            <RepeatButton.Template>
+                                <ControlTemplate>
+                                    <Border Background="#1E808080">
+                                        <Path Data="M 2,9 L 7,4 L 12,9 Z" Fill="#5C636E"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,4,6" />
+                                    </Border>
+                                </ControlTemplate>
+                            </RepeatButton.Template>
+                        </RepeatButton>
+                        <Border Grid.Row="1" Classes="trackband" Background="#1E808080">
+                            <Track Orientation="Vertical" IsDirectionReversed="True" Margin="0,3"
+                                   Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
+                                   Value="{TemplateBinding Value, Mode=TwoWay}"
+                                   ViewportSize="{TemplateBinding ViewportSize}">
+                                <Track.DecreaseButton>
+                                    <RepeatButton Name="PART_PageUpButton" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MinWidth="0" MinHeight="0" Margin="0" Padding="0">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate><Border Background="Transparent" /></ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseButton>
+                                <Track.Thumb>
+                                    <Thumb MinHeight="28" Margin="2,0">
+                                        <Thumb.Template>
+                                            <ControlTemplate>
+                                                <Border Background="#8A9099" CornerRadius="2"
+                                                        BorderBrush="#5C636E" BorderThickness="1" />
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                                <Track.IncreaseButton>
+                                    <RepeatButton Name="PART_PageDownButton" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MinWidth="0" MinHeight="0" Margin="0" Padding="0">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate><Border Background="Transparent" /></ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseButton>
+                            </Track>
+                        </Border>
+                        <RepeatButton Classes="scrollarrow" Name="PART_LineDownButton" Grid.Row="2" Background="Transparent" Margin="0" Padding="0" MinWidth="0" MinHeight="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                            <RepeatButton.Template>
+                                <ControlTemplate>
+                                    <Border Background="#1E808080">
+                                        <Path Data="M 2,4 L 12,4 L 7,9 Z" Fill="#5C636E"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,4,3" />
+                                    </Border>
+                                </ControlTemplate>
+                            </RepeatButton.Template>
+                        </RepeatButton>
+                    </Grid>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="DataGrid /template/ ScrollBar:horizontal">
+            <Setter Property="Height" Value="14" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <!-- ◄ [ faint track + handle ] ►  – the grey track in the middle; a SQUARE 14x14 arrow button
+                         at each end (14 = the bar's height). 2 px right margin so it clears the vertical bar. -->
+                    <Grid ColumnDefinitions="14,*,14">
+                        <RepeatButton Classes="scrollarrow" Name="PART_LineUpButton" Grid.Column="0" Background="Transparent" Margin="0" Padding="0" MinWidth="0" MinHeight="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                            <RepeatButton.Template>
+                                <ControlTemplate>
+                                    <Border Background="#1E808080">
+                                        <Path Data="M 9,2 L 4,7 L 9,12 Z" Fill="#5C636E"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,7,4" />
+                                    </Border>
+                                </ControlTemplate>
+                            </RepeatButton.Template>
+                        </RepeatButton>
+                        <Border Grid.Column="1" Classes="trackband" Background="#1E808080">
+                            <Track Orientation="Horizontal" IsDirectionReversed="False" Margin="3,0"
+                                   Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
+                                   Value="{TemplateBinding Value, Mode=TwoWay}"
+                                   ViewportSize="{TemplateBinding ViewportSize}">
+                                <Track.DecreaseButton>
+                                    <RepeatButton Name="PART_PageUpButton" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MinWidth="0" MinHeight="0" Margin="0" Padding="0">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate><Border Background="Transparent" /></ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseButton>
+                                <Track.Thumb>
+                                    <Thumb MinWidth="28" Margin="0,2">
+                                        <Thumb.Template>
+                                            <ControlTemplate>
+                                                <Border Background="#8A9099" CornerRadius="2"
+                                                        BorderBrush="#5C636E" BorderThickness="1" />
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                                <Track.IncreaseButton>
+                                    <RepeatButton Name="PART_PageDownButton" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MinWidth="0" MinHeight="0" Margin="0" Padding="0">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate><Border Background="Transparent" /></ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseButton>
+                            </Track>
+                        </Border>
+                        <RepeatButton Classes="scrollarrow" Name="PART_LineDownButton" Grid.Column="2" Background="Transparent" Margin="0" Padding="0" MinWidth="0" MinHeight="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                            <RepeatButton.Template>
+                                <ControlTemplate>
+                                    <Border Background="#1E808080">
+                                        <Path Data="M 5,2 L 10,7 L 5,12 Z" Fill="#5C636E"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,4,4" />
+                                    </Border>
+                                </ControlTemplate>
+                            </RepeatButton.Template>
+                        </RepeatButton>
+                    </Grid>
+                </ControlTemplate>
+            </Setter>
         </Style>
         <!-- The action button: a light plate with dark ink, readable in both theme variants where the
              theme's own pale accent was not.

@@ -119,7 +119,11 @@ public static class DeviceClassifier
         ("avocent", DeviceKind.Management), ("tp-link", DeviceKind.Switch),
         ("cisco", DeviceKind.Switch), ("juniper", DeviceKind.Switch), ("netgear", DeviceKind.Switch),
         ("zyxel", DeviceKind.Switch), ("d-link", DeviceKind.Switch), ("aruba", DeviceKind.AccessPoint),
-        ("ubiquiti", DeviceKind.AccessPoint), ("apple", DeviceKind.Pc), ("dell", DeviceKind.Pc),
+        // ⚠️ Ubiquiti is deliberately NOT here. UniFi's line spans switches, gateways, APs, cameras and
+        // doorbells under one OUI, so a bare "Ubiquiti" guess ("Access Point") was wrong as often as right.
+        // The model (UbiquitiKind, above) splits it when known; when it isn't, the device stays Unknown and
+        // the type cell shows "credentials required" (KindWithVm) – a login reads the exact model over SSH.
+        ("apple", DeviceKind.Pc), ("dell", DeviceKind.Pc),
         ("lenovo", DeviceKind.Pc), ("micro-star", DeviceKind.Pc), ("asustek", DeviceKind.Pc),
         ("gigabyte", DeviceKind.Pc), ("intel", DeviceKind.Pc), ("samsung", DeviceKind.Pc),
         ("raspberry", DeviceKind.Pc), // a bare Pi is a small computer; a running service above wins
@@ -334,6 +338,30 @@ public static class DeviceClassifier
         return DeviceKind.Router;
     }
 
+    /// <summary>Splits Ubiquiti's line into gateway/router · switch · access point · Cloud Key, the same way
+    /// <see cref="MikroTikKind"/> does for RouterOS: one maker, one OUI, three roles, and only the model tells
+    /// them apart. Gateways are checked first because a UniFi Security Gateway ("USG") would otherwise trip the
+    /// generic firewall token. ⚠️ Prefixes are from Ubiquiti's public naming; pin/extend against real model
+    /// strings once hardware is on hand. Unknown when the model is empty or unrecognised.</summary>
+    public static DeviceKind UbiquitiKind(string? model)
+    {
+        var m = (model ?? "").ToLowerInvariant();
+        if (m.Length == 0) return DeviceKind.Unknown;
+        // Gateways / routers: Dream Machine/Router, Next-gen / Security Gateway, Express.
+        foreach (var t in new[] { "udm", "udr", "uxg", "usg", "ugw", "unifi express", "dream", "gateway" })
+            if (m.Contains(t, StringComparison.Ordinal)) return DeviceKind.Router;
+        // Cloud Key = the controller appliance, not a network node.
+        if (m.Contains("uck", StringComparison.Ordinal) || m.Contains("cloud key", StringComparison.Ordinal))
+            return DeviceKind.Management;
+        // Switches: UniFi Switch (USW-*), the older US-* line, Flex.
+        foreach (var t in new[] { "usw", "us-", "us8", "us16", "us24", "us48", "unifi switch", "switch", "flex" })
+            if (m.Contains(t, StringComparison.Ordinal)) return DeviceKind.Switch;
+        // Access points: UAP-*, U6/U7-*, nanoHD / FlexHD / BeaconHD.
+        foreach (var t in new[] { "uap", "unifi ap", "u6", "u7", "nanohd", "flexhd", "beaconhd", "access point" })
+            if (m.Contains(t, StringComparison.Ordinal)) return DeviceKind.AccessPoint;
+        return DeviceKind.Unknown;
+    }
+
     /// <summary>The hardware model a device published over mDNS – what it says it *is*. This outranks
     /// everything else, because it is the device's own answer rather than our inference: an iPhone, an
     /// iPad, a HomePod and an Apple TV share one OUI and one (empty) port list, and only here do they
@@ -433,6 +461,14 @@ public static class DeviceClassifier
 
         // 1) The model line, when the device gave us one.
         var tokens = Tokenize(m);
+        // Ubiquiti builds APs, switches and gateways under one OUI, so the MODEL splits them (like MikroTik).
+        // Vendor-gated, so its short model tokens ("us-", "udm") can't misfire on another maker's device, and
+        // placed first so a UniFi gateway isn't caught by the generic "usg" firewall token below.
+        if (v.Contains("ubiquiti", StringComparison.Ordinal) || v.Contains("unifi", StringComparison.Ordinal))
+        {
+            var uk = UbiquitiKind(m);
+            if (uk != DeviceKind.Unknown) return uk;
+        }
         if (IsFirewall(v, tokens)) return DeviceKind.Firewall;
         foreach (var t in tokens)
             if (Array.IndexOf(ManagementSeries, t) >= 0) return DeviceKind.Management;

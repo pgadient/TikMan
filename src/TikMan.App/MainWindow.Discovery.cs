@@ -497,7 +497,9 @@ public partial class MainWindow
             MacAddress = d.MacAddress,
             OpenPorts = d.OpenPorts,
             HasSmb = d.OpenPorts.Contains(445) || d.OpenPorts.Contains(139),
-            Username = _appData.DefaultUsername,
+            // The global "default username" setting was removed (the Avalonia login dialog now pre-fills the
+            // vendor's factory account); this legacy WPF path keeps its long-standing default of "admin".
+            Username = "admin",
             EncryptedPassword = _appData.DefaultEncryptedPassword,
             UseHttps = true,
             Port = 443,

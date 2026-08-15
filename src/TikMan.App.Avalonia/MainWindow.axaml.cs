@@ -56,6 +56,11 @@ public partial class MainWindow : Window
     private DataGrid _deviceGrid = null!;
     private Border? _detailPane;
 
+    // The window's NORMAL-state placement, tracked live so we persist the restore bounds (not the maximised
+    // size) on close. int.MinValue / 0 = not yet known.
+    private double _normW, _normH;
+    private int _normX = int.MinValue, _normY = int.MinValue;
+
     /// <summary>The scheduled update check. Created once the window is open, stopped when it closes.</summary>
     private AutoCheck? _autoCheck;
     private HistoryChart? _monitorChart;
@@ -82,6 +87,9 @@ public partial class MainWindow : Window
     /// <summary>The last fetched log, unfiltered – so typing in the filter box re-filters locally instead of
     /// hitting the device again on every keystroke.</summary>
     private IReadOnlyList<TikMan.Core.Models.LogEntry> _logEntries = Array.Empty<TikMan.Core.Models.LogEntry>();
+    /// <summary>Which device the log grid currently belongs to – so a selection change to a DIFFERENT device
+    /// clears the panel (and reloads), while a same-device refresh/reselection leaves the reading alone.</summary>
+    private string _logDeviceId = "";
 
     public MainWindow()
     {
@@ -105,7 +113,9 @@ public partial class MainWindow : Window
         WireFocusKeeper();
         WireDragSelect(_deviceGrid);
         WireColumnResize(_deviceGrid);
-        if (this.FindControl<DataGrid>("Ipv6Grid") is { } v6Grid) { WireColumnResize(v6Grid); WireRowDetails(v6Grid); }
+        WireScrollbarDrag();
+        WireScrollbarEdges(_deviceGrid);
+        if (this.FindControl<DataGrid>("Ipv6Grid") is { } v6Grid) { WireColumnResize(v6Grid); WireRowDetails(v6Grid); WireScrollbarEdges(v6Grid); }
         _detailTabs = this.FindControl<TabControl>("DetailTabs");
         // The Monitoring/Logs tabs hide for devices that don't support them. If the hidden tab was the
         // selected one, the pane would show its (blank) content with no visible header – snap back to
@@ -140,6 +150,27 @@ public partial class MainWindow : Window
         // becomes small AFTER the first layout, or changes mid-session.
         PositionChanged += (_, _) => ClampToScreen();
         PropertyChanged += (_, e) => { if (e.Property == WindowStateProperty) ClampToScreen(); };
+
+        // Restore the placement the user left the window at (position, normal size, maximised-or-not), so it
+        // opens the same next time. Done in the ctor so it takes before the first show; ClampToScreen still
+        // pulls it back on-screen if the saved size no longer fits. A non-positive saved size = never saved.
+        var placement = _vm.Settings;
+        if (placement.WindowWidth > 200 && placement.WindowHeight > 200)
+        {
+            Width = _normW = placement.WindowWidth;
+            Height = _normH = placement.WindowHeight;
+        }
+        if (placement.WindowX != int.MinValue && placement.WindowY != int.MinValue)
+        {
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            Position = new PixelPoint(placement.WindowX, placement.WindowY);
+            _normX = placement.WindowX; _normY = placement.WindowY;
+        }
+        if (placement.WindowMaximized) WindowState = WindowState.Maximized;
+        // Track the NORMAL bounds live: while maximised, Width/Height/Position report the maximised values, so
+        // capturing them only in the Normal state keeps the size we should restore to.
+        SizeChanged += (_, _) => { if (WindowState == WindowState.Normal) { _normW = Width; _normH = Height; } };
+        PositionChanged += (_, _) => { if (WindowState == WindowState.Normal) { _normX = Position.X; _normY = Position.Y; } };
         _monitorChart = this.FindControl<HistoryChart>("MonitorChart");
         _logAutoRefresh = this.FindControl<CheckBox>("LogAutoRefresh");
         _logCount = this.FindControl<ComboBox>("LogCount");
@@ -205,11 +236,31 @@ public partial class MainWindow : Window
             // what the interval dropdown exists to control. Switching device does still reset the timer so a
             // stale log for the previous device isn't left ticking.
             UpdateLogAutoRefresh();
+
+            // ⚠️ The log panel is imperative (unlike the Details/Monitoring tabs, which bind to the VM and
+            // update themselves). So a device change must refresh it by hand – otherwise the panel keeps the
+            // PREVIOUS device's log, showing one device's data while another is selected. Only on a REAL device
+            // change (different id), so a 30-second list refresh / by-id reselection doesn't wipe what's being
+            // read. Clear immediately; reload only when the Logs tab is the one on show and the new device can
+            // actually read logs (else leave it empty – never another device's entries).
+            if (args.PropertyName == nameof(_vm.SelectedDevice))
+            {
+                var id = _vm.SelectedDevice?.Id ?? "";
+                if (id != _logDeviceId)
+                {
+                    _logDeviceId = id;
+                    _logEntries = Array.Empty<TikMan.Core.Models.LogEntry>();
+                    ApplyLogFilter();
+                    if (_logTab is not null && ReferenceEquals(_detailTabs?.SelectedItem, _logTab) && _vm.CanReadLogs)
+                        await ReloadLogsAsync();
+                }
+            }
         };
 
         Opened += async (_, _) =>
         {
             ClampToScreen();
+            ApplyDefaultDetailPaneHeight();
 
             // ⚠️ After Load, not in the ctor: the columns exist by then, so DisplayIndex and Width take.
             GridLayout.Restore(_deviceGrid, _vm.Settings);
@@ -239,6 +290,12 @@ public partial class MainWindow : Window
             GridLayout.Capture(_deviceGrid, _vm.Settings);
             if (this.FindControl<DataGrid>("Ipv6Grid") is { } v6c)
                 GridLayout.Capture(v6c, _vm.Settings, GridLayout.Slot.Ipv6);
+            // Persist the window placement for next time: the maximised flag plus the NORMAL bounds (so
+            // un-maximising restores the right size). Sizes ≤ 200 mean we never got a real normal layout.
+            var s = _vm.Settings;
+            s.WindowMaximized = WindowState == WindowState.Maximized;
+            if (_normW > 200 && _normH > 200) { s.WindowWidth = _normW; s.WindowHeight = _normH; }
+            if (_normX != int.MinValue && _normY != int.MinValue) { s.WindowX = _normX; s.WindowY = _normY; }
             _vm.SaveSettings();
             // The dashboard mirrors this window, so it has no business outliving it – and its port would
             // stay bound until the process exited.
@@ -598,6 +655,7 @@ public partial class MainWindow : Window
     private async Task ReloadLogsAsync()
     {
         if (_logGrid is null) return;
+        _logDeviceId = _vm.SelectedDevice?.Id ?? "";
         _logEntries = await _vm.LoadLogsAsync(LogRowCap());
         ApplyLogFilter();
     }
@@ -701,6 +759,70 @@ public partial class MainWindow : Window
     /// screen. But Avalonia applies MaxWidth to the resize gripper too, so that same cap silently refused
     /// to let the user widen a column past it. Lifting the caps the moment a header is touched keeps both:
     /// the automatic width stays modest, and a deliberate drag is unlimited.</para></summary>
+    /// <summary>While a scrollbar thumb is being dragged, tag its ScrollBar with a "dragging" class so the
+    /// whole-bar hover emphasis switches off for the duration (the hover styles carry <c>:not(.dragging)</c>).
+    /// The thumb captures the pointer, so <c>:pointerover</c> otherwise keeps every part lifted throughout the
+    /// drag, which reads as a flickery colour change. Cleared on drag completion. Bubbles, so one pair of
+    /// handlers on the window covers both grids' scrollbars.</summary>
+    private void WireScrollbarDrag()
+    {
+        AddHandler(global::Avalonia.Controls.Primitives.Thumb.DragStartedEvent,
+            (object? _, global::Avalonia.Input.VectorEventArgs e) => SetScrollbarDragging(e.Source, true),
+            global::Avalonia.Interactivity.RoutingStrategies.Bubble);
+        AddHandler(global::Avalonia.Controls.Primitives.Thumb.DragCompletedEvent,
+            (object? _, global::Avalonia.Input.VectorEventArgs e) => SetScrollbarDragging(e.Source, false),
+            global::Avalonia.Interactivity.RoutingStrategies.Bubble);
+    }
+
+    private static void SetScrollbarDragging(object? source, bool on)
+    {
+        if (source is not Visual v) return;
+        var bar = global::Avalonia.VisualTree.VisualExtensions.GetVisualAncestors(v)
+            .OfType<global::Avalonia.Controls.Primitives.ScrollBar>().FirstOrDefault();
+        if (bar is null) return;
+        if (on) { if (!bar.Classes.Contains("dragging")) bar.Classes.Add("dragging"); }
+        else bar.Classes.Remove("dragging");
+    }
+
+    /// <summary>Makes the scrollbar context-menu's "Top / Bottom / Left edge / Right edge" items jump the whole
+    /// way to the edge. Avalonia has no First/Last scroll type: ScrollToHome sets Value = Minimum then raises
+    /// <c>LargeDecrement</c>, ScrollToEnd sets Value = Maximum then raises <c>LargeIncrement</c> – the same
+    /// events a page click raises. So a page event whose Value has ALREADY landed on the extreme is an
+    /// edge command (or a page that reached the end); we then scroll the real first/last row (or column) into
+    /// view. The DataGrid's virtualised vertical Maximum is only an estimate, so Value = Maximum otherwise
+    /// stops one page short of the true bottom – this also fixes paging all the way down. A normal mid-list
+    /// page has Value strictly inside the range and passes straight through to the DataGrid untouched.</summary>
+    private void WireScrollbarEdges(DataGrid grid)
+    {
+        grid.TemplateApplied += (_, e) =>
+        {
+            if (e.NameScope.Find<global::Avalonia.Controls.Primitives.ScrollBar>("PART_VerticalScrollbar") is { } vbar)
+                vbar.Scroll += (_, se) => OnEdgeScroll(grid, vbar, se, vertical: true);
+            if (e.NameScope.Find<global::Avalonia.Controls.Primitives.ScrollBar>("PART_HorizontalScrollbar") is { } hbar)
+                hbar.Scroll += (_, se) => OnEdgeScroll(grid, hbar, se, vertical: false);
+        };
+    }
+
+    private static void OnEdgeScroll(DataGrid grid, global::Avalonia.Controls.Primitives.ScrollBar bar,
+        global::Avalonia.Controls.Primitives.ScrollEventArgs e, bool vertical)
+    {
+        bool first;
+        if (e.ScrollEventType == global::Avalonia.Controls.Primitives.ScrollEventType.LargeDecrement && bar.Value <= bar.Minimum)
+            first = true;
+        else if (e.ScrollEventType == global::Avalonia.Controls.Primitives.ScrollEventType.LargeIncrement && bar.Value >= bar.Maximum)
+            first = false;
+        else return;
+
+        if (grid.ItemsSource is null) return;
+        var rows = grid.ItemsSource.Cast<object>().ToList();
+        if (rows.Count == 0) return;
+
+        if (vertical)
+            grid.ScrollIntoView(first ? rows[0] : rows[^1], null);
+        else if (grid.Columns.Count > 0)
+            grid.ScrollIntoView(rows[0], first ? grid.Columns[0] : grid.Columns[^1]);
+    }
+
     private void WireColumnResize(DataGrid grid)
     {
         var lifted = false;
@@ -926,18 +1048,34 @@ public partial class MainWindow : Window
         if (_detailPane is null) return;
         // Dragging up must make the pane taller, hence the minus.
         _detailPane.Height = ClampPaneHeight(_detailPane.Height - e.Vector.Y);
-        // Remember it: a pane the user sized to their screen should still be that size next time.
+        // Remember it: a pane the user sized to their screen should still be that size next time. Marking it
+        // "set" also switches off the window-aware default so their exact height is what opens from now on.
         _vm.DetailPaneHeight = _detailPane.Height;
+        _vm.DetailPaneHeightSet = true;
     }
 
-    /// <summary>Bounds the detail-pane height. ⚠️ It must never grow so far that the device list is left with
-    /// a single row (or none): past that the bottom-docked pane, its handle and the toggle together exceed
-    /// the DockPanel's height and the layout collapses. Capped at 40 % of the window AND at least ~340 px
-    /// reserved above it (chrome + a few list rows), with a small floor so it can't vanish either.</summary>
+    /// <summary>Bounds the detail-pane height. The pane may grow until the device list is down to roughly a
+    /// single row (the user wants a big graph/logs pane), but no further – past that the grid loses its header
+    /// and horizontal scrollbar and the bottom strip is pushed under the status bar. So ~500 px are always kept
+    /// above the pane: the toolbar + banner (~378 worst case, banner shown) + a usable grid (header + a row +
+    /// its scrollbar). ⚠️ Deliberately NO 40 % cap: on a tall screen the pane should be allowed to grow large
+    /// for the graph/logs; on a short one (720p) the reservation still leaves the grid + scrollbar visible.</summary>
     private double ClampPaneHeight(double wanted)
     {
-        var max = Math.Max(160, Math.Min(Bounds.Height - 340, Bounds.Height * 0.4));
-        return Math.Clamp(wanted, 120, max);
+        var max = Math.Max(70, Bounds.Height - 500);
+        return Math.Clamp(wanted, 70, max);
+    }
+
+    /// <summary>Picks the pane's OPENING height when the user has never sized it themselves: on a tall window
+    /// (&gt; 1000 px) it opens 3× the normal default so a graph/logs pane has room; otherwise the normal
+    /// default. Skipped once the user drags the splitter (their exact height is kept and restored) – and also
+    /// skipped when the stored height already differs from the shipped default, which is how an install that
+    /// customised the pane before this flag existed keeps its value. Not persisted, so the default re-adapts
+    /// to whatever window height the app opens at. Runs at Opened, where Bounds.Height is the real size.</summary>
+    private void ApplyDefaultDetailPaneHeight()
+    {
+        if (_detailPane is null || _vm.DetailPaneHeightSet || Math.Abs(_vm.DetailPaneHeight - 270.0) > 0.5) return;
+        _detailPane.Height = ClampPaneHeight(Bounds.Height > 1000 ? 3 * 270.0 : 270.0);
     }
 
     /// <summary>Re-applies the bound after the window changes size – a height dragged large on a big screen
@@ -949,7 +1087,9 @@ public partial class MainWindow : Window
         if (Math.Abs(clamped - _detailPane.Height) > 0.5)
         {
             _detailPane.Height = clamped;
-            _vm.DetailPaneHeight = clamped;
+            // Only persist when the user actually chose this height. Persisting a clamped AUTO-default would
+            // freeze it into the stored value and stop the window-aware default from re-adapting next time.
+            if (_vm.DetailPaneHeightSet) _vm.DetailPaneHeight = clamped;
         }
     }
 
@@ -1220,10 +1360,15 @@ public partial class MainWindow : Window
     {
         if (sender is not DataGrid grid) return;
         _vm.SetMarked(grid.SelectedItems.OfType<DeviceSnapshot>());
-        // First time a device is actually selected, reveal the detail pane once (unless switched off). The
-        // window starts with the pane hidden for a cleaner overview; after this one reveal the chevron rules.
-        if (grid.SelectedItems.Count > 0) _vm.MaybeRevealDetailPane();
+        // ⚠️ Deliberately does NOT touch the detail pane. It used to auto-reveal on the first selection, which
+        // the pane popping up on a click made annoying. The pane is now purely the user's choice, via the
+        // Appearance-menu toggle (and the chevron).
     }
+
+    /// <summary>Appearance-menu toggle: show/hide the detail pane. The menu label is always the action, and
+    /// the pane starts hidden for a clean overview.</summary>
+    private void OnToggleDetailPane(object? sender, RoutedEventArgs e) =>
+        _vm.ShowDetailPane = !_vm.ShowDetailPane;
 
     /// <summary>Double-click a cell to copy its text – the fastest way to get a MAC or an address out of
     /// the list and into something else.</summary>
@@ -1238,18 +1383,19 @@ public partial class MainWindow : Window
         var device = _vm.SelectedDevice;
         if (device is null) return;
 
-        // No stored login: ask for one, the way any SSH client does. Used for this session only – nothing
-        // is written to the device store, so the terminal works on a device TikMan has no password for.
-        string? user = null, password = null;
-        if (!device.HasLogin)
-        {
-            var creds = await SshLoginWindow.AskAsync(this, device.Name, device.User);
-            if (creds is null) return;                     // cancelled
-            (user, password) = (creds.Value.User, creds.Value.Password);
-        }
+        // ⚠️ Never prompt for credentials INSIDE TikMan. The built-in terminal (SSH.NET) authenticates BEFORE
+        // the shell exists, so it can only auto-login with a STORED password – there is no "type it into the
+        // terminal" for it. So: a stored login, and the user wants it used (built-in preferred, OR "forward
+        // credentials" on) ⇒ built-in terminal, auto-logged-in. Otherwise – no stored login, or the user wants
+        // to type it – hand off to the external OS SSH client, which authenticates INTERACTIVELY in its own
+        // window (no password on any command line). Opening a terminal never triggers a facts/config read, so
+        // a quick manual poke around stays cheap – that is the whole point of not forcing a stored login.
+        bool autoLogin = device.HasLogin &&
+            (_vm.Settings.PreferBuiltInSsh || _vm.Settings.PassPasswordToExternalClients);
+        if (!autoLogin) { _vm.LaunchSsh(device); return; }
 
         _vm.ReportAction(T("Av_SshConnecting"));
-        var result = await _vm.OpenTerminalAsync(user, password);
+        var result = await _vm.OpenTerminalAsync();        // stored credentials, auto-login
         if (result.Ok)
         {
             _vm.ReportAction("");

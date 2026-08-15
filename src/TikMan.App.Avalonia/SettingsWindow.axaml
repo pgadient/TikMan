@@ -15,12 +15,13 @@
                     <!-- Backup method used to have a row here. Gone: the backup transport is chosen per
                          device at backup time (the assistant picks it), never once globally – a global
                          setting only pretended to. -->
-                    <Grid ColumnDefinitions="200,*" RowDefinitions="Auto,Auto">
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Loc Av_DefaultUser}" VerticalAlignment="Center" />
-                        <TextBox   Grid.Row="0" Grid.Column="1" Text="{Binding DefaultUsername, Mode=TwoWay}" />
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Loc Av_Language}" VerticalAlignment="Center" Margin="0,8,0,0" />
-                        <ComboBox  Grid.Row="1" Grid.Column="1" x:Name="LanguageBox" HorizontalAlignment="Stretch"
-                                   SelectedItem="{Binding Language, Mode=TwoWay}" Margin="0,8,0,0">
+                    <!-- The global "default username" setting was removed: the login dialog now pre-fills the
+                         vendor's factory account itself (admin, or ubnt for Ubiquiti – FleetService.DefaultUsername),
+                         which is right far more often than one fixed string, and stays editable per device. -->
+                    <Grid ColumnDefinitions="200,*" RowDefinitions="Auto">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Loc Av_Language}" VerticalAlignment="Center" />
+                        <ComboBox  Grid.Row="0" Grid.Column="1" x:Name="LanguageBox" HorizontalAlignment="Stretch"
+                                   SelectedItem="{Binding Language, Mode=TwoWay}">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" Spacing="8">
@@ -39,7 +40,6 @@
                     <CheckBox Content="{loc:Loc Av_SetNoScan}" IsChecked="{Binding NoInitialScan, Mode=TwoWay}" />
                     <CheckBox Content="{loc:Loc Av_SetCheckUpd}" IsChecked="{Binding CheckForUpdates, Mode=TwoWay}" />
                     <CheckBox Content="{loc:Loc Av_SetExpand}" IsChecked="{Binding ExpandRowsByDefault, Mode=TwoWay}" />
-                    <CheckBox Content="{loc:Loc Set_AutoRevealDetail}" IsChecked="{Binding AutoRevealDetailPane, Mode=TwoWay}" />
                     <!-- The "combined progress bar" switch used to sit here. There is only one progress
                          display now – one bar 0→100 % with the protocol row under it – so it had nothing
                          left to switch between. AppData keeps the field for the WPF client. -->

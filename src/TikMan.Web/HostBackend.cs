@@ -44,7 +44,8 @@ public sealed class HostBackend : IWebBackend
         s.Id, s.Name, s.Ip, s.Mac, s.Vendor, s.KindText, s.Model, s.Status, s.IsGateway, s.HasLogin,
         s.MacVendor, s.Ipv6Summary, s.Serial, s.Os, s.Firmware,
         s.Cpu, s.Memory, s.Uptime, s.LatestVersion, s.UpdateAvailable,
-        s.Badges.Select(b => new BadgeDto(b.Name, b.Url, b.Colour, b.Tooltip)).ToList());
+        s.Badges.Select(b => new BadgeDto(b.Name, b.Url, b.Colour, b.Tooltip)).ToList(),
+        s.Source);
 
     /// <summary>One row per IPv6 address, mirroring the app's IPv6 tab: the device facts are repeated on
     /// every row on purpose, so each address can be read (and sorted) on its own.</summary>

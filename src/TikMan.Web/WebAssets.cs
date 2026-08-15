@@ -155,7 +155,7 @@ internal static class WebAssets
   <table>
     <thead><tr>
       <th data-k="type">Type</th><th data-k="name">Name</th><th data-k="ip">IPv4</th>
-      <th data-k="ipv6Summary">IPv6</th><th>Supported protocols</th>
+      <th data-k="ipv6Summary">IPv6</th><th data-k="source">Source</th><th>Supported protocols</th>
       <th data-k="mac">MAC</th><th data-k="vendor">Vendor</th><th data-k="macVendor">MAC vendor</th>
       <th data-k="model">Model</th><th data-k="serial">Serial</th><th data-k="os">OS</th>
       <th data-k="firmware">Firmware</th><th data-k="latestVersion">Latest</th>
@@ -316,6 +316,7 @@ function render(){
     <td class="name">${esc(d.name)||'<span class="muted">—</span>'} ${d.hasLogin?'<span class="lock" title="has login">🔑</span>':''}</td>
     <td>${esc(d.ip)}</td>
     <td class="muted">${v6short(d.ipv6Summary)}</td>
+    <td class="muted">${esc(d.source||"")}</td>
     <td>${badges(d.badges, d.id)}</td>
     <td class="muted">${esc(d.mac)}</td>
     <td>${esc(d.vendor)}</td><td class="muted">${esc(d.macVendor)}</td>

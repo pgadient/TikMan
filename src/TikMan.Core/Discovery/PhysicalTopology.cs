@@ -54,7 +54,11 @@ public static class PhysicalTopology
     // address. The height is shared by every renderer (canvas, PNG, PDF, GraphML, draw.io, the web SVG),
     // so it has to leave room for all five – a box sized for fewer silently clips the rest.
     private const double NodeWidth = 178, NodeHeight = 100, ColGap = 22, RowGap = 18, TierGap = 90;
-    private const int MaxCols = 10, PortGroupThreshold = 3;
+    // ⚠️ A physical port connects to exactly ONE thing, so ≥2 foreign MACs on one non-uplink port already
+    // prove an unseen switch there – 2 is the honest threshold (3 was over-cautious and hid 2-device switches).
+    // WLAN ports override this to 1 (see the port-grouping loop): a WLAN is worth its own node from the first
+    // client, so the map shows which devices are on which SSID.
+    private const int MaxCols = 10, PortGroupThreshold = 2;
 
     /// <summary>The address-distribution view: Internet → network → equal address blocks → devices. No
     /// forwarding tables needed, so it is instant and works on any network.
@@ -257,8 +261,10 @@ public static class PhysicalTopology
             return (best.Value.BridgeId, best.Value.Port, label);
         }
 
+        // "wifi1 (MyWLAN [S])": the physical port plus its SSID. ⚠️ When the port name IS the SSID (a UniFi AP,
+        // whose wireless "port" is the SSID itself, not a physical interface) don't print "MyWLAN (MyWLAN)".
         string PortLabel(string bridgeId, string port) =>
-            port.Length > 0 && ssids is not null && ssids.TryGetValue((bridgeId, port), out var ssid)
+            port.Length > 0 && ssids is not null && ssids.TryGetValue((bridgeId, port), out var ssid) && ssid != port
                 ? $"{port} ({ssid})" : port;
 
         // The honest catch-all for anything the forwarding tables can't place. Created once, shared by the
@@ -449,7 +455,11 @@ public static class PhysicalTopology
             var bridgeKey = nodeKeyOf[bridgeId];
             string parentForLeaves = bridgeKey;
             int leafLevel = levels[bridgeKey] + 1;
-            if (members.Count >= PortGroupThreshold)
+            // A WLAN port (it carries an SSID) earns its own node from the FIRST client, so the map always
+            // shows which devices are on which SSID; a plain switch port needs PortGroupThreshold foreign MACs
+            // before we infer a hidden switch behind it.
+            int threshold = ssids is not null && ssids.ContainsKey((bridgeId, port)) ? 1 : PortGroupThreshold;
+            if (members.Count >= threshold)
             {
                 var portKey = $"::port:{bridgeId}:{port}";
                 Add(portKey, null, PortLabel(bridgeId, port), "", "", TopoRole.Infrastructure);
@@ -460,7 +470,7 @@ public static class PhysicalTopology
             }
             foreach (var (d, macLabel) in members.OrderBy(x => Ipv4SortKey(x.D.Ip)))
             {
-                var label = members.Count >= PortGroupThreshold ? "" : PortLabel(bridgeId, port);
+                var label = members.Count >= threshold ? "" : PortLabel(bridgeId, port);
                 // "p5 (lan1)": the matched-MAC group name joins the port text (or stands alone when the port
                 // text was grouped away) – see the group comment above.
                 if (macLabel.Length > 0) label = label.Length > 0 ? $"{label} ({macLabel})" : macLabel;

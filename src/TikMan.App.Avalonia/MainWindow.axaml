@@ -3,8 +3,8 @@
         xmlns:loc="using:TikMan.App.Avalonia"
         x:Class="TikMan.App.Avalonia.MainWindow"
         x:CompileBindings="False"
-        Width="1240" Height="830"
-        MinHeight="830"
+        Width="1240" Height="650"
+        MinHeight="560"
         Icon="/Assets/tikman.png"
         Title="TikMan">
     <!-- ⚠️ MinWidth is not set here: it is measured from the toolbar after the first layout pass
@@ -73,6 +73,39 @@
                     </MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
+            <!-- Detail-pane toggle as its OWN top-level entry (right after Appearance). One item shows at a
+                 time (IsVisible toggles) so the label is always the ACTION; enabled only on tabs with a pane. -->
+            <MenuItem Click="OnToggleDetailPane" IsVisible="{Binding !ShowDetailPane}" IsEnabled="{Binding DetailPaneAllowed}">
+                <MenuItem.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <Path Data="M1,1 H13 V6 H1 Z M1,8 H13 V13 H1 Z" Fill="{DynamicResource GlyphBrush}"
+                              Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center" />
+                        <TextBlock Text="{loc:Loc Av_ShowDetails}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </MenuItem.Header>
+            </MenuItem>
+            <MenuItem Click="OnToggleDetailPane" IsVisible="{Binding ShowDetailPane}" IsEnabled="{Binding DetailPaneAllowed}">
+                <MenuItem.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <Path Data="M1,1 H13 V6 H1 Z M1,8 H13 V13 H1 Z" Fill="{DynamicResource GlyphBrush}"
+                              Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center" />
+                        <TextBlock Text="{loc:Loc Av_HideDetails}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </MenuItem.Header>
+            </MenuItem>
+            <!-- Also reachable from the login banner, but that banner disappears as soon as one device has
+                 credentials – and "what can TikMan do with this vendor" stays a question after that. -->
+            <MenuItem Click="OnMatrixMenuClick">
+                <MenuItem.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <Path Data="{StaticResource IconGrid}" Fill="{DynamicResource GlyphBrush}"
+                              Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center" />
+                        <TextBlock Text="{loc:Loc Av_MatrixTitle}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </MenuItem.Header>
+            </MenuItem>
+            <!-- Webserver last: it's the most niche entry, and putting it after the matrix keeps the everyday
+                 items (settings, export, appearance, details) up front. -->
             <MenuItem>
                 <MenuItem.Header>
                     <StackPanel Orientation="Horizontal" Spacing="7">
@@ -89,17 +122,6 @@
                 <MenuItem x:Name="WebStatusItem" Header="{loc:Loc Web_Stopped}" IsEnabled="False" />
                 <MenuItem x:Name="WebOpenItem" Header="{loc:Loc Web_OpenBrowser}" Click="OnWebOpenClick"
                           IsEnabled="{Binding WebRunning}" />
-            </MenuItem>
-            <!-- Also reachable from the login banner, but that banner disappears as soon as one device has
-                 credentials – and "what can TikMan do with this vendor" stays a question after that. -->
-            <MenuItem Click="OnMatrixMenuClick">
-                <MenuItem.Header>
-                    <StackPanel Orientation="Horizontal" Spacing="7">
-                        <Path Data="{StaticResource IconGrid}" Fill="{DynamicResource GlyphBrush}"
-                              Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center" />
-                        <TextBlock Text="{loc:Loc Av_MatrixTitle}" VerticalAlignment="Center" />
-                    </StackPanel>
-                </MenuItem.Header>
             </MenuItem>
         </Menu>
 
@@ -456,7 +478,7 @@
         </ToggleButton>
 
         <!-- Device detail. Hidden together with its splitter when switched off, so the list gets the room. -->
-        <Border x:Name="DetailPane" DockPanel.Dock="Bottom" Height="270" Margin="16,0,16,10" Padding="14"
+        <Border x:Name="DetailPane" DockPanel.Dock="Bottom" Height="220" Margin="16,0,16,10" Padding="14"
                 Background="#14808080" CornerRadius="10" IsVisible="{Binding EffectiveShowDetailPane}">
             <Grid RowDefinitions="Auto,*">
                 <StackPanel Grid.Row="0" Spacing="8">
@@ -675,7 +697,14 @@
                      ScrollViewer one. The grid keeps its scroll viewer inside its template and never reads
                      ScrollViewer.HorizontalScrollBarVisibility from the outside: setting that attached
                      property compiles, applies to nothing, and silently does nothing – which is why the
-                     list stayed unscrollable through several attempts to fix it. -->
+                     list stayed unscrollable through several attempts to fix it.
+
+                     ⚠️ The horizontal-scrollbar fix lives mostly in App.axaml: a custom DataGrid template pulls
+                     both scrollbars OUT of the table frame (into their own gutters, Win32-style) and gives them a
+                     classic solid handle with a grip. "Auto" here is correct with that template – the bar appears
+                     only when the columns overflow and reclaims its space when they don't (the old Semi-overlay
+                     Auto mis-hid it maximised, which is why this used to be forced Visible; the reserved-gutter
+                     template fixed the underlying computation, so Auto behaves like WPF now). -->
                 <DataGrid x:Name="DeviceGrid"
                           ItemsSource="{Binding Devices}"
                           SelectedItem="{Binding SelectedDevice, Mode=TwoWay}"
@@ -760,6 +789,12 @@
                         <!-- A pending update is worth spotting without reading the version numbers. -->
                         <Style Selector="TextBlock.pending">
                             <Setter Property="Foreground" Value="#EF6C00" />
+                            <Setter Property="FontWeight" Value="SemiBold" />
+                        </Style>
+                        <!-- "Credentials required" in the type cell: red + semibold so it reads as an action to
+                             take (set a login), not a device type. -->
+                        <Style Selector="TextBlock.creds">
+                            <Setter Property="Foreground" Value="#C62828" />
                             <Setter Property="FontWeight" Value="SemiBold" />
                         </Style>
                         <!-- The Latest cell is a link (parsed version or "manual search") – underline it so it
@@ -981,13 +1016,17 @@
                         <!-- The same vector key as the login banner and the credentials button – one key
                              everywhere. (A Path, not the 🔑 emoji: the emoji rendered blank in the header
                              row on Windows and cannot take the theme's ink anyway.) -->
-                        <DataGridTemplateColumn Width="30" CanUserResize="False" CanUserSort="False">
+                        <!-- Sortable: click the key header to group by login state (devices with a login first),
+                             then by IPv4 address – numerically (see LoginThenIpComparer). -->
+                        <DataGridTemplateColumn Width="30" CanUserResize="False" CanUserSort="True"
+                                                CustomSortComparer="{x:Static loc:LoginThenIpComparer.Instance}">
                             <DataGridTemplateColumn.Header>
                                 <!-- Background="Transparent" so the pointer can actually hit it (see the
                                      filter glyph): an element with no background is not hit-testable. -->
                                 <Border Background="Transparent" ToolTip.Tip="{loc:Loc Col_HasLoginTip}">
                                     <Path Data="{StaticResource IconKey}" Fill="{DynamicResource GlyphBrush}"
-                                          Width="13" Height="13" Stretch="Uniform" />
+                                          Width="13" Height="13" Stretch="Uniform"
+                                          HorizontalAlignment="Left" Margin="-4,0,0,0" />
                                 </Border>
                             </DataGridTemplateColumn.Header>
                             <DataGridTemplateColumn.CellTemplate>
@@ -1029,10 +1068,22 @@
                         <!-- ⚠️ Fixed and Auto widths only – no star sizing. Star columns always divide the
                              viewport, so the grid could never be wider than the window and the columns kept
                              squeezing themselves instead of letting the user scroll. -->
-                        <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding KindText}" Width="Auto" MinWidth="90" MaxWidth="900" Tag="rich" />
+                        <DataGridTemplateColumn Header="{loc:Loc Col_DeviceType}" Width="Auto" MinWidth="90" MaxWidth="900" Tag="rich">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding KindText}" VerticalAlignment="Center"
+                                               Classes.creds="{Binding CredentialsRequired}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                         <DataGridTextColumn Header="{loc:Loc Col_Name}" Binding="{Binding Name}" Width="Auto" MinWidth="140" MaxWidth="900" />
-                        <DataGridTextColumn Header="IPv4" Binding="{Binding Ip}" Width="Auto" MinWidth="110" MaxWidth="900" />
+                        <DataGridTextColumn Header="IPv4" Binding="{Binding Ip}" Width="Auto" MinWidth="110" MaxWidth="900"
+                                            CustomSortComparer="{x:Static loc:Ipv4Comparer.Instance}" />
                         <DataGridTextColumn Header="IPv6" Binding="{Binding Ipv6Summary}" Width="Auto" MinWidth="120" MaxWidth="900" />
+                        <!-- Discovery source as plain text (the INITIAL origin), right before the services
+                             column. A vendor/announce protocol (MNDP/ZON/UBNT/mDNS/SSDP) or the sweep's raw
+                             method (ICMP/ARP/TCP); set once and never overwritten by a later source. -->
+                        <DataGridTextColumn Header="{loc:Loc Col_Source}" Binding="{Binding Source}" Width="Auto" MinWidth="70" MaxWidth="900" Tag="rich" />
                         <!-- ⚠️ MinWidth is not cosmetic here. Without a floor Avalonia collapses this Auto
                              column very narrow, and the badge WrapPanel then wraps into a tall stack whose
                              height is computed at one width and arranged at another – so the badges spill
@@ -1153,6 +1204,8 @@
                      global, a ULA, a link-local and one or two privacy addresses at once, and they differ in
                      exactly the way this tab exists to show. Rows of one device share a tint and a group
                      number, so they still read as one block. -->
+                <!-- Auto + the custom out-of-frame template in App.axaml: see the IPv4 grid for the reasoning
+                     (scrollbars in their own gutters with a classic grip handle; appear only when needed). -->
                 <DataGrid x:Name="Ipv6Grid" ItemsSource="{Binding Ipv6Rows}"
                           SelectionChanged="OnIpv6SelectionChanged"
                           IsReadOnly="True" CanUserResizeColumns="True" CanUserSortColumns="True"
@@ -1173,6 +1226,12 @@
                         </Style>
                         <Style Selector="TextBlock.pending">
                             <Setter Property="Foreground" Value="#EF6C00" />
+                            <Setter Property="FontWeight" Value="SemiBold" />
+                        </Style>
+                        <!-- "Credentials required" in the type cell: red + semibold so it reads as an action to
+                             take (set a login), not a device type. -->
+                        <Style Selector="TextBlock.creds">
+                            <Setter Property="Foreground" Value="#C62828" />
                             <Setter Property="FontWeight" Value="SemiBold" />
                         </Style>
                         <Style Selector="TextBlock.latestlink">
@@ -1292,11 +1351,19 @@
                              puts the list back into "grouped by device" after any other sort. -->
                         <DataGridTextColumn Header="{loc:Loc Col_Ipv6Group}" Binding="{Binding Group}"
                                             SortMemberPath="GroupSortKey" Width="Auto" MinWidth="50" MaxWidth="900" />
-                        <DataGridTextColumn Header="{loc:Loc Col_DeviceType}" Binding="{Binding KindText}" Width="Auto" />
+                        <DataGridTemplateColumn Header="{loc:Loc Col_DeviceType}" Width="Auto">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding KindText}" VerticalAlignment="Center"
+                                               Classes.creds="{Binding CredentialsRequired}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                         <DataGridTextColumn Header="{loc:Loc Col_Name}" Binding="{Binding Name}" Width="Auto" MinWidth="140" MaxWidth="900" />
                         <!-- The address itself, monospaced: v6 addresses are compared by eye, digit by digit. -->
                         <DataGridTextColumn Header="IPv6" Binding="{Binding Address}" Width="Auto" MinWidth="240" MaxWidth="900"
-                                            FontFamily="Consolas, Menlo, monospace" />
+                                            FontFamily="Consolas, Menlo, monospace"
+                                            CustomSortComparer="{x:Static loc:Ipv6Comparer.Instance}" />
                         <!-- One scope badge, for THIS address – that is the difference between the rows. -->
                         <DataGridTemplateColumn Header="{loc:Loc Col_Ipv6Scope}" Width="Auto"
                                                 SortMemberPath="Tag.Text">
@@ -1311,7 +1378,8 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTextColumn Header="IPv4" Binding="{Binding Ip}" Width="Auto" />
+                        <DataGridTextColumn Header="IPv4" Binding="{Binding Ip}" Width="Auto"
+                                            CustomSortComparer="{x:Static loc:Ipv4Comparer.Instance}" />
                         <!-- ⚠️ Measured on THIS address, not copied from the device's IPv4 result – and the
                              empty cases are told apart: "nothing answered" is a finding, "not tested" is
                              not, and showing both as a blank cell would present the second as the first. -->

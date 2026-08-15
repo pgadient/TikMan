@@ -269,13 +269,16 @@ public static class RouterOsSsh
         {
             var name = Cap(record, @"(?<![\w-])name=""([^""]*)""");
             if (name.Length == 0) continue;
-            var ssid = Cap(record, @"(?<![\w-])(?:configuration\.)?ssid=""([^""]*)""");
+            // ⚠️ The ";;; mode: AP, SSID: <ssid>, channel:" comment is what the radio is ACTUALLY broadcasting
+            // (the live/provisioned network), so it comes FIRST. On a CAPsMAN-managed CAP the local
+            // "configuration.ssid" (printed as ".ssid=…") is only the unprovisioned factory default
+            // "MikroTik-XXXXXX" – reading that produced a phantom WLAN node named after a network that does not
+            // exist (verified against a live hAP ax³ CAP: .ssid="MikroTik-XXXXXX" but broadcasting "MyWLAN [S]").
+            // Fall back to configuration.ssid only for a standalone/controller interface with no such comment.
+            var cm = Regex.Match(record, @"SSID:\s*(.+?)(?:,\s*channel:|,\s*\w+:|\s+[\w.-]+=|$)");
+            var ssid = cm.Success ? cm.Groups[1].Value.Trim() : "";
             if (ssid.Length == 0)
-            {
-                // AP/CAP side: SSID only in the ";;; mode: AP, SSID: <ssid>, channel:" comment.
-                var m = Regex.Match(record, @"SSID:\s*(.+?)(?:,\s*channel:|,\s*\w+:|\s+[\w.-]+=|$)");
-                if (m.Success) ssid = m.Groups[1].Value.Trim();
-            }
+                ssid = Cap(record, @"(?<![\w-])(?:configuration\.)?ssid=""([^""]*)""");
             if (ssid.Length > 0 && !map.ContainsKey(name)) map[name] = ssid;
         }
         return map;

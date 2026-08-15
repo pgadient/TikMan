@@ -26,7 +26,9 @@ public sealed record DeviceDto(
     string Uptime,
     string LatestVersion,
     bool UpdateAvailable,
-    IReadOnlyList<BadgeDto> Badges);
+    IReadOnlyList<BadgeDto> Badges,
+    // The initial discovery origin (MNDP/ZON/UBNT/mDNS/SSDP or the sweep's ICMP/ARP/TCP), plain text.
+    string Source);
 
 /// <summary>One service badge ("http", "ssh", …) with the URL to open, mirroring the GUI's row badges.
 /// <see cref="Url"/> is empty for services that are not clickable.</summary>

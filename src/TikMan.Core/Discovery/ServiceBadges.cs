@@ -39,6 +39,7 @@ public static class ServiceBadges
         "rtsp" => "#00838F",                         // camera stream
         "ipmi" or "amt" => "#5D4037",                // out-of-band management (BMC)
         "airprint" or "airscan" => "#546E7A",        // mDNS-announced capability, not a port
+        "discovery" => "#607D8B",                     // vendor discovery protocol (MNDP/ZON/UBNT), not a port
         _ => "#95A5A6",
     };
 
@@ -94,6 +95,24 @@ public static class ServiceBadges
         if (extraInfo.TryGetValue("SNMP", out var snmpVersions) && snmpVersions.Length > 0)
             foreach (var v in snmpVersions.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
                 list.Add(new ServiceBadge("snmp " + v, "", ColourFor("snmp"), "SNMP " + v));
+
+        // Discovery/announce protocols the device answered (MNDP / ZON / UBNT vendor discovery, plus the
+        // generic mDNS / SSDP). Like SNMP they live off the TCP scan (UDP/L2), so the badge comes from the
+        // enricher's flag, not an open port. Non-clickable, one shared colour so they read as a group distinct
+        // from the service chips.
+        foreach (var proto in new[] { "MNDP", "ZON", "UBNT", "mDNS", "SSDP" })
+            if (extraInfo.ContainsKey(proto))
+            {
+                var tip = proto switch
+                {
+                    "MNDP" => "MikroTik discovery (MNDP)",
+                    "ZON" => "Zyxel discovery (ZON)",
+                    "UBNT" => "Ubiquiti Device Discovery",
+                    "mDNS" => "mDNS / Bonjour",
+                    _ => "UPnP / SSDP",
+                };
+                list.Add(new ServiceBadge(proto.ToLowerInvariant(), "", ColourFor("discovery"), tip));
+            }
 
         return list;
     }

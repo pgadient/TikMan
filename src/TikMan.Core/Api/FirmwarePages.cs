@@ -23,6 +23,36 @@ public static class FirmwarePages
     /// (with its release note and date) rather than a blank search.</summary>
     public const string ZyxelDownloads = "https://www.zyxel.com/global/en/support/download";
 
+    /// <summary>Ubiquiti's official download portal (model-agnostic hub, verified 200). Used when the model is
+    /// unknown; with a model, <see cref="UrlFor"/> builds the per-model page under it. UniFi firmware is not
+    /// installed from TikMan; this is the "open the download page" link.</summary>
+    public const string UbiquitiDownloads = "https://ui.com/download";
+
+    /// <summary>The per-model UniFi download page, e.g. <c>…/download/software/usw-lite-16-poe</c>. The slug is
+    /// the model lower-cased with non-alphanumerics folded to single hyphens (the site's own scheme, verified
+    /// 200 for USW-Lite-16-PoE). "" when no model, so the caller uses the hub.</summary>
+    public static string UbiquitiModelPage(string model)
+    {
+        var slug = ModelSlug(model);
+        return slug.Length > 0 ? $"{UbiquitiDownloads}/software/{slug}" : "";
+    }
+
+    /// <summary>Schneider Electric's product page for the APC Network Management Cards range (61936) – its
+    /// "Software &amp; Firmware" section is where the NMC firmware lives. Opened in the user's real browser,
+    /// which is the only client that gets past the page's Akamai bot protection.</summary>
+    public const string ApcNmcPage = "https://www.se.com/us/en/product-range/61936-network-management-cards/";
+
+    private static string ModelSlug(string model)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var ch in (model ?? "").Trim().ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(ch)) sb.Append(ch);
+            else if (sb.Length > 0 && sb[^1] != '-') sb.Append('-');   // fold runs of separators to one hyphen
+        }
+        return sb.ToString().Trim('-');
+    }
+
     /// <summary>The firmware page for a device, or "" when the vendor has no page that can be derived.
     ///
     /// <para>For TP-Link/Omada, most specific first: model + firmware version go straight to the firmware
@@ -51,6 +81,19 @@ public static class FirmwarePages
             var product = OmadaSupport.FirmwarePageUrl(model, hardwareRevision);
             return product.Length > 0 ? product : TpLinkDownloads;
         }
+
+        if (vendor.Contains("Ubiquiti", StringComparison.OrdinalIgnoreCase) ||
+            vendor.Contains("UniFi", StringComparison.OrdinalIgnoreCase))
+        {
+            // Per-model page when the model is known (…/software/<slug>), else the download hub.
+            var page = UbiquitiModelPage(model);
+            return page.Length > 0 ? page : UbiquitiDownloads;
+        }
+
+        if (vendor.Contains("APC", StringComparison.OrdinalIgnoreCase) ||
+            vendor.Contains("American Power", StringComparison.OrdinalIgnoreCase) ||
+            vendor.Contains("Schneider", StringComparison.OrdinalIgnoreCase))
+            return ApcNmcPage;
 
         if (vendor.Contains("Zyxel", StringComparison.OrdinalIgnoreCase))
         {

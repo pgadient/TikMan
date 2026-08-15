@@ -108,18 +108,16 @@ public sealed class RouterOsClient : IDisposable
                 {
                     var name = S(e, "name");
                     if (name.Length == 0) continue;
-                    // The SSID sits flat on legacy wireless and on a non-CAPsMAN v7 wifi (either as
-                    // "ssid" or the dotted "configuration.ssid"). A CAPsMAN-managed interface carries it
-                    // only in the ".about" summary ("mode: AP, SSID: icn [S], channel: …"). Take the SSID
-                    // verbatim – a trailing "[S]"/"[G]" is part of the network name the user chose, not
-                    // an annotation to strip (it's what shows on a client when connecting).
-                    var ssid = S(e, "ssid");
+                    // ⚠️ ".about" ("mode: AP, SSID: MyWLAN [S], channel: …") is what the radio is ACTUALLY
+                    // broadcasting and comes FIRST: on a CAPsMAN-managed interface "configuration.ssid" is only
+                    // the unprovisioned factory default "MikroTik-XXXXXX", which drew a phantom WLAN node named
+                    // after a network that does not exist. Fall back to the flat "ssid" / "configuration.ssid"
+                    // for a standalone/legacy interface that has no ".about". Take the SSID verbatim – a
+                    // trailing "[S]"/"[G]" is part of the network name the user chose, not an annotation to strip.
+                    var m = System.Text.RegularExpressions.Regex.Match(S(e, ".about"), @"SSID:\s*(.+?)(?:,\s*\w+:|$)");
+                    var ssid = m.Success ? m.Groups[1].Value.Trim() : "";
+                    if (ssid.Length == 0) ssid = S(e, "ssid");
                     if (ssid.Length == 0) ssid = S(e, "configuration.ssid");
-                    if (ssid.Length == 0)
-                    {
-                        var m = System.Text.RegularExpressions.Regex.Match(S(e, ".about"), @"SSID:\s*(.+?)(?:,\s*\w+:|$)");
-                        if (m.Success) ssid = m.Groups[1].Value.Trim();
-                    }
                     if (ssid.Length > 0) map[name] = ssid;
                 }
                 if (map.Count > 0) return map;

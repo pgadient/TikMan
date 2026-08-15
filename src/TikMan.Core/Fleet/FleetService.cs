@@ -35,7 +35,8 @@ public sealed record DeviceSnapshot(
     string LatestVersion, string InstalledRelease, string UpdateRelease, bool UpdateAvailable,
     string LatestVersionUrl, string VersionUrl,
     IReadOnlyDictionary<string, IReadOnlyList<int>> Ipv6Ports,
-    IReadOnlyDictionary<string, Ipv6Facts> Ipv6Meta)
+    IReadOnlyDictionary<string, Ipv6Facts> Ipv6Meta,
+    string Source)
     : INotifyPropertyChanged, IExpandableRow
 {
     public bool HasIpv6 => Ipv6.Count > 0;
@@ -79,6 +80,10 @@ public sealed record DeviceSnapshot(
     /// link is known, or nothing.</summary>
     public string LatestDisplay =>
         LatestVersion.Length > 0 ? LatestVersion : LatestIsManual ? T("Av_ManualSearch") : "";
+
+    /// <summary>True when the type cell is showing the "credentials required" hint rather than a real device
+    /// type – so the UI can paint it red, marking it as an action to take, not a classification.</summary>
+    public bool CredentialsRequired => KindText.Length > 0 && KindText == T("Dev_CredsRequired");
 
     /// <summary>UI state: is this row's detail panel open? Deliberately mutable and observable (the rest of
     /// the record is an immutable read model) so a grid can bind a per-row expander to it. It is <b>not</b>
@@ -402,7 +407,10 @@ public sealed class FleetService
         {
             var d = Find(id);
             if (d is null) return false;
-            d.Username = user;
+            // ⚠️ Username only sticks WITH a password. A username saved without one is not a stored login, just
+            // a leftover that would then shadow the per-vendor default in the next dialog (the "admin" that hid
+            // "ubnt" for Ubiquiti). Clearing the password clears the username too.
+            d.Username = password.Length > 0 ? user : "";
             d.EncryptedPassword = password.Length > 0 ? CredentialProtector.Protect(password) : "";
             // ⚠️ A new password is a new attempt: drop the old verdict rather than leaving the row marked
             // broken until the re-read finishes. Otherwise fixing a typo still shows a cross for a while,
@@ -525,6 +533,8 @@ public sealed class FleetService
                 return await ZyxelSsh.GetLogAsync(d.Host, d.SshPort, d.Username, password, maxEntries).ConfigureAwait(false);
             if (IsZyxelFirewall(d))
                 return await ZldSsh.GetLogAsync(d.Host, d.SshPort, d.Username, password, maxEntries).ConfigureAwait(false);
+            if (IsUbiquiti(d))
+                return await UnifiSsh.GetLogAsync(d.Host, d.SshPort, d.Username, password, maxEntries).ConfigureAwait(false);
             return null;
         }
         catch { return null; }
@@ -535,7 +545,7 @@ public sealed class FleetService
     /// <c>CanUpdate</c>, which happens to mean "MikroTik with a login" – so adding a second vendor that can
     /// do logs but not updates would have left its tab greyed out with the data sitting right there.</para></summary>
     public static bool CanReadLogs(Device d) =>
-        d.EncryptedPassword.Length > 0 && (IsMikroTik(d) || IsTpLink(d) || IsZyxelSwitch(d) || IsZyxelFirewall(d));
+        d.EncryptedPassword.Length > 0 && (IsMikroTik(d) || IsTpLink(d) || IsZyxelSwitch(d) || IsZyxelFirewall(d) || IsUbiquiti(d));
 
     /// <summary>Opens an interactive SSH shell to a device with its stored login. Null when the device is
     /// unknown, has no login, or the connection fails. The password is used only to authenticate.</summary>
@@ -570,8 +580,8 @@ public sealed class FleetService
         var d = RawDevice(id);
         if (d is null) return BackupData.Fail("Device not found.");
         if (d.EncryptedPassword.Length == 0) return BackupData.Fail("No login stored.");
-        if (!IsMikroTik(d) && !IsZyxelSwitch(d) && !IsTpLink(d) && !IsZyxelFirewall(d))
-            return BackupData.Fail("Config backup is only available for MikroTik, Zyxel and TP-Link devices.");
+        if (!IsMikroTik(d) && !IsZyxelSwitch(d) && !IsTpLink(d) && !IsZyxelFirewall(d) && !IsUbiquiti(d))
+            return BackupData.Fail("Config backup is only available for MikroTik, Zyxel, TP-Link and Ubiquiti devices.");
 
         var password = CredentialProtector.Unprotect(d.EncryptedPassword);
         if (password.Length == 0) return BackupData.Fail("No login stored.");
@@ -598,6 +608,20 @@ public sealed class FleetService
                 // the caller and is never logged.
                 config = await TpLinkSshConnector.GetRunningConfigAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
                 ext = ".cfg";
+            }
+            else if (IsUbiquiti(d))
+            {
+                // UniFi: a ZIP of the running config /tmp/system.cfg PLUS every /etc/persistent/cfg/* file (on
+                // an ADOPTED device that holds the controller binding – inform URL + adoption authkey). A text
+                // config bundle, NOT a binary artefact. ⚠️ Carries secrets (users.N.password, mgmt.authkey) –
+                // straight into the ZIP bytes, never logged.
+                // ⚠️ REFERENCE SNAPSHOT, not a standalone restore: in UniFi the CONTROLLER is authoritative and
+                // re-provisions the device. Its recovery value is documentary – it records which controller +
+                // adoption key the device belonged to, which re-adoption / `set-inform` then uses.
+                var bundle = await UnifiSsh.GetConfigBundleAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
+                if (bundle is null) return BackupData.Fail("Config export over SSH failed.");
+                var zipName = BackupNaming.SuggestFileName(d.Name, Model(d), d.Host, DateTime.Now, ".zip");
+                return new BackupData(true, "", zipName, bundle);
             }
             else
             {
@@ -653,6 +677,66 @@ public sealed class FleetService
         if (dev is not null && !IsMikroTik(dev) && (IsTpLink(dev) || IsZyxelSwitch(dev) || IsZyxelFirewall(dev)))
         {
             await CheckLatestFromWebAsync(dev).ConfigureAwait(false);
+            return null;
+        }
+
+        // UniFi: we deliberately do NOT install updates, but the Latest cell still shows the newest published
+        // firmware + its release date, read from Ubiquiti's JSON firmware API by the board's platform code (its
+        // board.shortname, read over SSH – no fragile model→code table). The cell links to the per-model
+        // download page. Best-effort: no platform code or an unreachable API leaves the plain page link.
+        if (dev is not null && IsUbiquiti(dev))
+        {
+            string uid, installedFw, platform, pageUrl;
+            lock (_lock)
+            {
+                uid = WebId(dev);
+                installedFw = dev.ExtraInfo.TryGetValue("Firmware", out var ufw) ? ufw
+                    : dev.ExtraInfo.TryGetValue("Version", out var uver) ? uver : "";
+                platform = dev.ExtraInfo.TryGetValue("UniFi-Platform", out var pf) ? pf : "";
+                pageUrl = FirmwarePages.UrlFor(Vendor(dev), Model(dev));
+            }
+
+            var latest = platform.Length > 0
+                ? await UbiquitiFirmware.QueryLatestAsync(platform).ConfigureAwait(false)
+                : null;
+            // Show "7.4.1 (2026-04-07)" when the API answered; otherwise leave the version empty so the cell is
+            // a plain page link. ⚠️ available = false by design: no install, and the device/API version schemes
+            // differ, so a "newer" flag would be guesswork. This is informational only.
+            var display = latest is { } l
+                ? (l.ReleaseDate.Length > 0 ? $"{l.Version} ({l.ReleaseDate})" : l.Version)
+                : "";
+            lock (_lock)
+                _updates[uid] = new UpdateState(installedFw, display, false, "",
+                    latest?.ReleaseDate ?? "", pageUrl);
+            Changed?.Invoke();
+            return null;
+        }
+
+        // APC / Schneider UPS management cards: latest NMC firmware from Schneider's download API, matched by
+        // the device's own application-firmware file code (e.g. "apc_hw21_su", read from the SNMP nameplate).
+        // ⚠️ Read via the OS curl, not HttpClient (Akamai blocks .NET's TLS fingerprint) – see ApcFirmware. So
+        // it is solid on Windows and best-effort elsewhere; a miss leaves the plain firmware-page link.
+        if (dev is not null && IsApc(dev))
+        {
+            string aid, aInstalled, appCode, aPageUrl;
+            lock (_lock)
+            {
+                aid = WebId(dev);
+                aInstalled = dev.ExtraInfo.TryGetValue("Firmware", out var afw) ? afw
+                    : dev.ExtraInfo.TryGetValue("Version", out var aver) ? aver : "";
+                appCode = dev.ExtraInfo.TryGetValue("APC-App", out var ac) ? ac : "";
+                aPageUrl = FirmwarePages.UrlFor(Vendor(dev), Model(dev));
+            }
+
+            var latest = appCode.Length > 0 ? await ApcFirmware.QueryLatestAsync(appCode).ConfigureAwait(false) : null;
+            // ⚠️ available = false: informational only (no install path, and the device/API version notations
+            // differ). Show "2.5.5.1 (2025-06-13)" when curl got through, else the plain page link.
+            var aDisplay = latest is { } al
+                ? (al.ReleaseDate.Length > 0 ? $"{al.Version} ({al.ReleaseDate})" : al.Version)
+                : "";
+            lock (_lock)
+                _updates[aid] = new UpdateState(aInstalled, aDisplay, false, "", latest?.ReleaseDate ?? "", aPageUrl);
+            Changed?.Invoke();
             return null;
         }
 
@@ -943,7 +1027,9 @@ public sealed class FleetService
             lock (_lock) _phases.Clear();
             SetPhase("scan", PhaseState.Running, 0);
             bool willEnrich; lock (_lock) willEnrich = !_appData.SimpleScanMode;
-            foreach (var p in new[] { "mndp", "mdns", "ssdp" })
+            // UBNT (Ubiquiti, UDP 10001) rides with the always-on broadcast/multicast group – unlike ZON it
+            // needs no capture layer, just a UDP socket, so it is never Skipped for a missing dependency.
+            foreach (var p in new[] { "mndp", "mdns", "ssdp", "ubnt" })
                 SetPhase(p, willEnrich ? PhaseState.Pending : PhaseState.Skipped);
             SetPhase("zon", !willEnrich || !ZdpScanner.IsAvailable() ? PhaseState.Skipped : PhaseState.Pending);
             SetPhase("probe", PhaseState.Pending);
@@ -1099,12 +1185,13 @@ public sealed class FleetService
             // same as in the WPF client – but keyed on the v6 address, so it does not collide with a device
             // that simply has not been scanned yet.
             if (_devices.Any(d => d.Host == f.IpAddress || d.AltAddresses.Contains(f.IpAddress))) return;
-            // ⚠️ Not while a specific range is being scanned. Neighbour discovery is link-local: it reports
-            // what is on the local segment regardless of the target, so scanning a VPN range turned up the
-            // operator's own machines under their ISP prefix. An IPv6 address can never be inside an IPv4
-            // target, so there is nothing to test – the question is only whether the user asked for a
-            // particular range at all.
-            if (!string.IsNullOrWhiteSpace(_scanTarget)) return;
+            // ⚠️ Under a specific scan range, drop a v6-only neighbour ONLY if it is globally scoped. The
+            // range filter exists because neighbour discovery is segment-wide regardless of the target, so
+            // scanning a VPN range once turned up the operator's own machines under their ISP prefix – but
+            // those are GLOBAL addresses. Link-local (fe80::) is, by definition, on this very segment and is
+            // the bulk of what the ND cache holds; dropping it too meant that setting any range (the common
+            // case) hid almost every IPv6 neighbour – "IPv6 finds 2, old client found 17". Keep link-local.
+            if (!string.IsNullOrWhiteSpace(_scanTarget) && !IsLinkLocalV6(f.IpAddress)) return;
             owner = new Device { Host = f.IpAddress, MacAddress = f.MacAddress };
             _devices.Add(owner);
             // Being in the neighbour table is how this device was found at all – that counts as having
@@ -1117,6 +1204,11 @@ public sealed class FleetService
         if (owner.Host == f.IpAddress || owner.AltAddresses.Contains(f.IpAddress)) return;
         owner.AltAddresses.Add(f.IpAddress);
     }
+
+    /// <summary>True for an IPv6 link-local (fe80::/10) literal. Used to keep segment-local neighbours in
+    /// the list even under a scan range, while still dropping globally-scoped v6-only orphans.</summary>
+    private static bool IsLinkLocalV6(string ip) =>
+        IPAddress.TryParse(ip, out var a) && a.IsIPv6LinkLocal;
 
     /// <summary>The addresses the running scan was asked to cover, or null when it covers every local
     /// subnet. Cached per target string – parsing 65k addresses once per scan is fine, once per discovered
@@ -1165,6 +1257,30 @@ public sealed class FleetService
         return _targetSet.Contains(((uint)bytes[0] << 24) | ((uint)bytes[1] << 16) | ((uint)bytes[2] << 8) | bytes[3]);
     }
 
+    // The discovery methods that name a device by an announce/vendor protocol – as opposed to the subnet
+    // sweep's raw ICMP/ARP/TCP detection. A vendor protocol is the more meaningful origin, so it may upgrade
+    // a sweep source, but never the other way round.
+    private static readonly HashSet<string> VendorProtocols =
+        new(StringComparer.OrdinalIgnoreCase) { "MNDP", "ZON", "UBNT", "mDNS", "SSDP" };
+
+    // ExtraInfo keys that are INTERNAL flags surfaced elsewhere – the "Quelle" source column and the discovery
+    // badges. They must not leak into the details pane as raw, untranslated "Quelle: ARP" / "mDNS: yes" rows.
+    private static readonly HashSet<string> DetailsHiddenKeys =
+        new(StringComparer.Ordinal) { "Quelle", "MNDP", "ZON", "UBNT", "mDNS", "SSDP", "UniFi-Platform", "APC-App" };
+
+    /// <summary>Records the device's INITIAL data origin in <c>ExtraInfo["Quelle"]</c>, for the source column.
+    /// Set once and then only ever UPGRADED from a raw sweep method (ICMP/ARP/TCP) to a vendor protocol –
+    /// never overwritten by a later source. So a device a ZON handler announced keeps "ZON" even if a later
+    /// SSDP or TCP hit also sees it; a sweep-only device shows how the sweep found it.</summary>
+    private static void NoteSource(Device d, string source)
+    {
+        if (string.IsNullOrEmpty(source)) return;
+        if (!d.ExtraInfo.TryGetValue("Quelle", out var current) || current.Length == 0)
+            d.ExtraInfo["Quelle"] = source;
+        else if (!VendorProtocols.Contains(current) && VendorProtocols.Contains(source))
+            d.ExtraInfo["Quelle"] = source;   // upgrade a raw sweep method to the vendor protocol that named it
+    }
+
     private void Merge(DiscoveredDevice f)
     {
         // A MAC match is the stronger claim (it survives an address change), so it is preferred; the
@@ -1182,6 +1298,10 @@ public sealed class FleetService
 
         var d = existing ?? new Device();
         d.Host = f.IpAddress;
+        NoteSource(d, f.Source);
+        // A vendor discovery protocol the device answered → a capability badge in the services column. These
+        // announce on UDP/L2, so the TCP sweep never sees them; the flag drives the badge, exactly like SNMP.
+        if (f.Source is "MNDP" or "ZON" or "UBNT") d.ExtraInfo[f.Source] = "yes";
 
         // ⚠️ Keep the first MAC rather than the last. The subnet scan runs before the discovery sweeps, so
         // the one already stored came from ARP – the interface on this segment, which is exactly the MAC a
@@ -1197,13 +1317,26 @@ public sealed class FleetService
         if (f.Board.Length > 0)
         {
             d.ExtraInfo["Modell"] = f.Board;
-            // ⚠️ The source names the vendor: MNDP is only ever answered by MikroTik, ZON only by Zyxel.
-            // Labelling every board-carrying discovery "MikroTik" would re-tag every Zyxel switch.
-            d.ExtraInfo["Hersteller (Web)"] = f.Source == "ZON" ? "Zyxel" : "MikroTik";
+            // ⚠️ The source names the vendor: MNDP is only ever answered by MikroTik, ZON only by Zyxel,
+            // UBNT (UDP 10001) only by Ubiquiti. Labelling every board-carrying discovery "MikroTik" would
+            // re-tag every Zyxel switch and every UniFi device.
+            d.ExtraInfo["Hersteller (Web)"] = f.Source switch
+            {
+                "ZON" => "Zyxel",
+                "UBNT" => "Ubiquiti",
+                _ => "MikroTik",
+            };
         }
         else if (f.IsLikelyMikroTik && !d.ExtraInfo.ContainsKey("Hersteller (Web)"))
             d.ExtraInfo["Hersteller (Web)"] = "MikroTik";
         if (f.Version.Length > 0) d.ExtraInfo["Version"] = f.Version;
+        // UBNT discovery (UDP 10001) carries the board's platform code – the same key Ubiquiti's firmware API
+        // wants – so stash it under UniFi-Platform. That lets the Latest-firmware check resolve login-free once
+        // UBNT has answered (the user already has model + current version from discovery; the platform code is
+        // the last missing piece). ⚠️ Only when not already set: a later SSH login writes the authoritative
+        // board.shortname and must win over the discovery value. UBNT only – MNDP's Platform is a MikroTik arch.
+        if (f.Source == "UBNT" && f.Platform.Length > 0 && !d.ExtraInfo.ContainsKey("UniFi-Platform"))
+            d.ExtraInfo["UniFi-Platform"] = f.Platform;
         if (f.OpenPorts.Count > 0) d.OpenPorts = f.OpenPorts.Distinct().OrderBy(p => p).ToList();
         if (existing is null) _devices.Add(d);
 
@@ -1215,12 +1348,13 @@ public sealed class FleetService
         _seenAlive.Add(WebId(d));
     }
 
-    /// <summary>The four passive listeners, in flight.</summary>
+    /// <summary>The passive listeners, in flight.</summary>
     private sealed record Listeners(
         Task<List<DiscoveredDevice>> Mndp,
         Task<Dictionary<string, MdnsScanner.MdnsInfo>> Mdns,
         Task<Dictionary<string, SsdpScanner.SsdpInfo>> Ssdp,
         Task<List<DiscoveredDevice>> Zdp,
+        Task<List<DiscoveredDevice>> Ubnt,
         Task<List<DiscoveredDevice>> Ipv6);
 
     /// <summary>Opens the listening windows. These do not query anything device by device – each binds a
@@ -1234,8 +1368,8 @@ public sealed class FleetService
         var zdpHost = SelectedHostAddress();
         var ct = CancellationToken.None;
 
-        // All four listen in parallel for a fixed window, so they go Running together.
-        foreach (var p in new[] { "mndp", "mdns", "ssdp" }) SetPhase(p, PhaseState.Running);
+        // They listen in parallel for a fixed window, so they go Running together.
+        foreach (var p in new[] { "mndp", "mdns", "ssdp", "ubnt" }) SetPhase(p, PhaseState.Running);
         if (ZdpScanner.IsAvailable()) SetPhase("zon", PhaseState.Running);
         Changed?.Invoke();
 
@@ -1248,11 +1382,25 @@ public sealed class FleetService
             ZdpScanner.IsAvailable()
                 ? Safe(() => ZdpScanner.DiscoverAsync(TimeSpan.FromSeconds(4), null, ct, zdpHost), new List<DiscoveredDevice>())
                 : Task.FromResult(new List<DiscoveredDevice>()),
+            // Ubiquiti Device Discovery (UDP 10001) – the login-free announce for UniFi gear, same shape as
+            // MNDP/ZON. Best-effort like the rest; a failing socket just yields an empty list.
+            // ⚠️ 14 s, much longer than the other passive windows – and this is MEASURED, not guessed. A UniFi
+            // device answers a discovery broadcast at most about ONCE PER ~10 s, with the first reply landing
+            // anywhere in that cycle (live capture: a switch first replied at ~1 s, its AP only at ~6.5 s).
+            // A 6 s window therefore caught whichever device was due and missed the other ~half the time – the
+            // "usually only 1 of 2" bug. 14 s reliably captures at least one reply from every device. Probing
+            // faster does NOT help (the device caps its REPLIES, not our probes); only the window length does.
+            // The subnet sweep of a /21 runs longer than this, so it rarely extends the overall scan.
+            Safe(() => UbntDiscoveryScanner.DiscoverAsync(TimeSpan.FromSeconds(14), null, ct, zdpHost), new List<DiscoveredDevice>()),
             // ⚠️ IPv6 belongs here, not only in the WPF client. It used to run solely in that client's own
             // discovery code, so every consumer of this service – the Avalonia client and the headless host –
             // showed a permanently empty IPv6 view. Nothing was wrong with those views; the addresses were
             // never collected in the first place.
-            Safe(() => Ipv6Discovery.DiscoverAsync(null, ct), new List<DiscoveredDevice>()));
+            // ⚠️ Use the WINDOWED collector (~15 s), NOT the single-pass DiscoverAsync: the ND cache fills only
+            // as neighbours answer the ff02::1 pokes, so one immediate read caught just 1–2 of them while the
+            // WPF client (continuous, 15 s) saw the whole link ("IPv6 finds 2, old client found 17"). 15 s
+            // matches WPF and barely exceeds the 14 s UBNT window, so it rarely extends the overall scan.
+            Safe(() => Ipv6Discovery.DiscoverForAsync(TimeSpan.FromSeconds(15), ct), new List<DiscoveredDevice>()));
 
         // Each protocol reports Done the moment its own listening window closes – not in one block when
         // all of them have. The windows overlap the sweep, so by the time the sweep ends most are already
@@ -1260,6 +1408,7 @@ public sealed class FleetService
         MarkDoneWhenFinished("mndp", listeners.Mndp);
         MarkDoneWhenFinished("mdns", listeners.Mdns);
         MarkDoneWhenFinished("ssdp", listeners.Ssdp);
+        MarkDoneWhenFinished("ubnt", listeners.Ubnt);
         if (ZdpScanner.IsAvailable()) MarkDoneWhenFinished("zon", listeners.Zdp);
         return listeners;
     }
@@ -1280,16 +1429,17 @@ public sealed class FleetService
     /// early changes when they <i>listen</i>, not when the list settles.</para></summary>
     private async Task ApplyListenersAsync(Listeners l, CancellationToken ct)
     {
-        await Task.WhenAll(l.Mndp, l.Mdns, l.Ssdp, l.Zdp, l.Ipv6).ConfigureAwait(false);
+        await Task.WhenAll(l.Mndp, l.Mdns, l.Ssdp, l.Zdp, l.Ubnt, l.Ipv6).ConfigureAwait(false);
 
         // Belt and braces – MarkDoneWhenFinished has normally ticked these off individually already.
-        foreach (var p in new[] { "mndp", "mdns", "ssdp" }) SetPhase(p, PhaseState.Done, 1);
+        foreach (var p in new[] { "mndp", "mdns", "ssdp", "ubnt" }) SetPhase(p, PhaseState.Done, 1);
         if (ZdpScanner.IsAvailable()) SetPhase("zon", PhaseState.Done, 1);
 
         lock (_lock)
         {
             foreach (var f in l.Mndp.Result) Merge(f);
             foreach (var f in l.Zdp.Result) Merge(f);
+            foreach (var f in l.Ubnt.Result) Merge(f);
             foreach (var f in l.Ipv6.Result) MergeIpv6(f);
             foreach (var d in _devices)
             {
@@ -1461,7 +1611,15 @@ public sealed class FleetService
             await SnmpProbe.QueryAsync(dial, ct, community).ConfigureAwait(false) is { } snmp)
         {
             if (snmp.SysName.Length > 0 && name.Length == 0) name = snmp.SysName;
-            if (snmp.SysDescr.Length > 0 && model.Length == 0) model = snmp.SysDescr;
+            if (snmp.SysDescr.Length > 0 && model.Length == 0)
+            {
+                // Concise model + serial + vendor from a nameplate sysDescr (APC UPS card); raw string otherwise.
+                var descr = SnmpDescr.Parse(snmp.SysDescr);
+                // A secondary nameplate (Brother NC- print server) must not beat the web title as the model.
+                if (!(descr.PreferWebTitle && title.Length > 0)) model = descr.Model;
+                if (serial.Length == 0 && descr.Serial.Length > 0) serial = descr.Serial;
+                if (vendor.Length == 0 && descr.Vendor.Length > 0) vendor = descr.Vendor;
+            }
         }
 
         return new Ipv6Facts(true, name, os, model, vendor, serial, title,
@@ -1684,7 +1842,33 @@ public sealed class FleetService
                 lock (_lock)
                 {
                     if (s.SysName.Length > 0 && d.Name.Length == 0) d.Name = s.SysName;
-                    if (s.SysDescr.Length > 0 && !d.ExtraInfo.ContainsKey("Modell")) d.ExtraInfo["Modell"] = s.SysDescr;
+                    if (s.SysDescr.Length > 0 && !d.ExtraInfo.ContainsKey("Modell"))
+                    {
+                        // Some devices pack a whole nameplate into sysDescr (an APC UPS card, a Brother print
+                        // server). Show the concise model in the column and move the rest into the details. An
+                        // unrecognised sysDescr falls through as the model verbatim (unchanged).
+                        var descr = SnmpDescr.Parse(s.SysDescr);
+                        if (descr.Serial.Length > 0 && d.SerialNumber.Length == 0) d.SerialNumber = descr.Serial;
+                        // Vendor hint keeps the kind classification (UPS / printer) firing after the model is
+                        // shortened – the kind comes from the vendor, not the model text; OUI/web still wins if
+                        // it already named one.
+                        if (descr.Vendor.Length > 0 && !d.ExtraInfo.ContainsKey("Hersteller (Web)"))
+                            d.ExtraInfo["Hersteller (Web)"] = descr.Vendor;
+                        foreach (var (k, v) in descr.Extras)
+                            if (!d.ExtraInfo.ContainsKey(k)) d.ExtraInfo[k] = v;
+
+                        // Model: normally the concise model. But a SECONDARY nameplate (Brother's NC- print
+                        // server) must not outrank the web title, which is the real device – the web probe ran
+                        // earlier in this pass, so its title is already here. Then the nameplate goes to a detail.
+                        var webTitle = d.ExtraInfo.TryGetValue("Web-Titel", out var wt) ? wt.Trim() : "";
+                        if (descr.PreferWebTitle && webTitle.Length > 0)
+                        {
+                            if (descr.Model.Length > 0 && descr.ModelDetailKey.Length > 0 &&
+                                !d.ExtraInfo.ContainsKey(descr.ModelDetailKey))
+                                d.ExtraInfo[descr.ModelDetailKey] = descr.Model;
+                        }
+                        else d.ExtraInfo["Modell"] = descr.Model;
+                    }
 
                     // Which versions answered → the SNMP badge(s). ServiceBadges reads this key (SNMP has no
                     // TCP port, so it can't come from the port scan the way http/ssh badges do).
@@ -1697,9 +1881,9 @@ public sealed class FleetService
 
         string encrypted, user;
         int sshPort;
-        bool isZyxelSwitch, isTpLink, isZyxelFirewall;
+        bool isZyxelSwitch, isTpLink, isZyxelFirewall, isUbiquiti;
         Device probeClone;
-        lock (_lock) { encrypted = d.EncryptedPassword; user = d.Username.Trim(); sshPort = d.SshPort; isZyxelSwitch = IsZyxelSwitch(d); isTpLink = IsTpLink(d); isZyxelFirewall = IsZyxelFirewall(d); probeClone = d.Clone(); }
+        lock (_lock) { encrypted = d.EncryptedPassword; user = d.Username.Trim(); sshPort = d.SshPort; isZyxelSwitch = IsZyxelSwitch(d); isTpLink = IsTpLink(d); isZyxelFirewall = IsZyxelFirewall(d); isUbiquiti = IsUbiquiti(d); probeClone = d.Clone(); }
         if (ports.Contains(22) && encrypted.Length > 0 && user.Length > 0)
         {
             var password = CredentialProtector.Unprotect(encrypted);
@@ -1800,6 +1984,37 @@ public sealed class FleetService
                                 d.ExtraInfo["WLAN-SSIDs"] = string.Join(", ", ssids.Select(s => s.Ssid).Distinct());
                     }
                 }
+                else if (isUbiquiti)
+                {
+                    // UniFi over SSH: `mca-cli-op info` (verified on a real USW-Lite-16-PoE, UniFi 7.0.50 –
+                    // a bare `info` is "not found" there, hence the dedicated connector). Model + firmware +
+                    // hostname name the device and let the classifier split UniFi into switch/AP/gateway
+                    // (UbiquitiKind). ⚠️ Set Hersteller so the vendor gate keeps firing even if the OUI ever
+                    // reads as the ODM; NOT Board (that is the RouterOS marker, and would relabel it MikroTik).
+                    var uInfo = await UnifiSsh.GetInfoAsync(host, sshPort, user, password, ct).ConfigureAwait(false);
+                    if (uInfo is { } ui)
+                        lock (_lock)
+                        {
+                            d.ExtraInfo["Hersteller (Web)"] = "Ubiquiti";
+                            if (ui.Model.Length > 0) d.ExtraInfo["Modell"] = ui.Model;
+                            if (ui.Version.Length > 0) d.ExtraInfo["Firmware"] = ui.Version;
+                            if (ui.Hostname.Length > 0 && d.Name.Length == 0) d.Name = ui.Hostname;
+                            if (ui.Serial.Length > 0 && d.SerialNumber.Length == 0) d.SerialNumber = ui.Serial;
+                            // The board short-name is the firmware API's platform key (drives the Latest lookup).
+                            // Internal – hidden from the details pane (see DetailsHiddenKeys).
+                            if (ui.Platform.Length > 0) d.ExtraInfo["UniFi-Platform"] = ui.Platform;
+                            // Adoption + controller for the details pane. ✓/✗ is language-neutral (the key is
+                            // localised). The inform URL is only meaningful once ADOPTED – on a factory device
+                            // it is the default "http://unifi:8080/inform" placeholder, so it is not surfaced.
+                            if (ui.Adopted is bool ad)
+                            {
+                                d.ExtraInfo["Adoptiert"] = ad ? "✓" : "✗";
+                                if (ad && ui.InformUrl.Length > 0) d.ExtraInfo["Inform-URL"] = ui.InformUrl;
+                                else d.ExtraInfo.Remove("Inform-URL");
+                            }
+                            d.ExtraInfo["OS"] = "UniFi";
+                        }
+                }
                 else if (await SshInfoProbe.QueryAsync(host, sshPort, user, password, hint, ct).ConfigureAwait(false) is { } ssh)
                     lock (_lock)
                     {
@@ -1847,7 +2062,13 @@ public sealed class FleetService
         {
             id = WebId(d);
             var eligible = (IsMikroTik(d) && d.EncryptedPassword.Length > 0)
-                        || ((IsTpLink(d) || IsZyxelSwitch(d) || IsZyxelFirewall(d)) && Model(d).Length > 0);
+                        || ((IsTpLink(d) || IsZyxelSwitch(d) || IsZyxelFirewall(d)) && Model(d).Length > 0)
+                        // UniFi: no version scrape and no install, but the Latest cell still offers the
+                        // firmware-page link once the model is known.
+                        || (IsUbiquiti(d) && Model(d).Length > 0)
+                        // APC: needs no login – the SNMP nameplate gives the application code that drives the
+                        // download-API lookup (curl). No code ⇒ nothing to look up, so the page link only.
+                        || (IsApc(d) && d.ExtraInfo.ContainsKey("APC-App"));
             if (!eligible) return;
             if (_lastLatestCheck.TryGetValue(id, out var last))
             {
@@ -2226,6 +2447,31 @@ public sealed class FleetService
                 var tp = await TpLinkSshConnector.GetFdbAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
                 raw = tp?.Select(kv => (kv.Key, kv.Value)).ToList();
             }
+            else if (IsUbiquiti(d) && password.Length > 0)
+            {
+                // UniFi switch: the forwarding table from /proc/switch/mac_table over SSH. UniFi keeps SNMP off
+                // by default, so without this a UniFi switch contributed nothing and everything behind it hung
+                // off "path unknown".
+                var ub = await UnifiSsh.GetFdbAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
+                raw = ub?.Select(kv => (kv.Key, kv.Value)).ToList();
+                // A UniFi AP has no switch table, so the above is empty for it. Its wireless clients hang off it
+                // by SSID instead – read the associated stations so a device joined to one of the AP's WLANs
+                // shows under the AP (the SSID becomes the port label). Only when the switch table was empty, to
+                // spare the extra SSH round-trip on actual switches.
+                if (raw is null || raw.Count == 0)
+                {
+                    var wc = await UnifiSsh.GetWifiClientsAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
+                    if (wc is { Count: > 0 })
+                    {
+                        raw = wc.Select(kv => (kv.Key, kv.Value)).ToList();
+                        // Register each SSID as a WLAN "port" (its name IS the SSID) so the topology treats it as
+                        // a wireless port: it gets its own node from the first client, and the port label shows
+                        // the SSID without doubling it (see PhysicalTopology.PortLabel).
+                        wifi = wc.Values.Distinct(StringComparer.OrdinalIgnoreCase)
+                                        .ToDictionary(s => s, s => s, StringComparer.OrdinalIgnoreCase);
+                    }
+                }
+            }
             // ⚠️ A ZLD firewall is deliberately NOT an FDB source. Its "show arp-table" is L3 adjacency ("this
             // host is on my lan1 L2 segment"), not L2 forwarding position ("this host is physically behind
             // me"). Fed into the physical map it does real harm, MEASURED against a live network: every host
@@ -2544,17 +2790,18 @@ public sealed class FleetService
         // the history chart too, each read through its own connector below.
         List<Device> targets;
         lock (_lock) targets = (only ?? _devices)
-            .Where(d => d.EncryptedPassword.Length > 0 && (IsMikroTik(d) || IsZyxelSwitch(d) || IsTpLink(d) || IsZyxelFirewall(d)))
+            .Where(d => d.EncryptedPassword.Length > 0 &&
+                        (IsMikroTik(d) || IsZyxelSwitch(d) || IsTpLink(d) || IsZyxelFirewall(d) || IsUbiquiti(d)))
             .ToList();
         if (targets.Count == 0) return;
 
         foreach (var d in targets)
         {
-            string host, user, encrypted; int sshPort; bool mt, zy, tp, fw;
+            string host, user, encrypted; int sshPort; bool mt, zy, tp, fw, ub;
             lock (_lock)
             {
                 host = d.Host; user = d.Username; encrypted = d.EncryptedPassword; sshPort = d.SshPort;
-                mt = IsMikroTik(d); zy = IsZyxelSwitch(d); tp = IsTpLink(d); fw = IsZyxelFirewall(d);
+                mt = IsMikroTik(d); zy = IsZyxelSwitch(d); tp = IsTpLink(d); fw = IsZyxelFirewall(d); ub = IsUbiquiti(d);
             }
 
             var password = CredentialProtector.Unprotect(encrypted);
@@ -2567,6 +2814,7 @@ public sealed class FleetService
                     : zy ? await ZyxelSsh.GetResourceAsync(host, sshPort, user, password).ConfigureAwait(false)
                     : tp ? await TpLinkSshConnector.GetResourceAsync(host, sshPort, user, password).ConfigureAwait(false)
                     : fw ? await ZldSsh.GetResourceAsync(host, sshPort, user, password).ConfigureAwait(false)
+                    : ub ? await UnifiSsh.GetResourceAsync(host, sshPort, user, password).ConfigureAwait(false)
                     : null;
             }
             catch { /* unreachable / auth changed – keep the previous reading */ }
@@ -2642,6 +2890,20 @@ public sealed class FleetService
 
     public static string WebId(Device d) => d.MacAddress.Length > 0 ? d.MacAddress : d.Host;
     public static string Display(Device d) => d.Name.Length > 0 ? d.Name : d.Host;
+
+    /// <summary>The username to pre-fill a login dialog with when a device has no stored login yet. The
+    /// near-universal factory account is "admin"; the exceptions are the vendors that ship a different one
+    /// (Ubiquiti UniFi → "ubnt"). Always editable in the dialog, for the rare custom account (an adopted UniFi
+    /// device, a hardened switch). Replaces the old global "default username" setting: a per-vendor guess is
+    /// right far more often than one fixed string.</summary>
+    public static string DefaultUsername(string vendor)
+    {
+        var v = vendor ?? "";
+        if (v.Contains("Ubiquiti", StringComparison.OrdinalIgnoreCase) ||
+            v.Contains("UniFi", StringComparison.OrdinalIgnoreCase))
+            return "ubnt";
+        return "admin";
+    }
 
     /// <summary>The vendor of the device itself.
     ///
@@ -2742,6 +3004,25 @@ public sealed class FleetService
         return string.Join(' ', m.Split('_').Select(t => t.ToUpperInvariant()));
     }
     public static bool IsMikroTik(Device d) => Vendor(d) == "MikroTik";
+
+    /// <summary>True for an APC / Schneider Network Management Card (a UPS management card). Vendor-based, so it
+    /// holds whether the vendor came from the OUI, the SNMP sysDescr or the classifier.</summary>
+    public static bool IsApc(Device d)
+    {
+        var v = Vendor(d);
+        return v.Contains("APC", StringComparison.OrdinalIgnoreCase)
+            || v.Contains("American Power", StringComparison.OrdinalIgnoreCase)
+            || v.Contains("Schneider", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>True for a Ubiquiti <b>UniFi</b> device (switch / AP / gateway). Vendor-only, NOT kind-gated:
+    /// before the SSH read there is no model, so the kind is still Unknown – gating on it would block the very
+    /// read that resolves it. The connector then names the box (<c>mca-cli-op info</c>) and the classifier
+    /// splits it into switch/AP/gateway (<see cref="DeviceClassifier.UbiquitiKind"/>).</summary>
+    public static bool IsUbiquiti(Device d) =>
+        Vendor(d).Contains("Ubiquiti", StringComparison.OrdinalIgnoreCase)
+        || Vendor(d).Contains("UniFi", StringComparison.OrdinalIgnoreCase);
+
     public static bool IsZyxelSwitch(Device d) =>
         Vendor(d).Contains("Zyxel", StringComparison.OrdinalIgnoreCase) && Kind(d) == DeviceKind.Switch;
 
@@ -2790,7 +3071,7 @@ public sealed class FleetService
     }
 
     public static bool CanUseCredentials(Device d) =>
-        IsMikroTik(d) || IsTpLink(d) ||
+        IsMikroTik(d) || IsTpLink(d) || IsUbiquiti(d) ||
         // Every Zyxel, not just the switches: the credentials dialog is also how a user reaches the
         // built-in terminal, and the per-OS connectors decide for themselves what they send.
         Vendor(d).Contains("Zyxel", StringComparison.OrdinalIgnoreCase);
@@ -2892,10 +3173,43 @@ public sealed class FleetService
     /// (Lived in the WPF view model until now, so the other clients never showed it.)</para></summary>
     private string KindWithVm(Device d)
     {
-        var kind = KindText(Kind(d));
+        // "Credentials required": a login-capable network vendor (MikroTik/Zyxel/TP-Link/Ubiquiti) whose type
+        // we can't trust without a login, and that has no stored login. Two cases:
+        //   (a) genuinely Unknown (a Ubiquiti with no model – its OUI guess was removed); or
+        //   (b) only a bare-OUI vendor guess (Zyxel/TP-Link default to "Switch", MikroTik to "Router") with NO
+        //       real model behind it. Zyxel and TP-Link ship at least as many APs as switches, so that guess is
+        //       a coin flip – measured by the user, not assumed.
+        // A login reads the real model over SSH and the type resolves, so say that instead of asserting a wrong
+        // type. ⚠️ Display ONLY: the classifier still returns Switch, so IsZyxelSwitch (→ backup / topology) and
+        // the OK-BACKUPGATE invariant are untouched – and those need a login anyway, which this is asking for.
+        var k = Kind(d);
+        var noLogin = d.EncryptedPassword.Length == 0 && CanUseCredentials(d);
+        // ⚠️ Ubiquiti is special: its passive discovery (UBNT/UDP-10001, SSDP) DOES yield a model, so it would
+        // pass HasIdentifyingModel and show "AP"/"Switch". But on UniFi that identity buys nothing – monitoring,
+        // backup, topology and logs all need a login – and the UBNT probe is intermittent, so the type would
+        // flicker between "AP" and the hint across scans. Keep the actionable "credentials required" until a
+        // login exists; the discovered model still shows in the Model column and details.
+        if (noLogin && IsUbiquiti(d))
+            return T("Dev_CredsRequired");
+        if (noLogin
+            && (k == DeviceKind.Unknown
+                || (k is DeviceKind.Switch or DeviceKind.AccessPoint or DeviceKind.Router && !HasIdentifyingModel(d))))
+            return T("Dev_CredsRequired");
+
+        var kind = KindText(k);
         if (Virtualization.Hypervisor(d.MacAddress).Length == 0) return kind;
         return kind.Length > 0 ? $"{kind} (VM)" : "VM";
     }
+
+    /// <summary>True when the device carries a real model that identifies it – from discovery (ZON/MNDP/mDNS)
+    /// or a login – as opposed to nothing but a bare OUI. ⚠️ The web title is deliberately EXCLUDED: for the
+    /// switch vendors it is a JavaScript shell or a generic login page, not a model, so trusting it would
+    /// defeat the "credentials required" hint for exactly the devices that need it.</summary>
+    private static bool HasIdentifyingModel(Device d) =>
+        Board(d).Length > 0
+        || (d.ExtraInfo.TryGetValue("Modell", out var mo) && mo.Trim().Length > 0)
+        || (d.ExtraInfo.TryGetValue("Produkt", out var pr) && pr.Trim().Length > 0)
+        || (d.ExtraInfo.TryGetValue("mDNS-Modell", out var md) && md.Trim().Length > 0);
 
     private DeviceSnapshot ToSnapshot(Device d)
     {
@@ -2925,9 +3239,10 @@ public sealed class FleetService
         // ⚠️ The ExtraInfo keys are German (they double as classifier lookup keys), so localise them here on
         // the way to the details pane – otherwise "Hersteller/Modell/Bauform/Produkt" show up even when the
         // UI language is English. Values are device data and stay as-is.
-        d.ExtraInfo.Select(kv => new KeyValuePair<string, string>(InfoKeyLabels.Localize(kv.Key), kv.Value)).ToList(),
+        d.ExtraInfo.Where(kv => !DetailsHiddenKeys.Contains(kv.Key))
+                   .Select(kv => new KeyValuePair<string, string>(InfoKeyLabels.Localize(kv.Key), kv.Value)).ToList(),
         v6.Distinct().ToList(),
-        IsMikroTik(d) || IsZyxelSwitch(d) || IsTpLink(d) || IsZyxelFirewall(d), IsMikroTik(d), IsMikroTik(d), CanReadLogs(d),
+        IsMikroTik(d) || IsZyxelSwitch(d) || IsTpLink(d) || IsZyxelFirewall(d) || IsUbiquiti(d), IsMikroTik(d), IsMikroTik(d), CanReadLogs(d),
         _loginFailure.TryGetValue(WebId(d), out var le) ? le : "",
         CanUseCredentials(d),
         d.SerialNumber,
@@ -2960,7 +3275,8 @@ public sealed class FleetService
         latestVersion, UpdateOf(d)?.InstalledDate ?? "",
         UpdateOf(d)?.LatestDate ?? "", UpdateOf(d)?.Available ?? false,
         latestUrl, versionUrl,
-        Ipv6PortsOf(d), Ipv6MetaOf(d));
+        Ipv6PortsOf(d), Ipv6MetaOf(d),
+        d.ExtraInfo.TryGetValue("Quelle", out var quelle) ? quelle : "");
     }
 
     /// <summary>The interface index to use as the IPv6 zone for link-local addresses – the adapter the scan
@@ -3066,12 +3382,16 @@ public sealed class FleetService
 
     private static void ApplyMdns(Device d, MdnsScanner.MdnsInfo m)
     {
+        NoteSource(d, "mDNS");
+        d.ExtraInfo["mDNS"] = "yes";       // announced over mDNS → a discovery badge in the services column
         if (m.HostName.Length > 0 && d.Name.Length == 0) d.Name = m.HostName;
         if (m.Model.Length > 0) d.ExtraInfo["mDNS-Modell"] = m.Model;
     }
 
     private static void ApplySsdp(Device d, SsdpScanner.SsdpInfo s)
     {
+        NoteSource(d, "SSDP");
+        d.ExtraInfo["SSDP"] = "yes";       // announced over UPnP/SSDP → a discovery badge in the services column
         if (s.FriendlyName.Length > 0 && !LooksLikeUuid(s.FriendlyName) && d.Name.Length == 0) d.Name = s.FriendlyName;
         if (s.Manufacturer.Length > 0 && !d.ExtraInfo.ContainsKey("Hersteller (Web)")) d.ExtraInfo["Hersteller (Web)"] = s.Manufacturer;
         if (s.ModelName.Length > 0 && !d.ExtraInfo.ContainsKey("Modell")) d.ExtraInfo["Modell"] = s.ModelName;

@@ -259,7 +259,7 @@ public static class MdnsScanner
 
     /// <summary>Reduces a record name to the service type it belongs to. A real type is exactly two
     /// labels – "_airplay._tcp" – so both the bare PTR owner ("_airplay._tcp") and a service instance
-    /// ("Bett-Pascal._airplay._tcp") land on the same thing, and the meta-query
+    /// ("Living Room._airplay._tcp") land on the same thing, and the meta-query
     /// ("_services._dns-sd._udp") and stray fragments are dropped rather than logged as services.</summary>
     private static void AddService(Host host, string name)
     {

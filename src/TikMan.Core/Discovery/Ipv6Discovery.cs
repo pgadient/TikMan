@@ -57,6 +57,35 @@ public static partial class Ipv6Discovery
         return seen.Count;
     }
 
+    /// <summary>Collects IPv6 neighbours over a window, repeating poke + read, and RETURNS the full set.
+    /// Same gradual-fill loop as <see cref="DiscoverContinuousAsync"/> (the ND cache fills only as neighbours
+    /// answer the ff02::1 solicitations, so a single pass finds almost nothing), but it accumulates a list
+    /// for batch consumers like <c>FleetService</c> that fold the result in once the window closes, rather
+    /// than streaming via <see cref="IProgress{T}"/>.
+    /// <para>⚠️ FleetService previously called the single-pass <see cref="DiscoverAsync"/> here, which pokes
+    /// once and reads the cache immediately – so the Avalonia client and the headless host saw only the one
+    /// or two neighbours that happened to be cached already, while the WPF client (continuous, ~15 s) saw the
+    /// whole link. That is the "IPv6 finds 2, the old client found 17" regression; this is the fix.</para></summary>
+    public static async Task<List<DiscoveredDevice>> DiscoverForAsync(TimeSpan duration, CancellationToken ct = default)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var results = new List<DiscoveredDevice>();
+        long endTick = Environment.TickCount64 + (long)duration.TotalMilliseconds;
+        while (true)
+        {
+            await PokeAllNodesAsync(ct).ConfigureAwait(false);
+            foreach (var (ip, mac) in await ReadNeighboursAsync(ct).ConfigureAwait(false))
+            {
+                if (!seen.Add(ip)) continue;
+                results.Add(new DiscoveredDevice { IpAddress = ip, MacAddress = mac, Source = "ND" });
+            }
+            if (ct.IsCancellationRequested || Environment.TickCount64 >= endTick) break;
+            try { await Task.Delay(1200, ct).ConfigureAwait(false); }
+            catch (OperationCanceledException) { break; }
+        }
+        return results;
+    }
+
     /// <summary>Pings ff02::1 on every up IPv6 interface so neighbours reply and get cached.</summary>
     private static async Task PokeAllNodesAsync(CancellationToken ct)
     {
@@ -85,6 +114,19 @@ public static partial class Ipv6Discovery
         OperatingSystem.IsWindows() ? ("netsh", "interface ipv6 show neighbors")
         : OperatingSystem.IsMacOS() ? (ResolveTool("ndp", "/usr/sbin/ndp"), "-an")
         : (ResolveTool("ip", "/sbin/ip", "/usr/sbin/ip", "/bin/ip", "/usr/bin/ip"), "-6 neigh show");
+
+    /// <summary>True for the all-zero MAC (any separator). netsh lists a neighbour it knows about but has
+    /// not resolved yet (state "Unreachable"/"Incomplete") with a <c>00-00-00-00-00-00</c> link-layer
+    /// address – a placeholder, not a real one. ⚠️ Accepting it latched the neighbour into the seen-set on
+    /// the first read, so the real MAC that a later poke would resolve never replaced it: almost every
+    /// neighbour came back as the zero MAC, matched no device, and (with a scan range set) got dropped as a
+    /// v6-only orphan. That is the "IPv6 finds 2, old client found 17" bug. Skip it so a later pass wins.</summary>
+    private static bool IsUnresolvedMac(string mac)
+    {
+        foreach (var c in mac)
+            if (c is not ('0' or '-' or ':')) return false;
+        return true;
+    }
 
     /// <summary>First existing absolute candidate, else the bare name (found via PATH).</summary>
     private static string ResolveTool(string bareName, params string[] candidates)
@@ -128,7 +170,7 @@ public static partial class Ipv6Discovery
                     if (ip is null && IPAddress.TryParse(t, out var addr) &&
                         addr.AddressFamily == AddressFamily.InterNetworkV6 && !addr.IsIPv6Multicast)
                         ip = addr.ToString();
-                    else if (mac is null && MacRegex().IsMatch(token))
+                    else if (mac is null && MacRegex().IsMatch(token) && !IsUnresolvedMac(token))
                         mac = token.ToUpperInvariant().Replace('-', ':');
                 }
                 if (ip is not null && mac is not null && seen.Add(ip))

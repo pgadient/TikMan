@@ -24,7 +24,7 @@ public partial class SettingsWindow : Window
     // instance the fleet reads from (reflection keeps the two lists – XAML + here – from drifting).
     private static readonly string[] Fields =
     {
-        "DefaultUsername", "Language", "PersistDeviceList", "NoInitialScan",
+        "Language", "PersistDeviceList", "NoInitialScan",
         "CheckForUpdates", "ExpandRowsByDefault",
         "ShowListInfo", "ShowVncNotice", "ShowContactButtons",
         "SnmpCommunity", "PingTimeoutMs", "PingRetries", "PollIntervalSeconds",

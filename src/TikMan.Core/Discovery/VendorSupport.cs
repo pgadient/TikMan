@@ -158,12 +158,41 @@ public static class VendorSupport
             SupportLevel.Planned, SupportLevel.Planned, SupportLevel.Planned, SupportLevel.No,
             SupportLevel.Partial, SupportLevel.Planned, WorkInProgress: true),
 
-        // Nothing implemented yet – listed so the table says "planned and being worked on" rather than
-        // leaving the vendor out and implying it was never considered. Hence Planned throughout: a row of
-        // grey "No" would have said the opposite of what the WIP badge beside it says.
-        new VendorSupportRow("Ubiquiti", "UniFi devices",
+        // ⚠️ Identified WITHOUT a login two ways: the subnet sweep finds it (it pings) and the Ubiquiti OUI
+        // names the maker, AND the UDP-10001 discovery – measured directly against a real USW-Lite-16-PoE
+        // (UniFi 7.0.50), mcad DOES answer the classic broadcast probe (a 215-byte TLV with MAC + model +
+        // uptime), just intermittently (it rate-limits, so the UBNT source/badge show up on some scans, not all).
+        // With a login, `mca-cli-op info` over SSH gives model + firmware + hostname (a bare `info` is "not
+        // found" there) and /proc/ubnthal/system.info gives the serial – which name the box and let the
+        // classifier split UniFi into switch / AP / gateway (UbiquitiKind). Config backup IS available: the
+        // device's running config is /tmp/system.cfg (⚠️ carries users.N.password – never logged). Monitoring
+        // reads CPU (load average – the SoC pegs /proc/stat), memory and uptime over SSH. Full backup is
+        // NotAvailable (no binary artefact – the .cfg IS the whole backup). Updates: No install by design, but
+        // the Latest cell shows the newest firmware + release date (Ubiquiti's JSON firmware API, keyed by the
+        // board short-name = the API platform code) and links to the per-model download page. Logs: Yes –
+        // /var/log/messages (BSD syslog; no logread on UniFi). Topology: Yes – the switch forwarding table from
+        // /proc/switch/mac_table (MAC → port) feeds the physical map, same as the other switch vendors.
+        new VendorSupportRow("Ubiquiti · UniFi", "UniFi switches / APs / gateways\n(USW-Lite-16-PoE + UAP-HD verified)",
+            SupportLevel.NotAvailable, SupportLevel.Yes, SupportLevel.No,
+            SupportLevel.Yes, SupportLevel.Yes, SupportLevel.NotAvailable, SupportLevel.No,
+            SupportLevel.Yes, SupportLevel.Yes),
+
+        // ⚠️ Roadmap entries – detected today (OUI + classifier), but no management connector yet, so every
+        // capability is Planned and the row is flagged work-in-progress. Kept in the matrix on purpose: it is
+        // the honest "we see these, support is coming" signal rather than pretending they don't exist.
+        new VendorSupportRow("Aruba (HPE)", "Switches (CX / OS-CX) and APs\n(discovery only – support planned)",
             SupportLevel.Planned, SupportLevel.Planned, SupportLevel.Planned,
-            SupportLevel.Planned, SupportLevel.Planned, SupportLevel.Planned, SupportLevel.No,
+            SupportLevel.Planned, SupportLevel.Planned, SupportLevel.Planned, SupportLevel.Planned,
+            SupportLevel.Planned, SupportLevel.Planned, WorkInProgress: true),
+
+        new VendorSupportRow("Netgear", "Managed / smart switches\n(discovery only – support planned)",
+            SupportLevel.Planned, SupportLevel.Planned, SupportLevel.Planned,
+            SupportLevel.Planned, SupportLevel.Planned, SupportLevel.Planned, SupportLevel.Planned,
+            SupportLevel.Planned, SupportLevel.Planned, WorkInProgress: true),
+
+        new VendorSupportRow("Cisco", "Switches (Catalyst / IOS, Meraki)\n(discovery only – support planned)",
+            SupportLevel.Planned, SupportLevel.Planned, SupportLevel.Planned,
+            SupportLevel.Planned, SupportLevel.Planned, SupportLevel.Planned, SupportLevel.Planned,
             SupportLevel.Planned, SupportLevel.Planned, WorkInProgress: true),
     };
 

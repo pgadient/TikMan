@@ -144,7 +144,7 @@ public class DeviceViewModel : INotifyPropertyChanged
         if (mModel.Length > 0 && Board.Length == 0 && !Model.ExtraInfo.ContainsKey("Produkt")
             && !Model.ExtraInfo.ContainsKey("Modell"))
         { Model.ExtraInfo["Modell"] = mModel; changed = true; }
-        // A HomePod answers to "Bett-Pascal", but a TV or a set-top box answers to a bare UUID – which
+        // A HomePod answers to "Living Room", but a TV or a set-top box answers to a bare UUID – which
         // is worse than no name at all, so it doesn't get to be one.
         if (mdns.HostName.Length > 0 && Name.Length == 0 && !LooksLikeUuid(mdns.HostName))
         { Name = mdns.HostName; changed = true; }
