@@ -37,10 +37,11 @@ public static class UnifiSsh
         TimeSpan? Uptime, bool? Adopted, string Serial, string Platform, string InformUrl);
 
     private static ConnectionInfo Info(string host, int port, string user, string password) =>
-        // UniFi runs a standard OpenSSH server – no Zyxel encrypt-then-MAC workaround needed.
-        new(host, port is > 0 and <= 65535 ? port : 22, user,
-            new PasswordAuthenticationMethod(user, password))
-        { Timeout = TimeSpan.FromSeconds(10) };
+        // UniFi runs a standard OpenSSH server – no Zyxel encrypt-then-MAC workaround needed. But UniFi OS
+        // consoles (UDM/UDR) accept only keyboard-interactive auth, not the plain password method, so this
+        // must offer both (see SshCompat.PasswordOrInteractive) or SSH.NET's password-only login fails where
+        // an interactive Tera Term/PuTTY login succeeds.
+        SshCompat.PasswordOrInteractive(host, port, user, password, TimeSpan.FromSeconds(10));
 
     /// <summary>Model + firmware + MAC + hostname + uptime + adopted-state, or null when the device could not
     /// be read (offline, wrong login, or not a UniFi box). Tries <c>mca-cli-op info</c> first (current
@@ -373,6 +374,109 @@ public static class UnifiSsh
         return fdb.Count > 0 ? fdb : null;
     }
 
+    /// <summary>The forwarding evidence for a UniFi OS CONSOLE (UDM/UDR), which has NO <c>/proc/switch/mac_table</c>
+    /// (that driver table exists only on the dedicated USW switches). Three sources, combined:
+    /// <list type="bullet">
+    /// <item><c>bridge fdb show</c> → MAC → bridge member interface (the medium: wired switch vs a wireless radio);</item>
+    /// <item><c>iwconfig</c> → radio VAP → SSID, so a wireless client hangs off ITS SSID (which then earns its own
+    /// WLAN node in the map, exactly like a UniFi AP);</item>
+    /// <item>⚠️ <c>swconfig dev switch0 get arl_table</c> → the on-chip switch ARL table (MAC → physical port),
+    /// which UPGRADES a wired client from the aggregate "LAN" to its real <b>"Port N"</b> – the same number the
+    /// UniFi UI shows. This is the QCA8337/Atheros switch on the gen1 UDM; the CPU port (0), where wireless and
+    /// upstream traffic egresses, is skipped. Harmless no-op on models without swconfig or without an ARL.</item>
+    /// </list>
+    /// Returns the MAC→port table plus the SSID set to register as wireless ports (name IS the SSID); null when the
+    /// bridge table can't be read.</summary>
+    /// <summary>One radio VAP as read from <c>iwconfig</c>: its user SSID, the band it broadcasts on (a bare
+    /// figure, "2.4"/"5"/"6", "" when unknown) and the channel number ("" when unknown).</summary>
+    public readonly record struct WifiVap(string Ssid, string Band, string Channel);
+
+    public static async Task<(Dictionary<string, string> Fdb, Dictionary<string, string> Ssids,
+                              Dictionary<string, string> Bands)?> GetConsoleFdbAsync(
+        string host, int port, string user, string password, CancellationToken ct = default)
+    {
+        var br = await RunAsync(host, port, user, password, "bridge fdb show", ct).ConfigureAwait(false);
+        if (br is null) return null;
+        var iw = await RunAsync(host, port, user, password, "iwconfig 2>/dev/null", ct).ConfigureAwait(false);
+        var vaps = ParseIwconfig(iw ?? "");                 // radio VAP → (SSID, band)
+        var entries = ParseBridgeFdbEntries(br);            // every dynamic (MAC, member-interface) row
+
+        var fdb = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var macBands = new Dictionary<string, SortedSet<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (mac, ifname) in entries)
+        {
+            if (vaps.TryGetValue(ifname, out var v) && v.Ssid.Length > 0)
+            {
+                if (!fdb.ContainsKey(mac)) fdb[mac] = v.Ssid;   // wireless: the SSID groups it under one WLAN node
+                // ⚠️ Collect ALL bands a MAC is seen on, don't stop at the first: a Wi-Fi 7 client using Multi-Link
+                // Operation is associated on several radios at once, so it appears once per band and should read
+                // "2.4 GHz (1) / 5 GHz (161)", not just the first one that happened to be listed. Each entry
+                // carries its own channel in parentheses.
+                var bandLabel = BandLabel(v.Band, v.Channel);
+                if (bandLabel.Length > 0)
+                {
+                    if (!macBands.TryGetValue(mac, out var set)) macBands[mac] = set = new SortedSet<string>();
+                    set.Add(bandLabel);
+                }
+            }
+            else if (!fdb.ContainsKey(mac)) fdb[mac] = FriendlyBridgePort(ifname);   // wired "LAN" / bare "Wi-Fi"
+        }
+        if (fdb.Count == 0) return null;
+
+        // Upgrade each wired "LAN" client to its physical switch port from the on-chip ARL table. Only the MACs
+        // the bridge already classified as wired are touched, so the switch's upstream/WAN MACs (learned on the
+        // uplink port, never on br0) can't leak in, and wireless entries keep their SSID.
+        var arlText = await RunAsync(host, port, user, password, "swconfig dev switch0 get arl_table 2>/dev/null", ct).ConfigureAwait(false);
+        if (arlText is { Length: > 0 })
+        {
+            var arl = ParseArlTable(arlText);
+            foreach (var mac in fdb.Keys.ToList())
+                if (fdb[mac] == "LAN" && arl.TryGetValue(mac, out var swPort)) fdb[mac] = swPort;
+        }
+
+        // A port label that is one of the real SSIDs becomes a wireless "port" (its name IS the SSID), so the
+        // topology gives it its own node from the first client; "LAN"/"Port N" are wired medium/port labels.
+        var ssids = fdb.Values.Where(v => vaps.Values.Any(x => x.Ssid.Equals(v, StringComparison.OrdinalIgnoreCase)))
+                       .Distinct(StringComparer.OrdinalIgnoreCase)
+                       .ToDictionary(s => s, s => s, StringComparer.OrdinalIgnoreCase);
+        var bands = macBands.ToDictionary(kv => kv.Key, kv => string.Join(" / ", kv.Value), StringComparer.OrdinalIgnoreCase);
+        return (fdb, ssids, bands);
+    }
+
+    /// <summary>The Wi-Fi band an 802.11 channel number sits in, as a bare figure ("2.4"/"5"); "" when it can't
+    /// be told. ⚠️ 6 GHz channel numbers OVERLAP 2.4 GHz (both start at 1), so 6 GHz can't be told from the channel
+    /// alone – it needs the real frequency, which this console's <c>iwconfig</c> does not print. 2.4 GHz (1–14) and
+    /// 5 GHz (32–177) are unambiguous.</summary>
+    private static string BandFromChannel(int ch) =>
+        ch is >= 1 and <= 14 ? "2.4" : ch is >= 32 and <= 177 ? "5" : "";
+
+    /// <summary>A client's band with its channel in parentheses: "5 GHz (161)", or just "5 GHz" when the channel
+    /// isn't known; "" when the band itself isn't known. Several of these are joined with " / " for a multi-band
+    /// (MLO) client → "2.4 GHz (1) / 5 GHz (161)".</summary>
+    private static string BandLabel(string band, string channel) =>
+        band.Length == 0 ? "" : channel.Length > 0 ? $"{band} GHz ({channel})" : $"{band} GHz";
+
+    /// <summary>Parses the switch ARL table from <c>swconfig dev switch0 get arl_table</c> (the QCA8337/Atheros
+    /// switch on a UniFi OS console) into MAC → "Port N": the physical port a MAC was learned on. A line reads
+    /// <c>"--2---- aa:bb:cc:dd:ee:ff 1"</c> – a 7-slot port column where slot <i>i</i> carries the digit <i>i</i>
+    /// when port <i>i</i> is set, then the MAC. ⚠️ Port 0 is the CPU (wireless + upstream traffic egresses there),
+    /// so it is skipped – such a MAC is not on a physical LAN jack and is placed by its SSID instead. Pure +
+    /// pinnable; first port seen for a MAC wins.</summary>
+    public static Dictionary<string, string> ParseArlTable(string text)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in (text ?? "").Split('\n'))
+        {
+            var m = Regex.Match(raw.Trim(), @"^([0-9-]{2,})\s+([0-9a-fA-F:]{17})\b");
+            if (!m.Success) continue;
+            var portChar = m.Groups[1].Value.FirstOrDefault(char.IsDigit);
+            if (portChar is '\0' or '0') continue;   // no port digit, or the CPU port (0)
+            var mac = m.Groups[2].Value.ToUpperInvariant();
+            if (!map.ContainsKey(mac)) map[mac] = "Port " + portChar;
+        }
+        return map;
+    }
+
     /// <summary>Parses <c>/proc/switch/mac_table</c> (<c>vlan=…,port=N,mac=…</c>) into MAC → "Port N". Pure and
     /// defensive so the smoke test can pin it; first port seen for a MAC wins (a MAC lives on one port).</summary>
     public static Dictionary<string, string> ParseFdb(string text)
@@ -386,6 +490,67 @@ public static class UnifiSsh
             if (!fdb.ContainsKey(mac)) fdb[mac] = "Port " + m.Groups[1].Value;
         }
         return fdb;
+    }
+
+    /// <summary>Parses <c>iwconfig</c> output into radio-VAP → SSID, keeping only real user WLANs. UniFi consoles
+    /// run several internal BSSs whose auto-generated ESSIDs (<c>element-&lt;hex&gt;</c> for onboarding/BLE,
+    /// <c>vwire-&lt;hex&gt;</c> for a wireless-mesh downlink) are not networks a client meaningfully joins – they
+    /// are filtered so they never become a WLAN node. The band comes from the <c>Channel=N</c> the VAP's second
+    /// line reports (2.4 GHz = ch 1–14, 5 GHz = ch 32–177). Pure + pinnable.</summary>
+    public static Dictionary<string, WifiVap> ParseIwconfig(string text)
+    {
+        var map = new Dictionary<string, WifiVap>(StringComparer.OrdinalIgnoreCase);
+        string? cur = null;   // the VAP whose Channel line we're still waiting for
+        foreach (var raw in (text ?? "").Split('\n'))
+        {
+            var head = Regex.Match(raw, @"^(\S+)\s+.*ESSID:""([^""]*)""");
+            if (head.Success)
+            {
+                cur = null;
+                var ssid = head.Groups[2].Value.Trim();
+                if (ssid.Length == 0 || Regex.IsMatch(ssid, @"^(element|vwire)-[0-9a-fA-F]+$")) continue; // internal BSS
+                cur = head.Groups[1].Value;
+                if (!map.ContainsKey(cur)) map[cur] = new WifiVap(ssid, "", "");
+                continue;
+            }
+            if (cur is not null)
+            {
+                var ch = Regex.Match(raw, @"Channel[=:]\s*(\d+)");
+                if (ch.Success && int.TryParse(ch.Groups[1].Value, out var chan))
+                {
+                    map[cur] = map[cur] with { Band = BandFromChannel(chan), Channel = chan.ToString() };
+                    cur = null;
+                }
+            }
+        }
+        return map;
+    }
+
+    /// <summary>Parses <c>bridge fdb show</c> (<c>&lt;mac&gt; dev &lt;ifname&gt; master br0 …</c>) into EVERY
+    /// dynamic (MAC, member-interface) row – all of them, so a client seen on more than one radio (a Wi-Fi 7 MLO
+    /// link) is returned once per band and the caller can collect them. ⚠️ Dynamic entries only: <c>permanent</c>/
+    /// <c>self</c> rows are the bridge's OWN addresses on each port, not learned neighbours. Pure + pinnable.</summary>
+    public static List<(string Mac, string Ifname)> ParseBridgeFdbEntries(string text)
+    {
+        var list = new List<(string, string)>();
+        foreach (var raw in (text ?? "").Split('\n'))
+        {
+            var line = raw.Trim();
+            if (line.Length == 0 || line.Contains("permanent") || line.Contains(" self")) continue;
+            var m = Regex.Match(line, @"^([0-9a-fA-F:]{17})\s+dev\s+(\S+)\s+master\b");
+            if (m.Success) list.Add((m.Groups[1].Value.ToUpperInvariant(), m.Groups[2].Value));
+        }
+        return list;
+    }
+
+    /// <summary>Maps a bridge member interface name to a medium label: the wireless radios (ra*/rai*/ath*/wlan*/
+    /// wifi*) to "Wi-Fi", the wired switch member (switch*/eth*/sw*) to "LAN"; anything else keeps its raw name.</summary>
+    private static string FriendlyBridgePort(string ifname)
+    {
+        var n = ifname.ToLowerInvariant();
+        if (n.StartsWith("ra") || n.StartsWith("ath") || n.StartsWith("wlan") || n.StartsWith("wifi")) return "Wi-Fi";
+        if (n.StartsWith("switch") || n.StartsWith("eth") || n.StartsWith("sw")) return "LAN";
+        return ifname;
     }
 
     /// <summary>The AP's associated wireless clients as MAC → SSID, for the physical topology map – so a device
@@ -456,10 +621,18 @@ public static class UnifiSsh
         return text is null ? null : ParseLog(text, maxEntries);
     }
 
-    /// <summary>Parses BSD-syslog lines — <c>"Aug 12 21:48:31 &lt;host&gt; daemon.info mcad: &lt;message&gt;"</c>
-    /// — into the shared <see cref="LogEntry"/> shape. The <c>facility.level</c> token becomes Topics; the rest
-    /// (program tag + text) is the Message. Pure and defensive so the smoke test can pin it against real output;
-    /// a line without a syslog timestamp is treated as a continuation of the previous entry, never dropped.</summary>
+    /// <summary>Parses a syslog file into the shared <see cref="LogEntry"/> shape, tolerating BOTH timestamp
+    /// styles the UniFi range uses:
+    /// <list type="bullet">
+    /// <item>BSD-syslog — <c>"Aug 12 21:48:31 &lt;host&gt; daemon.info mcad: &lt;message&gt;"</c> (the USW switches);</item>
+    /// <item>⚠️ ISO 8601 — <c>"2026-08-17T23:14:17+02:00 &lt;host&gt; mcad[6426]: &lt;message&gt;"</c> (UniFi OS
+    /// consoles / UDM, whose <c>/var/log/messages</c> is written by syslog-ng in this format). Missing this was
+    /// why the UDM log tab stayed BLANK: every line failed the BSD pattern and was folded into a previous entry
+    /// that never existed.</item>
+    /// </list>
+    /// The optional <c>facility.level</c> token becomes Topics; the rest (program tag + text) is the Message. Pure
+    /// and defensive so the smoke test can pin it; a line with no recognised timestamp is treated as a wrapped
+    /// continuation of the previous entry, never dropped.</summary>
     public static List<LogEntry> ParseLog(string text, int maxEntries = 0)
     {
         var list = new List<LogEntry>();
@@ -468,8 +641,11 @@ public static class UnifiSsh
             var line = raw.TrimEnd();
             if (line.Trim().Length == 0) continue;
 
-            // "<Mon> <day> <HH:MM:SS> <hostname> <rest>"
+            // BSD: "<Mon> <day> <HH:MM:SS> <hostname> <rest>"
             var m = Regex.Match(line, @"^(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+\S+\s+(.*)$");
+            // ISO 8601: "<yyyy-MM-ddTHH:mm:ss[.fff][±hh:mm|Z]> <hostname> <rest>" (UDM/UDR)
+            if (!m.Success)
+                m = Regex.Match(line, @"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:[+-]\d{2}:?\d{2}|Z)?)\s+\S+\s+(.*)$");
             if (!m.Success)
             {
                 if (list.Count > 0) list[^1].Message += " " + line.Trim();   // wrapped continuation line

@@ -181,7 +181,8 @@ public static class PhysicalTopology
         IReadOnlyDictionary<(string BridgeId, string Port), string>? ssids = null,
         IReadOnlyDictionary<string, IReadOnlyList<string>>? traces = null,   // deviceIp → hop IPs
         IReadOnlyDictionary<string, IReadOnlyList<(string Mac, string Label)>>? adjacency = null,
-        IReadOnlyDictionary<string, IReadOnlyList<(string Name, string Ip, string Port)>>? lldp = null)
+        IReadOnlyDictionary<string, IReadOnlyList<(string Name, string Ip, string Port)>>? lldp = null,
+        IReadOnlyDictionary<string, string>? clientBands = null)   // normMAC → radio band(s), e.g. "5 GHz" / "2.4 / 5 GHz"
     {
         var boxes = new List<TopoBox>();
         var links = new List<TopoLink>();
@@ -458,11 +459,15 @@ public static class PhysicalTopology
             // A WLAN port (it carries an SSID) earns its own node from the FIRST client, so the map always
             // shows which devices are on which SSID; a plain switch port needs PortGroupThreshold foreign MACs
             // before we infer a hidden switch behind it.
-            int threshold = ssids is not null && ssids.ContainsKey((bridgeId, port)) ? 1 : PortGroupThreshold;
+            bool isWlan = ssids is not null && ssids.ContainsKey((bridgeId, port));
+            int threshold = isWlan ? 1 : PortGroupThreshold;
             if (members.Count >= threshold)
             {
                 var portKey = $"::port:{bridgeId}:{port}";
-                Add(portKey, null, PortLabel(bridgeId, port), "", "", TopoRole.Infrastructure);
+                // A WLAN node carries a "Wi-Fi" caption so its title reads as a network name (the SSID), not as
+                // a device – the same role caption "Router"/"PC" gives the other boxes. A wired port-group node
+                // keeps the bare port label ("Port 2") with no caption.
+                Add(portKey, null, PortLabel(bridgeId, port), "", "", TopoRole.Infrastructure, kind: isWlan ? "Wi-Fi" : "");
                 PlaceAt(leafLevel, portKey);
                 Connect(bridgeKey, portKey);
                 parentForLeaves = portKey;
@@ -471,6 +476,13 @@ public static class PhysicalTopology
             foreach (var (d, macLabel) in members.OrderBy(x => Ipv4SortKey(x.D.Ip)))
             {
                 var label = members.Count >= threshold ? "" : PortLabel(bridgeId, port);
+                // Under a WLAN node the port label is dropped (the node already names the SSID); show the
+                // client's radio BAND there instead, so a dual-band SSID – or a Wi-Fi 7 client using more than
+                // one band at once via MLO – still tells you which radio(s) each device actually joined. The
+                // value is pre-joined ("2.4 / 5 GHz") for the multi-band case.
+                if (isWlan && label.Length == 0 && clientBands is not null &&
+                    clientBands.TryGetValue(NormalizeMac(d.Mac), out var band) && band.Length > 0)
+                    label = band;
                 // "p5 (lan1)": the matched-MAC group name joins the port text (or stands alone when the port
                 // text was grouped away) – see the group comment above.
                 if (macLabel.Length > 0) label = label.Length > 0 ? $"{label} ({macLabel})" : macLabel;

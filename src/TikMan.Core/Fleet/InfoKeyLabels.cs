@@ -32,6 +32,7 @@ public static class InfoKeyLabels
         ["Herstelldatum"] = "Ik_MfgDate",
         ["Druckserver"] = "Ik_PrintServer",
         ["Firmware-Dateien"] = "Ik_FirmwareFiles",
+        ["DHCP-Klasse"] = "Ik_DhcpClass",
     };
 
     /// <summary>The localised label for an ExtraInfo key, or the key itself when it needs no translation.</summary>

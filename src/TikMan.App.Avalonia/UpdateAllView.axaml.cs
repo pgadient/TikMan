@@ -146,7 +146,10 @@ public partial class UpdateAllView : UserControl
     {
         var on = _oneChannelForAll.IsChecked == true;
         var fleetChannel = _channelForAll.SelectedItem as string ?? "stable";
-        foreach (var r in _rows)
+        // Snapshot: setting r.Channel moves a bound ComboBox, whose SelectionChanged used to bubble back
+        // into a Reload() that clears _rows. The tab handler now blocks that re-entrancy, but iterating a
+        // copy keeps this loop safe regardless of what a property change triggers downstream.
+        foreach (var r in _rows.ToList())
         {
             r.ChannelEditable = !on;
             if (on) r.Channel = fleetChannel;

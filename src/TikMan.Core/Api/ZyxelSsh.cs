@@ -23,8 +23,7 @@ public static partial class ZyxelSsh
         string MacAddress, string HardwareVersion, string Uptime);
 
     private static ConnectionInfo Info(string host, int port, string user, string password) =>
-        new ConnectionInfo(host, port is > 0 and <= 65535 ? port : 22, user,
-            new PasswordAuthenticationMethod(user, password)) { Timeout = TimeSpan.FromSeconds(12) }
+        SshCompat.PasswordOrInteractive(host, port, user, password, TimeSpan.FromSeconds(12))
             .WithCompatibleMacs();   // Zyxel miscomputes the encrypt-then-MAC variants
 
     /// <summary>Runs one CLI command over an <b>interactive shell with a PTY</b> and returns its output.

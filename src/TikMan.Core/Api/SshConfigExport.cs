@@ -15,8 +15,8 @@ public static class SshConfigExport
         {
             // Reuses the device's held, serialized session (see SshSessionPool), exec-only like the other
             // RouterOS reads – so a config backup right after a monitoring read pays no second handshake.
-            ConnectionInfo Info() => new ConnectionInfo(host, port is > 0 and <= 65535 ? port : 22, user,
-                new PasswordAuthenticationMethod(user, password)) { Timeout = TimeSpan.FromSeconds(12) }.WithCompatibleMacs();
+            ConnectionInfo Info() =>
+                SshCompat.PasswordOrInteractive(host, port, user, password, TimeSpan.FromSeconds(12)).WithCompatibleMacs();
             var session = SshSessionPool.GetOrCreate(SshSessionPool.KeyFor(host, port), () => new SshSession(Info));
             return await session.RunClientAsync(ssh =>
             {

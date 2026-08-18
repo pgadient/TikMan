@@ -38,7 +38,7 @@ public static class MdnsScanner
     /// in a printer's TXT record (mandatory for AirPrint, absent from plain IPP printers); AirScan by
     /// the _uscan/_uscans (eSCL) service.</summary>
     public sealed record MdnsInfo(string Ip, string HostName, string Model, IReadOnlyList<string> Services,
-        bool AirPrint = false, bool AirScan = false);
+        bool AirPrint = false, bool AirScan = false, string OsVersion = "");
 
     /// <summary>Queries every IPv4 interface and collects the answers, keyed by the responder's IP.
     /// Records are credited to the host that sent them, which is exactly right: over mDNS a device
@@ -61,7 +61,8 @@ public static class MdnsScanner
             kv => new MdnsInfo(kv.Key, kv.Value.Name, kv.Value.Model,
                                kv.Value.Services.OrderBy(s => s, StringComparer.Ordinal).ToList(),
                                kv.Value.AirPrint,
-                               kv.Value.Services.Contains("_uscan._tcp") || kv.Value.Services.Contains("_uscans._tcp")),
+                               kv.Value.Services.Contains("_uscan._tcp") || kv.Value.Services.Contains("_uscans._tcp"),
+                               FriendlyOs(kv.Value.Model, kv.Value.OsVersion, kv.Value.OsxVers)),
             StringComparer.OrdinalIgnoreCase);
     }
 
@@ -69,6 +70,13 @@ public static class MdnsScanner
     {
         public string Name = "";
         public string Model = "";
+        /// <summary>The OS version an AirPlay/AirTunes receiver publishes about itself: "26.6" from the
+        /// _airplay TXT (osvers=) or the _raop TXT (ov=). Both carry the same value – Apple simply names
+        /// the key differently per service – so first-seen wins.</summary>
+        public string OsVersion = "";
+        /// <summary>The macOS build code a Mac publishes in its _device-info TXT (osxvers=), e.g. 24 for
+        /// macOS Sequoia. An integer, not a dotted version, so it is mapped separately.</summary>
+        public string OsxVers = "";
         public bool AirPrint;
         public readonly HashSet<string> Services = new(StringComparer.OrdinalIgnoreCase);
         /// <summary>Print/scan service instances whose TXT we still have to ask for.</summary>
@@ -236,9 +244,15 @@ public static class MdnsScanner
                         var instance = ReadName(buf, ref target);
                         AddService(host, instance);
                         // Printing/scanning instances get a follow-up TXT query: that record carries
-                        // the URF key that says "AirPrint", and it is rarely volunteered unasked.
+                        // the URF key that says "AirPrint", and it is rarely volunteered unasked. The
+                        // AirPlay/AirTunes/device-info instances get the same treatment – their TXT is
+                        // where the OS version (osvers=/ov=/osxvers=) lives, and it too is often withheld
+                        // until asked for by name.
                         if (instance.Contains("._ipp", StringComparison.OrdinalIgnoreCase) ||
-                            instance.Contains("._uscan", StringComparison.OrdinalIgnoreCase))
+                            instance.Contains("._uscan", StringComparison.OrdinalIgnoreCase) ||
+                            instance.Contains("._airplay", StringComparison.OrdinalIgnoreCase) ||
+                            instance.Contains("._raop", StringComparison.OrdinalIgnoreCase) ||
+                            instance.Contains("._device-info", StringComparison.OrdinalIgnoreCase))
                             host.PendingTxt.Add(instance);
                         break;
 
@@ -286,6 +300,21 @@ public static class MdnsScanner
                 if (entry.StartsWith(key, StringComparison.OrdinalIgnoreCase))
                     OfferModel(host, entry[key.Length..].Trim());
 
+            // OS version. An AirPlay receiver states it as osvers= (_airplay) and, redundantly, ov=
+            // (_raop) – same dotted value, so keep the first that looks like a version. A Mac reports
+            // its build code as osxvers= (_device-info), an integer that gets mapped to a name later.
+            foreach (var key in new[] { "osvers=", "ov=" })
+                if (entry.StartsWith(key, StringComparison.OrdinalIgnoreCase) && host.OsVersion.Length == 0)
+                {
+                    var v = entry[key.Length..].Trim();
+                    if (v.Length > 0 && char.IsDigit(v[0])) host.OsVersion = v;
+                }
+            if (entry.StartsWith("osxvers=", StringComparison.OrdinalIgnoreCase) && host.OsxVers.Length == 0)
+            {
+                var v = entry["osxvers=".Length..].Trim();
+                if (v.Length > 0 && char.IsDigit(v[0])) host.OsxVers = v;
+            }
+
             // The URF key (Apple's raster format) is mandatory for AirPrint and absent from plain IPP
             // printers – its presence alone is the AirPrint capability.
             if (entry.StartsWith("URF=", StringComparison.OrdinalIgnoreCase)) host.AirPrint = true;
@@ -302,6 +331,38 @@ public static class MdnsScanner
         bool better = host.Model.Length == 0 ||
                       (!host.Model.Contains(',') && value.Contains(','));
         if (better) host.Model = value;
+    }
+
+    /// <summary>Turns a raw Apple OS version into a named one, using the hardware model to pick the OS
+    /// family (the version number alone – "26.6" – doesn't say audioOS from tvOS from iOS). The dotted
+    /// osvers/ov value is authoritative; osxvers is only a fallback for Macs, mapped from its build code.</summary>
+    private static string FriendlyOs(string model, string version, string osxVers)
+    {
+        if (version.Length > 0)
+        {
+            string m = model;
+            if (m.StartsWith("AudioAccessory", StringComparison.OrdinalIgnoreCase)) return "audioOS " + version; // HomePod
+            if (m.StartsWith("AppleTV", StringComparison.OrdinalIgnoreCase)) return "tvOS " + version;
+            if (m.StartsWith("iPhone", StringComparison.OrdinalIgnoreCase)) return "iOS " + version;
+            if (m.StartsWith("iPad", StringComparison.OrdinalIgnoreCase)) return "iPadOS " + version;
+            if (m.StartsWith("Watch", StringComparison.OrdinalIgnoreCase)) return "watchOS " + version;
+            if (m.StartsWith("Mac", StringComparison.OrdinalIgnoreCase) || m.StartsWith("iMac", StringComparison.OrdinalIgnoreCase))
+                return "macOS " + version;
+            return version; // an Apple version we can't name – still better than nothing
+        }
+
+        // No dotted version, but a Mac's _device-info gave its build code. The mapping is stable and
+        // well-known; an unknown code yields the bare name rather than a wrong number.
+        if (osxVers.Length > 0)
+        {
+            var macos = osxVers switch
+            {
+                "19" => "macOS 10.15", "20" => "macOS 11", "21" => "macOS 12", "22" => "macOS 13",
+                "23" => "macOS 14", "24" => "macOS 15", "25" => "macOS 26", _ => "macOS",
+            };
+            return macos;
+        }
+        return "";
     }
 
     private static string StripLocal(string name) =>

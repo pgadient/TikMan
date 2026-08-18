@@ -1077,6 +1077,9 @@
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
                         <DataGridTextColumn Header="{loc:Loc Col_Name}" Binding="{Binding Name}" Width="Auto" MinWidth="140" MaxWidth="900" />
+                        <!-- The owner's manually-set DHCP lease comment (their own label). Distinct from Name, which
+                             prefers an actively-identified name; this is the human note kept alongside it. -->
+                        <DataGridTextColumn Header="{loc:Loc Col_Comment}" Binding="{Binding Comment}" Width="Auto" MinWidth="120" MaxWidth="900" />
                         <DataGridTextColumn Header="IPv4" Binding="{Binding Ip}" Width="Auto" MinWidth="110" MaxWidth="900"
                                             CustomSortComparer="{x:Static loc:Ipv4Comparer.Instance}" />
                         <DataGridTextColumn Header="IPv6" Binding="{Binding Ipv6Summary}" Width="Auto" MinWidth="120" MaxWidth="900" />

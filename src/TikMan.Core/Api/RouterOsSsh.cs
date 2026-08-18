@@ -12,8 +12,7 @@ namespace TikMan.Core.Api;
 public static class RouterOsSsh
 {
     private static ConnectionInfo Info(string host, int port, string user, string password) =>
-        new ConnectionInfo(host, port is > 0 and <= 65535 ? port : 22, user,
-            new PasswordAuthenticationMethod(user, password)) { Timeout = TimeSpan.FromSeconds(12) }.WithCompatibleMacs();
+        SshCompat.PasswordOrInteractive(host, port, user, password, TimeSpan.FromSeconds(12)).WithCompatibleMacs();
 
     /// <summary><paramref name="timeout"/> defaults to 30s, which is plenty for a local print. Pass more
     /// for anything that leaves the device – an update check asks MikroTik's server and waits for it.</summary>
@@ -66,6 +65,15 @@ public static class RouterOsSsh
         return list.Count > 0 ? list : null;
     }
 
+    public static async Task<List<DhcpLease>?> GetDhcpLeasesAsync(string host, int port, string user,
+        string password, CancellationToken ct = default)
+    {
+        var text = await RunAsync(host, port, user, password, "/ip/dhcp-server/lease print detail", ct);
+        if (text is null) return null;
+        var list = DhcpLeases.ParseDetail(text);
+        return list.Count > 0 ? list : null;
+    }
+
     public static async Task<Dictionary<string, string>?> GetWifiSsidsAsync(string host, int port, string user,
         string password, CancellationToken ct = default)
     {
@@ -77,6 +85,94 @@ public static class RouterOsSsh
             if (legacy is not null) map = ParseWifiSsids(legacy);
         }
         return map.Count > 0 ? map : null;
+    }
+
+    // Per-master scripted monitor: one line "<interface name> => <freq>/…" per radio, so the operating channel
+    // can be read WITHOUT parsing RouterOS's horizontal multi-column `monitor [find]` output. `where master` (not
+    // `!bound`: on a CAPsMAN every interface is bound, so `!bound` matches nothing).
+    private const string ChannelScript =
+        ":foreach i in=[/interface/wifi find where master] do={:put ([/interface/wifi get $i name] . \" => \" . ([/interface/wifi monitor $i once as-value]->\"channel\"))}";
+
+    /// <summary>The band (and channel, when it can be read) each connected wireless client is on, MAC → "5 GHz (100)"
+    /// – or "2.4 GHz / 5 GHz" for a Wi-Fi 7 MLO client on several bands at once. Band comes from the wifi
+    /// registration table (RouterOS names it per client, 6 GHz included); the channel is looked up per client's
+    /// interface from a scripted per-radio monitor and appended in parentheses. Null when nothing is connected /
+    /// no wifi package. The channel read is best-effort: if it fails the band still shows, just without "(N)".</summary>
+    public static async Task<Dictionary<string, string>?> GetWifiBandsAsync(string host, int port, string user,
+        string password, CancellationToken ct = default)
+    {
+        var reg = await RunAsync(host, port, user, password, "/interface wifi registration-table print detail", ct);
+        if (reg is null) return null;
+        var mon = await RunAsync(host, port, user, password, ChannelScript, ct);
+        var channels = ParseWifiChannels(mon ?? "");
+        var map = ParseWifiRegBands(reg, channels);
+        return map.Count > 0 ? map : null;
+    }
+
+    /// <summary>Parses the scripted "<c>&lt;interface&gt; =&gt; &lt;freq&gt;/…</c>" monitor output into interface →
+    /// channel number, converting the centre frequency in MHz to an 802.11 channel (2.4 GHz: 2412→1 … 2472→13,
+    /// 2484→14; 5 GHz: (f−5000)/5, e.g. 5500→100, 5745→149; 6 GHz: (f−5950)/5). Pure + pinnable.</summary>
+    public static Dictionary<string, string> ParseWifiChannels(string text)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in (text ?? "").Split('\n'))
+        {
+            var m = Regex.Match(raw.TrimEnd(), @"^(.+?)\s+=>\s+(\d+)");
+            if (!m.Success) continue;
+            var iface = m.Groups[1].Value.Trim();
+            if (int.TryParse(m.Groups[2].Value, out var freq) && iface.Length > 0)
+            {
+                var ch = FreqToChannel(freq);
+                if (ch.Length > 0 && !map.ContainsKey(iface)) map[iface] = ch;
+            }
+        }
+        return map;
+    }
+
+    /// <summary>A centre frequency in MHz → its 802.11 channel number as a string ("" when out of any band).</summary>
+    private static string FreqToChannel(int f)
+    {
+        int ch = f switch
+        {
+            2484 => 14,
+            >= 2412 and <= 2472 => (f - 2407) / 5,
+            >= 5000 and <= 5895 => (f - 5000) / 5,
+            >= 5925 and <= 7125 => (f - 5950) / 5,   // 6 GHz (Wi-Fi 6E/7)
+            _ => 0,
+        };
+        return ch > 0 ? ch.ToString() : "";
+    }
+
+    /// <summary>Parses a RouterOS wifi registration table into MAC → "band (channel)". Each client row carries its
+    /// band as <c>&lt;n&gt;ghz-&lt;mode&gt;</c> (<c>2ghz-n</c>, <c>5ghz-ac</c>, <c>6ghz-ax</c>) – the figure before
+    /// "ghz" is the band – and (in <c>print detail</c>) its <c>interface=</c>, which <paramref name="channels"/>
+    /// resolves to a channel number for the "(N)" suffix. ⚠️ All bands a MAC appears on are collected (a Wi-Fi 7
+    /// MLO client is registered on several at once) and joined "2.4 GHz (1) / 5 GHz (161)". Pure + pinnable.</summary>
+    public static Dictionary<string, string> ParseWifiRegBands(string text,
+        IReadOnlyDictionary<string, string>? channels = null)
+    {
+        var sets = new Dictionary<string, SortedSet<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in (text ?? "").Split('\n'))
+        {
+            var macM = Regex.Match(raw, @"[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}");
+            var bandM = Regex.Match(raw, @"\b([2-6])ghz-", RegexOptions.IgnoreCase);
+            if (!macM.Success || !bandM.Success) continue;
+            var band = bandM.Groups[1].Value switch { "2" => "2.4", "5" => "5", "6" => "6", _ => "" };
+            if (band.Length == 0) continue;
+
+            var chan = "";
+            if (channels is not null)
+            {
+                var ifM = Regex.Match(raw, @"(?<![\w-])interface=(.+?)\s+ssid=");
+                if (ifM.Success) channels.TryGetValue(ifM.Groups[1].Value.Trim(), out chan!);
+            }
+            var label = chan is { Length: > 0 } ? $"{band} GHz ({chan})" : $"{band} GHz";
+
+            var mac = macM.Value.ToUpperInvariant();
+            if (!sets.TryGetValue(mac, out var set)) sets[mac] = set = new SortedSet<string>();
+            set.Add(label);
+        }
+        return sets.ToDictionary(kv => kv.Key, kv => string.Join(" / ", kv.Value), StringComparer.OrdinalIgnoreCase);
     }
 
     public static async Task<List<Models.LogEntry>?> GetLogAsync(string host, int port, string user, string password,

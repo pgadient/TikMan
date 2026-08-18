@@ -145,6 +145,22 @@ public sealed class RouterOsClient : IDisposable
         return list;
     }
 
+    /// <summary>The DHCP server lease table: one entry per client the router has handed an address to.
+    /// Enriches devices with the owner's manual lease comment, the client-reported host-name and the DHCP
+    /// vendor class-id (option 60). Read-only; a router that runs no DHCP server returns an empty list.</summary>
+    public async Task<List<DhcpLease>> GetDhcpLeasesAsync(CancellationToken ct = default)
+    {
+        using var doc = await GetAsync("ip/dhcp-server/lease", TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+        var list = new List<DhcpLease>();
+        foreach (var e in doc.RootElement.EnumerateArray())
+        {
+            var mac = S(e, "mac-address");
+            if (mac.Length == 0) continue;
+            list.Add(new DhcpLease(mac, S(e, "address"), S(e, "host-name"), S(e, "comment"), S(e, "class-id")));
+        }
+        return list;
+    }
+
     /// <summary>Reads the device log; when maxEntries &gt; 0 only the last N entries.</summary>
     public async Task<List<LogEntry>> GetLogAsync(int maxEntries = 0, CancellationToken ct = default)
     {

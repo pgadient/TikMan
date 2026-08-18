@@ -500,8 +500,7 @@ public static class ZldSsh
     }
 
     private static ConnectionInfo Info(string host, int port, string user, string password) =>
-        new ConnectionInfo(host, port is > 0 and <= 65535 ? port : 22, user,
-            new PasswordAuthenticationMethod(user, password)) { Timeout = TimeSpan.FromSeconds(20) }
+        SshCompat.PasswordOrInteractive(host, port, user, password, TimeSpan.FromSeconds(20))
             .WithCompatibleMacs();   // ZLD miscomputes the encrypt-then-MAC HMACs
 
     /// <summary>Opens and readies a ZLD shell on a freshly connected client: a wide "vt100" PTY, then swallow

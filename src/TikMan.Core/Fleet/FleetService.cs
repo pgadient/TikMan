@@ -36,7 +36,8 @@ public sealed record DeviceSnapshot(
     string LatestVersionUrl, string VersionUrl,
     IReadOnlyDictionary<string, IReadOnlyList<int>> Ipv6Ports,
     IReadOnlyDictionary<string, Ipv6Facts> Ipv6Meta,
-    string Source)
+    string Source,
+    string Comment)
     : INotifyPropertyChanged, IExpandableRow
 {
     public bool HasIpv6 => Ipv6.Count > 0;
@@ -1134,6 +1135,10 @@ public sealed class FleetService
                 // services 0.55 → 0.75, v6 per-address enrichment 0.75 → 0.9, reachability 0.9 → 1.
                 await ProbeDevicesAsync(community, token, waitForTurn: true, p => MetaProgress(p * 0.55))
                     .ConfigureAwait(false);
+                // After the per-device probes have set what they can (so an actively-read name/OS wins over
+                // a DHCP hostname/class-id): pull names, the owner's lease comment and an OS guess from every
+                // credentialed MikroTik's DHCP lease table. Cheap (a handful of logins), a no-op without one.
+                await EnrichFromDhcpLeasesAsync().ConfigureAwait(false);
                 await ProbeIpv6ServicesAsync(token, p => MetaProgress(0.55 + p * 0.2)).ConfigureAwait(false);
                 await ProbeIpv6MetaAsync(community, token, p => MetaProgress(0.75 + p * 0.15)).ConfigureAwait(false);
                 await ProbeAllAsync(p => MetaProgress(0.9 + p * 0.1)).ConfigureAwait(false);
@@ -1266,7 +1271,7 @@ public sealed class FleetService
     // ExtraInfo keys that are INTERNAL flags surfaced elsewhere – the "Quelle" source column and the discovery
     // badges. They must not leak into the details pane as raw, untranslated "Quelle: ARP" / "mDNS: yes" rows.
     private static readonly HashSet<string> DetailsHiddenKeys =
-        new(StringComparer.Ordinal) { "Quelle", "MNDP", "ZON", "UBNT", "mDNS", "SSDP", "UniFi-Platform", "APC-App" };
+        new(StringComparer.Ordinal) { "Quelle", "MNDP", "ZON", "UBNT", "mDNS", "SSDP", "UniFi-Platform", "APC-App", "Kommentar" };
 
     /// <summary>Records the device's INITIAL data origin in <c>ExtraInfo["Quelle"]</c>, for the source column.
     /// Set once and then only ever UPGRADED from a raw sweep method (ICMP/ARP/TCP) to a vendor protocol –
@@ -2109,7 +2114,7 @@ public sealed class FleetService
         // the caller shows "building the map…" meanwhile instead of drawing a wrong one.
         await WaitWhileAsync(() => _scanning || Rescanning).ConfigureAwait(false);
 
-        var gatewayIp = TraceRoute.DefaultGateway();
+        var gatewayIp = ResolveRootGateway();
 
         // ⚠️ Warm the switches' MAC tables BEFORE reading them, and read them fresh.
         //
@@ -2125,7 +2130,7 @@ public sealed class FleetService
         // clear the cached tables so the fresh, warmed state is what actually gets read.
         var traces = await GatherTracesAsync().ConfigureAwait(false);
         ClearFdbCache();
-        var (fdb, ssids) = await GatherFdbAsync().ConfigureAwait(false);
+        var (fdb, ssids, bands) = await GatherFdbAsync().ConfigureAwait(false);
         var adjacency = await GatherAdjacencyAsync().ConfigureAwait(false);
         var lldp = await GatherLldpAsync().ConfigureAwait(false);
 
@@ -2149,7 +2154,51 @@ public sealed class FleetService
             catch { /* diagnostic only */ }
         }
 
-        return PhysicalTopology.Build(TopoInputs(), fdb, gatewayIp, ssids, traces, adjacency, lldp);
+        return PhysicalTopology.Build(TopoInputs(), fdb, gatewayIp, ssids, traces, adjacency, lldp, bands);
+    }
+
+    /// <summary>The gateway to root the physical map on. ⚠️ NOT the OS default gateway: on a multi-homed
+    /// machine (a laptop on two LANs at once) that default belongs to whichever interface won the route
+    /// metric – often a DIFFERENT network than the one that was scanned – so the map rooted on a router
+    /// that isn't even in the scanned range (e.g. 10.0.0.1 while scanning 192.168.1.0/24).
+    /// <para>Resolution order: (1) a local gateway whose address sits INSIDE the scanned range – that is
+    /// unambiguously this network's router; (2) otherwise the local gateway whose /24 holds the most
+    /// currently-known device IPs (the network actually on screen); (3) finally the OS default gateway, for
+    /// a remote/VPN scan where none of the machine's own gateways match.</para></summary>
+    private string ResolveRootGateway()
+    {
+        string? target;
+        List<string> deviceIps;
+        lock (_lock)
+        {
+            target = _scanTarget;
+            deviceIps = _devices.Select(d => d.Host).Where(h => h.Length > 0).ToList();
+        }
+
+        var gateways = NetworkInfo.GetLocalSubnets()
+            .Select(s => s.Gateway).Where(g => g.Length > 0).Distinct().ToList();
+
+        // (1) A gateway inside the scanned CIDR is this network's router, full stop.
+        if (!string.IsNullOrWhiteSpace(target) && IpSegments.TryParseCidr(target, out var net, out var prefix))
+        {
+            uint mask = prefix == 0 ? 0u : uint.MaxValue << (32 - prefix);
+            foreach (var gw in gateways)
+                if (IpSegments.TryParseIp(gw, out var g) && (g & mask) == net) return gw;
+        }
+
+        // (2) The gateway whose /24 holds the most devices we actually know about.
+        string bestGw = ""; int bestCount = 0;
+        foreach (var gw in gateways)
+        {
+            if (!IpSegments.TryParseIp(gw, out var g)) continue;
+            uint net24 = g & 0xFFFFFF00u;
+            int count = deviceIps.Count(ip => IpSegments.TryParseIp(ip, out var v) && (v & 0xFFFFFF00u) == net24);
+            if (count > bestCount) { bestCount = count; bestGw = gw; }
+        }
+        if (bestGw.Length > 0) return bestGw;
+
+        // (3) No local gateway matched (remote/VPN scan) – the OS default is the best guess left.
+        return TraceRoute.DefaultGateway();
     }
 
     /// <summary>The L3-adjacency claims of the ZLD firewalls with a login (their ARP, MAC → interface) – the
@@ -2211,8 +2260,16 @@ public sealed class FleetService
     /// <para>No de-duplication needed here: <see cref="Model"/> already strips a repeated maker off the
     /// front ("MikroTik CCR2004" → "CCR2004"), because the device list has the same two-column problem.
     /// Doing it a second time on the way to the map would be a copy of a rule that can then drift.</para></summary>
-    private List<TopoInputDevice> TopoInputs() =>
-        RawDevices().Select(d => new TopoInputDevice(
+    private List<TopoInputDevice> TopoInputs()
+    {
+        // ⚠️ Scope the map to the network that was scanned. The device list PERSISTS across scans (it is the
+        // accumulated fleet), so after scanning subnet B a device from an earlier scan of subnet A – its
+        // gateway in particular – is still in the list and would otherwise be drawn onto B's map, where it
+        // has no place (a foreign gateway floating under "path unknown"). When a specific range was scanned
+        // we keep only devices inside it; an "all local subnets" scan (no target) keeps everything.
+        string? target;
+        lock (_lock) target = _scanTarget;
+        return RawDevices().Where(d => IpInScanScope(d.Host, target)).Select(d => new TopoInputDevice(
             WebId(d), d.Host, d.MacAddress, Display(d), d.Host, IsBridge(d),
             Vendor(d).Trim(), Model(d).Trim(), KindWithVm(d),
             // A ZLD firewall's own MAC block (one MAC per interface group, learned via `show mac` during the
@@ -2220,6 +2277,20 @@ public sealed class FleetService
             // the map place it; the labels name the matched group ("lan1") on the node.
             d.ExtraInfo.TryGetValue("MAC-Bereich", out var range) ? ZldSsh.ExpandMacRange(range) : null,
             d.ExtraInfo.TryGetValue("MAC-Zuordnung", out var assign) ? ParseMacLabels(assign) : null)).ToList();
+    }
+
+    /// <summary>True when a device belongs on the map for the current scan scope. A specific scanned range
+    /// (CIDR) keeps only IPv4 addresses inside it; "all local subnets" (no target) or a non-CIDR range keeps
+    /// everything; an IPv6-only device (no parseable IPv4) is always kept – it was seen on the scanned segment
+    /// and has no address to range-check (same spirit as the link-local handling in discovery).</summary>
+    private static bool IpInScanScope(string ip, string? target)
+    {
+        if (string.IsNullOrWhiteSpace(target)) return true;
+        if (!IpSegments.TryParseCidr(target, out var net, out var prefix)) return true;
+        if (!IpSegments.TryParseIp(ip, out var v)) return true;
+        uint mask = prefix == 0 ? 0u : uint.MaxValue << (32 - prefix);
+        return (v & mask) == net;
+    }
 
     /// <summary>"MAC=name, MAC=name" (as the ZLD facts read stores it) → normalized-MAC → name. Null when
     /// nothing parses, so the map carries no empty dictionaries around.</summary>
@@ -2245,7 +2316,8 @@ public sealed class FleetService
         || IsMikroTik(d);
 
     private async Task<(Dictionary<string, IReadOnlyDictionary<string, string>> Fdb,
-                        Dictionary<(string, string), string> Ssids)> GatherFdbAsync()
+                        Dictionary<(string, string), string> Ssids,
+                        Dictionary<string, string> Bands)> GatherFdbAsync()
     {
         string community;
         lock (_lock) community = SnmpCommunityLocked();
@@ -2253,6 +2325,7 @@ public sealed class FleetService
 
         var fdb = new Dictionary<string, IReadOnlyDictionary<string, string>>();
         var ssids = new Dictionary<(string, string), string>();
+        var bands = new Dictionary<string, string>();   // normMAC → radio band(s); global (a client is on one AP)
         // ⚠️ In parallel, and cached. Read one after another this asked every switch in turn and each one
         // costs a login – on an appliance that is seconds of handshake before any data moves, so a handful
         // of switches was most of a minute before the map appeared. They are independent reads.
@@ -2274,7 +2347,7 @@ public sealed class FleetService
             await gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var (table, wifi) = await OneFdbAsync(d, community).ConfigureAwait(false);
+                var (table, wifi, tableBands) = await OneFdbAsync(d, community).ConfigureAwait(false);
                 if (table is { Count: > 0 })
                 {
                     lock (fdb) fdb[id] = table;
@@ -2282,6 +2355,8 @@ public sealed class FleetService
                 }
                 if (wifi is not null)
                     lock (ssids) foreach (var (iface, ssid) in wifi) ssids[(id, iface)] = ssid;
+                if (tableBands is not null)
+                    lock (bands) foreach (var (mac, band) in tableBands) bands[mac] = band;
             }
             catch { /* one unreachable switch must not cost us the whole map */ }
             finally { gate.Release(); }
@@ -2330,7 +2405,7 @@ public sealed class FleetService
             catch { /* diagnostic only */ }
         }
 
-        return (fdb, ssids);
+        return (fdb, ssids, bands);
     }
 
     // ---- forwarding-table cache -------------------------------------------------------------------
@@ -2381,11 +2456,13 @@ public sealed class FleetService
         return result;
     }
 
-    private static async Task<(Dictionary<string, string>? Fdb, Dictionary<string, string>? Ssids)> OneFdbAsync(
+    private static async Task<(Dictionary<string, string>? Fdb, Dictionary<string, string>? Ssids,
+                               Dictionary<string, string>? Bands)> OneFdbAsync(
         Device d, string community)
     {
         List<(string Mac, string Port)>? raw = null;
         Dictionary<string, string>? wifi = null;
+        Dictionary<string, string>? bands = null;   // normMAC → radio band(s), for the wireless client labels
         var password = d.EncryptedPassword.Length > 0 ? CredentialProtector.Unprotect(d.EncryptedPassword) : "";
         try
         {
@@ -2433,6 +2510,12 @@ public sealed class FleetService
                     }
                     catch { /* no wifi package */ }
                 }
+
+                // The per-client band ("5 GHz", or "2.4 GHz / 5 GHz" for a Wi-Fi 7 MLO client) for the wireless
+                // leaf labels, read over SSH from the wifi registration table – RouterOS names the band per client
+                // outright (6 GHz included). Best-effort: no wifi package / no clients ⇒ no labels, never an error.
+                try { bands = await RouterOsSsh.GetWifiBandsAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false); }
+                catch { /* no wifi registration table */ }
             }
             else if (IsZyxelSwitch(d) && password.Length > 0)
             {
@@ -2454,10 +2537,22 @@ public sealed class FleetService
                 // off "path unknown".
                 var ub = await UnifiSsh.GetFdbAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
                 raw = ub?.Select(kv => (kv.Key, kv.Value)).ToList();
-                // A UniFi AP has no switch table, so the above is empty for it. Its wireless clients hang off it
-                // by SSID instead – read the associated stations so a device joined to one of the AP's WLANs
-                // shows under the AP (the SSID becomes the port label). Only when the switch table was empty, to
-                // spare the extra SSH round-trip on actual switches.
+                // A UniFi OS console (UDM/UDR) has no /proc/switch/mac_table – read the kernel bridge FDB instead,
+                // which carries BOTH its wired clients (→ "LAN") and its wireless ones (→ their SSID via iwconfig).
+                // The SSIDs come back as wireless "ports" so each WLAN earns its own node, like a UniFi AP.
+                if (raw is null || raw.Count == 0)
+                {
+                    var console = await UnifiSsh.GetConsoleFdbAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
+                    if (console is { } c && c.Fdb.Count > 0)
+                    {
+                        raw = c.Fdb.Select(kv => (kv.Key, kv.Value)).ToList();
+                        if (c.Ssids.Count > 0) wifi = c.Ssids;
+                        if (c.Bands.Count > 0) bands = c.Bands;
+                    }
+                }
+                // A UniFi AP has no switch table either. Its wireless clients hang off it by SSID – read the
+                // associated stations so a device joined to one of the AP's WLANs shows under the AP (the SSID
+                // becomes the port label). Only when nothing above produced a table, to spare an SSH round-trip.
                 if (raw is null || raw.Count == 0)
                 {
                     var wc = await UnifiSsh.GetWifiClientsAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false);
@@ -2490,7 +2585,7 @@ public sealed class FleetService
             try { if (community.Length > 0) { var snmp = await SnmpFdb.ReadAsync(d.Host, community).ConfigureAwait(false); raw = snmp?.Select(kv => (kv.Key, kv.Value)).ToList(); } }
             catch { /* SNMP off */ }
         }
-        if (raw is null) return (null, wifi is { Count: > 0 } ? wifi : null);
+        if (raw is null) return (null, wifi is { Count: > 0 } ? wifi : null, bands is { Count: > 0 } ? bands : null);
 
         var map = new Dictionary<string, string>();
         foreach (var (mac, port) in raw)
@@ -2498,7 +2593,126 @@ public sealed class FleetService
             var key = PhysicalTopology.NormalizeMac(mac);
             if (key.Length == 12 && port.Length > 0 && !map.ContainsKey(key)) map[key] = port;
         }
-        return (map.Count > 0 ? map : null, wifi is { Count: > 0 } ? wifi : null);
+        // Re-key the bands the same way the FDB is keyed (normalized MAC), so PhysicalTopology.Build can match a
+        // client's band to its node.
+        Dictionary<string, string>? normBands = null;
+        if (bands is { Count: > 0 })
+        {
+            normBands = new Dictionary<string, string>();
+            foreach (var (mac, band) in bands)
+            {
+                var key = PhysicalTopology.NormalizeMac(mac);
+                if (key.Length == 12 && band.Length > 0 && !normBands.ContainsKey(key)) normBands[key] = band;
+            }
+        }
+        return (map.Count > 0 ? map : null, wifi is { Count: > 0 } ? wifi : null,
+                normBands is { Count: > 0 } ? normBands : null);
+    }
+
+    // ---- DHCP lease enrichment -------------------------------------------------------------------
+
+    /// <summary>Enriches devices from the DHCP server lease table of every credentialed MikroTik. The lease
+    /// carries three things nothing else on the network does: the owner's manually-set <b>comment</b> (their
+    /// own label for the device) → <c>ExtraInfo["Kommentar"]</c> for the Comment column; the client-reported
+    /// <b>host-name</b> → the device Name, but <b>only when nothing else has named it</b> (active
+    /// identification always wins); and the DHCP vendor <b>class-id</b> → an OS guess for gear that exposes
+    /// nothing else (a phone answers "android-dhcp-16", a PC "MSFT 5.0"), filling only an empty OS.
+    ///
+    /// <para>Reads over REST first, then the encrypted SSH CLI – the usual order, because a RouterOS HTTPS
+    /// handshake is so often broken. A network with no MikroTik login is a no-op.</para></summary>
+    private async Task EnrichFromDhcpLeasesAsync()
+    {
+        List<Device> servers;
+        lock (_lock) servers = _devices
+            .Where(d => IsMikroTik(d) && d.EncryptedPassword.Length > 0)
+            .Select(d => d.Clone()).ToList();
+        if (servers.Count == 0) return;
+
+        int parallel;
+        lock (_lock) parallel = _appData.ParallelDeviceReads is >= 1 and <= 32 ? _appData.ParallelDeviceReads : 8;
+        using var gate = new SemaphoreSlim(parallel);
+
+        // MAC (normalised) → the lease describing it. A router that runs no DHCP server just returns nothing.
+        var leases = new Dictionary<string, DhcpLease>(StringComparer.Ordinal);
+        await Task.WhenAll(servers.Select(async d =>
+        {
+            await gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var list = await ReadDhcpLeasesAsync(d).ConfigureAwait(false);
+                if (list is null) return;
+                lock (leases)
+                    foreach (var l in list)
+                    {
+                        var key = PhysicalTopology.NormalizeMac(l.Mac);
+                        if (key.Length != 12) continue;
+                        // First server to report a MAC wins, but a later record that actually carries a
+                        // comment upgrades a commentless one (the router owning the reservation has the label).
+                        if (!leases.TryGetValue(key, out var prev)) leases[key] = l;
+                        else if (prev.Comment.Length == 0 && l.Comment.Length > 0) leases[key] = l;
+                    }
+            }
+            catch { /* one unreachable server must not cost the rest */ }
+            finally { gate.Release(); }
+        })).ConfigureAwait(false);
+
+        if (leases.Count == 0) return;
+
+        bool changed = false;
+        lock (_lock)
+        {
+            foreach (var d in _devices)
+            {
+                var key = PhysicalTopology.NormalizeMac(d.MacAddress);
+                DhcpLease? l = key.Length == 12 && leases.TryGetValue(key, out var byMac) ? byMac : null;
+                // Fall back to matching by address: a device seen only over IPv6/mDNS may carry no ARP MAC,
+                // but its lease address still identifies it.
+                l ??= leases.Values.FirstOrDefault(x => x.Address.Length > 0 &&
+                        (x.Address == d.Host || d.AltAddresses.Contains(x.Address)));
+                if (l is null) continue;
+
+                // The owner's own label → its own column. Authoritative, so refreshed whenever it changes.
+                if (l.Comment.Length > 0 &&
+                    (!d.ExtraInfo.TryGetValue("Kommentar", out var oldc) || oldc != l.Comment))
+                { d.ExtraInfo["Kommentar"] = l.Comment; changed = true; }
+
+                // host-name names the device ONLY when nothing else has (an active probe, mDNS, SSDP … all set
+                // d.Name, and they are more trustworthy than a client-chosen DHCP hostname).
+                if (d.Name.Length == 0 && l.HostName.Length > 0)
+                { d.Name = l.HostName; changed = true; }
+
+                // The DHCP vendor class is a free OS fingerprint; fill only an empty OS, never override the
+                // precise one WMI/SMB read.
+                var os = DhcpLeases.OsFromClassId(l.ClassId);
+                if (os.Length > 0 && !d.ExtraInfo.ContainsKey("OS") && !d.ExtraInfo.ContainsKey("System"))
+                { d.ExtraInfo["System"] = os; changed = true; }
+
+                // The raw vendor class itself, verbatim, as a detail row: often the only thing that names
+                // an appliance ("Swisscom TV Box IP2000", "HMIP-HAP", "ubnt") even when it maps to no OS.
+                if (l.ClassId.Length > 0 &&
+                    (!d.ExtraInfo.TryGetValue("DHCP-Klasse", out var oldcl) || oldcl != l.ClassId))
+                { d.ExtraInfo["DHCP-Klasse"] = l.ClassId; changed = true; }
+            }
+            if (changed) Persist();
+        }
+        if (changed) Changed?.Invoke();
+    }
+
+    /// <summary>Reads one MikroTik's DHCP lease table: REST first, then the encrypted SSH CLI (the secure
+    /// fallback for a broken-HTTPS RouterOS). Never plain HTTP. Returns null when neither transport works.</summary>
+    private static async Task<List<DhcpLease>?> ReadDhcpLeasesAsync(Device d)
+    {
+        var password = d.EncryptedPassword.Length > 0 ? CredentialProtector.Unprotect(d.EncryptedPassword) : "";
+        if (password.Length == 0) return null;
+        try
+        {
+            using var client = new RouterOsClient(d.Host, d.Port, d.UseHttps, d.Username, password, ignoreCertErrors: true);
+            var rest = await client.GetDhcpLeasesAsync().ConfigureAwait(false);
+            if (rest is { Count: > 0 }) return rest;
+        }
+        catch { /* broken HTTPS – fall through to the SSH CLI */ }
+        try { return await RouterOsSsh.GetDhcpLeasesAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false); }
+        catch { return null; }
     }
 
     // ---- reachability ----------------------------------------------------------------------------
@@ -2708,7 +2922,7 @@ public sealed class FleetService
                     {
                         try
                         {
-                            var (table, _) = await OneFdbAsync(d, community).ConfigureAwait(false);
+                            var (table, _, _) = await OneFdbAsync(d, community).ConfigureAwait(false);
                             if (table is { Count: > 0 }) StoreFdb(WebId(d), table);
                         }
                         catch { /* the map falls back to reading it itself */ }
@@ -3222,6 +3436,17 @@ public sealed class FleetService
         var v6 = d.AltAddresses.Where(a => a.Contains(':'));
         if (hostIsV6) v6 = v6.Prepend(d.Host);
 
+        // ⚠️ Display-only MAC recovery, deliberately NOT written to the device: a host only ever seen by
+        // name/IP (mDNS, or a stale ARP entry) has no MAC from ARP/ND, but its EUI-64 link-local encodes the
+        // real hardware MAC – fill the MAC and its OUI-vendor columns from that. Kept local because writing
+        // it to d.MacAddress would flip WebId (MAC-when-present, else Host) mid-session and break the device's
+        // identity/selection. ToMac returns "" for a randomised/privacy fe80::, so nothing bogus is shown (and
+        // such a MAC has no OUI vendor anyway, which is correct).
+        var mac = d.MacAddress;
+        if (mac.Length == 0)
+            foreach (var a in v6)
+                if (Ipv6LinkLocal.ToMac(a) is { Length: > 0 } derived) { mac = derived; break; }
+
         var firmware = d.ExtraInfo.TryGetValue("Firmware", out var fwv) ? fwv
             : d.ExtraInfo.TryGetValue("Version", out var vrv) ? vrv : "";
         var latestVersion = UpdateOf(d)?.Latest ?? "";
@@ -3233,7 +3458,7 @@ public sealed class FleetService
         var versionUrl = FirmwareChangelog.UrlFor(Vendor(d), firmware);
 
         return new(
-        WebId(d), Display(d), v4, d.MacAddress, Vendor(d), Kind(d), KindWithVm(d), Model(d),
+        WebId(d), Display(d), v4, mac, Vendor(d), Kind(d), KindWithVm(d), Model(d),
         StatusText(d), Gateways().Contains(d.Host), d.EncryptedPassword.Length > 0,
         VncPort(d), d.Username,
         // ⚠️ The ExtraInfo keys are German (they double as classifier lookup keys), so localise them here on
@@ -3271,12 +3496,15 @@ public sealed class FleetService
         // ⚠️ The OUI registrant, which is NOT the same as Vendor: that one prefers what the device said
         // about itself (web fingerprint, SNMP, mDNS) and only falls back to the OUI. They differ exactly
         // where it is interesting – an ODM-built box reports its brand but carries the ODM's MAC block.
-        OuiLookup.Lookup(d.MacAddress),
+        OuiLookup.Lookup(mac),
         latestVersion, UpdateOf(d)?.InstalledDate ?? "",
         UpdateOf(d)?.LatestDate ?? "", UpdateOf(d)?.Available ?? false,
         latestUrl, versionUrl,
         Ipv6PortsOf(d), Ipv6MetaOf(d),
-        d.ExtraInfo.TryGetValue("Quelle", out var quelle) ? quelle : "");
+        d.ExtraInfo.TryGetValue("Quelle", out var quelle) ? quelle : "",
+        // The owner's manually-set DHCP lease comment (their own label), shown in its own column – so it is
+        // hidden from the details key/value list (DetailsHiddenKeys) to avoid showing the same text twice.
+        d.ExtraInfo.TryGetValue("Kommentar", out var kommentar) ? kommentar : "");
     }
 
     /// <summary>The interface index to use as the IPv6 zone for link-local addresses – the adapter the scan
@@ -3386,6 +3614,10 @@ public sealed class FleetService
         d.ExtraInfo["mDNS"] = "yes";       // announced over mDNS → a discovery badge in the services column
         if (m.HostName.Length > 0 && d.Name.Length == 0) d.Name = m.HostName;
         if (m.Model.Length > 0) d.ExtraInfo["mDNS-Modell"] = m.Model;
+        // The OS an AirPlay receiver names for itself (audioOS/tvOS/macOS 26.6). Only fill when nothing
+        // more authoritative did – WMI/SMB/QNAP set "System" first for the platforms that have those.
+        if (m.OsVersion.Length > 0 && !d.ExtraInfo.ContainsKey("System") && !d.ExtraInfo.ContainsKey("OS"))
+            d.ExtraInfo["System"] = m.OsVersion;
     }
 
     private static void ApplySsdp(Device d, SsdpScanner.SsdpInfo s)

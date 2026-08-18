@@ -134,6 +134,10 @@ public class DeviceViewModel : INotifyPropertyChanged
             if (!Model.ExtraInfo.TryGetValue("mDNS-Dienste", out var old) || old != svc)
             { Model.ExtraInfo["mDNS-Dienste"] = svc; changed = true; }
         }
+        // OS version an AirPlay receiver names for itself (audioOS/tvOS/macOS 26.6); only when nothing
+        // more authoritative (WMI/SMB) already set it.
+        if (mdns.OsVersion.Length > 0 && !Model.ExtraInfo.ContainsKey("System") && !Model.ExtraInfo.ContainsKey("OS"))
+        { Model.ExtraInfo["System"] = mdns.OsVersion; changed = true; }
 
         // Fill the Model and Vendor columns from the mDNS model, so an Apple device – which has no OUI
         // vendor and offers no UPnP – stops showing up blank. Apple publishes a hardware identifier

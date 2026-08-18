@@ -23,9 +23,9 @@ public static class BackupService
         if (method == BackupMethod.Web) throw new NotSupportedException(WebNotAvailable);
 
         var port = sshPort is > 0 and <= 65535 ? sshPort : 22;
-        ConnectionInfo Info() => new ConnectionInfo(device.Host, port, device.Username,
-            new PasswordAuthenticationMethod(device.Username, password))
-        { Timeout = TimeSpan.FromSeconds(12) }.WithCompatibleMacs();
+        ConnectionInfo Info() =>
+            SshCompat.PasswordOrInteractive(device.Host, port, device.Username, password, TimeSpan.FromSeconds(12))
+                .WithCompatibleMacs();
 
         var work = Task.Run(() =>
         {
@@ -47,7 +47,12 @@ public static class BackupService
 
             // 2) Download over SCP.
             log?.Report($"Downloading {RemoteFile} via SSH/SCP from {device.Host}:{port}…");
-            using (var scp = new ScpClient(Info()))
+            // DoubleQuote is the transformation the older parameterless constructor applied by default,
+            // so passing it explicitly keeps the exact on-the-wire path RouterOS's SCP already accepts –
+            // this only silences the 2026 obsoletion of the bare constructor. RemoteFile is a fixed,
+            // trusted constant (no user input), so the command-injection concern behind that obsoletion
+            // does not apply here.
+            using (var scp = new ScpClient(Info(), RemotePathTransformation.DoubleQuote))
             {
                 ConnectSsh(scp, device.Host, port);
                 try

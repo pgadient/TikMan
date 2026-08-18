@@ -37,6 +37,30 @@ public static class SshCompat
     public static readonly string OpenSshCompatOptions =
         $"-o MACs={OpenSshMacList} -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAuthentication=no";
 
+    /// <summary>Builds a <see cref="ConnectionInfo"/> that offers BOTH the plain <c>password</c> method and
+    /// <c>keyboard-interactive</c>. Some appliances accept <b>only</b> keyboard-interactive and reject the
+    /// <c>password</c> method outright – notably <b>UniFi OS consoles (UDM/UDR/…)</b>, where the built-in SSH
+    /// server (PAM-backed) answers the password prompt interactively; an interactive PuTTY/Tera Term login
+    /// works while SSH.NET's <see cref="PasswordAuthenticationMethod"/> alone fails. Offering both is safe and
+    /// additive: a server that supports the password method uses it first and never reaches the interactive
+    /// fallback, and every interactive prompt is simply answered with the same password.
+    /// <para>⚠️ The password is used only to build these auth methods for this one connection; it is never
+    /// stored or logged (same rule as everywhere else).</para></summary>
+    public static ConnectionInfo PasswordOrInteractive(string host, int port, string user, string password,
+        TimeSpan? timeout = null)
+    {
+        var p = port is > 0 and <= 65535 ? port : 22;
+        var pw = new PasswordAuthenticationMethod(user, password);
+        var ki = new KeyboardInteractiveAuthenticationMethod(user);
+        ki.AuthenticationPrompt += (_, e) =>
+        {
+            foreach (var prompt in e.Prompts) prompt.Response = password;
+        };
+        var info = new ConnectionInfo(host, p, user, pw, ki);
+        if (timeout is { } t) info.Timeout = t;
+        return info;
+    }
+
     /// <summary>Drops the encrypt-then-MAC HMAC variants from a SSH.NET connection so a device with a
     /// broken ETM implementation falls back to a plain HMAC instead of failing the handshake.</summary>
     public static ConnectionInfo WithCompatibleMacs(this ConnectionInfo info)

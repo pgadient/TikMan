@@ -378,7 +378,7 @@ public partial class MainWindow
             UpdateCombinedProgress();
         }));
 
-        // UPnP first: its friendly name is the one the owner chose ("Wohnzimmer unten"), whereas over
+        // UPnP first: its friendly name is the one the owner chose ("Living Room"), whereas over
         // mDNS the same box answers to a bare UUID. mDNS then fills the gaps – and the devices UPnP
         // never sees at all, which is most of them.
         foreach (var (ip, info) in await ssdp)

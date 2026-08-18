@@ -61,11 +61,8 @@ public sealed class SshTerminalSession : ITerminalSession
         {
             return await Task.Run(() =>
             {
-                var conn = new ConnectionInfo(host, port is > 0 and <= 65535 ? port : 22, user,
-                    new PasswordAuthenticationMethod(user, password))
-                {
-                    Timeout = TimeSpan.FromSeconds(12),
-                }.WithCompatibleMacs();
+                var conn = SshCompat.PasswordOrInteractive(host, port, user, password, TimeSpan.FromSeconds(12))
+                    .WithCompatibleMacs();
                 var ssh = new SshClient(conn);
                 ssh.Connect();
                 var shell = ssh.CreateShellStream("xterm-256color",

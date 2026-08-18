@@ -114,8 +114,7 @@ public partial class MainWindow : Window
         WireDragSelect(_deviceGrid);
         WireColumnResize(_deviceGrid);
         WireScrollbarDrag();
-        WireScrollbarEdges(_deviceGrid);
-        if (this.FindControl<DataGrid>("Ipv6Grid") is { } v6Grid) { WireColumnResize(v6Grid); WireRowDetails(v6Grid); WireScrollbarEdges(v6Grid); }
+        if (this.FindControl<DataGrid>("Ipv6Grid") is { } v6Grid) { WireColumnResize(v6Grid); WireRowDetails(v6Grid); }
         _detailTabs = this.FindControl<TabControl>("DetailTabs");
         // The Monitoring/Logs tabs hide for devices that don't support them. If the hidden tab was the
         // selected one, the pane would show its (blank) content with no visible header – snap back to
@@ -784,45 +783,6 @@ public partial class MainWindow : Window
         else bar.Classes.Remove("dragging");
     }
 
-    /// <summary>Makes the scrollbar context-menu's "Top / Bottom / Left edge / Right edge" items jump the whole
-    /// way to the edge. Avalonia has no First/Last scroll type: ScrollToHome sets Value = Minimum then raises
-    /// <c>LargeDecrement</c>, ScrollToEnd sets Value = Maximum then raises <c>LargeIncrement</c> – the same
-    /// events a page click raises. So a page event whose Value has ALREADY landed on the extreme is an
-    /// edge command (or a page that reached the end); we then scroll the real first/last row (or column) into
-    /// view. The DataGrid's virtualised vertical Maximum is only an estimate, so Value = Maximum otherwise
-    /// stops one page short of the true bottom – this also fixes paging all the way down. A normal mid-list
-    /// page has Value strictly inside the range and passes straight through to the DataGrid untouched.</summary>
-    private void WireScrollbarEdges(DataGrid grid)
-    {
-        grid.TemplateApplied += (_, e) =>
-        {
-            if (e.NameScope.Find<global::Avalonia.Controls.Primitives.ScrollBar>("PART_VerticalScrollbar") is { } vbar)
-                vbar.Scroll += (_, se) => OnEdgeScroll(grid, vbar, se, vertical: true);
-            if (e.NameScope.Find<global::Avalonia.Controls.Primitives.ScrollBar>("PART_HorizontalScrollbar") is { } hbar)
-                hbar.Scroll += (_, se) => OnEdgeScroll(grid, hbar, se, vertical: false);
-        };
-    }
-
-    private static void OnEdgeScroll(DataGrid grid, global::Avalonia.Controls.Primitives.ScrollBar bar,
-        global::Avalonia.Controls.Primitives.ScrollEventArgs e, bool vertical)
-    {
-        bool first;
-        if (e.ScrollEventType == global::Avalonia.Controls.Primitives.ScrollEventType.LargeDecrement && bar.Value <= bar.Minimum)
-            first = true;
-        else if (e.ScrollEventType == global::Avalonia.Controls.Primitives.ScrollEventType.LargeIncrement && bar.Value >= bar.Maximum)
-            first = false;
-        else return;
-
-        if (grid.ItemsSource is null) return;
-        var rows = grid.ItemsSource.Cast<object>().ToList();
-        if (rows.Count == 0) return;
-
-        if (vertical)
-            grid.ScrollIntoView(first ? rows[0] : rows[^1], null);
-        else if (grid.Columns.Count > 0)
-            grid.ScrollIntoView(rows[0], first ? grid.Columns[0] : grid.Columns[^1]);
-    }
-
     private void WireColumnResize(DataGrid grid)
     {
         var lifted = false;
@@ -1463,6 +1423,13 @@ public partial class MainWindow : Window
     private async void OnTabChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (_tabs is null) return; // fires once during construction, before the fields are set
+        // ⚠️ SelectionChanged is a BUBBLING routed event. Every ComboBox and DataGrid inside the tab
+        // content (the per-row channel picker in the update assistant, the monitor/log combos, the device
+        // grids, the inner detail TabControl) raises it too, and it bubbles up to this TabControl handler.
+        // Acting on those re-enters the current tab's logic – e.g. setting a row's channel during
+        // UpdateAllView.Reload() bubbled here, called Reload() again, and cleared _rows mid-enumeration
+        // ("Collection was modified", crash). Only a genuine tab switch has this TabControl as its source.
+        if (!ReferenceEquals(e.Source, _tabs)) return;
         // ⚠️ Switch on the tab's Tag, not its index: tabs come and go (the IPv6 tab is optional), and an
         // index-based switch silently drew the wrong map the moment a tab was inserted above these.
         var tag = (_tabs.SelectedItem as TabItem)?.Tag as string;
@@ -1679,8 +1646,18 @@ public partial class MainWindow : Window
         // Measured nodes, with any hand-set position applied, plus the user's own nodes. A node the user
         // placed (a saved position, or a manual node) is "anchored"; one the automatic layout positioned is
         // "free".
+        // ⚠️ A saved hand-arrangement is reused only while it still describes THIS map. The moment a measured
+        // node appears that has no saved spot – a device that joined, a new WLAN/port node, a structural change
+        // from a vendor/code update – the saved positions describe a DIFFERENT graph. Applying them to only SOME
+        // nodes leaves each newcomer at its fresh-layout coordinate, far from its stale-positioned parent: the
+        // exact first-build scramble that only "rearrange" (which clears the positions) used to fix. So honour
+        // the arrangement only when it covers EVERY measured node; otherwise draw the fresh tidy layout. Re-drag
+        // to re-pin – it sticks until the map's shape changes again. Manual nodes/edges are the user's explicit
+        // assertions and are always kept.
+        bool fullArrangement = layout.Nodes.Count > 0 &&
+            layout.Nodes.All(n => edit.PositionOf(view, n.Key) is not null);
         var tagged = layout.Nodes
-            .Select(n => edit.PositionOf(view, n.Key) is { } p
+            .Select(n => fullArrangement && edit.PositionOf(view, n.Key) is { } p
                 ? (box: n with { X = p.X, Y = p.Y }, anchored: true)
                 : (box: n, anchored: false))
             .Concat(edit.ManualNodes(view).Select(m => (box: TopoEditing.ToBox(m), anchored: true)))
@@ -1948,10 +1925,15 @@ public partial class MainWindow : Window
     private async void OnTopoClearManual(object? sender, RoutedEventArgs e)
     {
         var view = (sender as Control)?.Tag as string ?? "logical";
-        if (!_vm.TopoEdit.HasAnything(view)) { _vm.ReportAction(T("Av_TopoNothingManual")); return; }
+        // ⚠️ Clear BOTH map views, not just the tab the button sits on. The manual nodes/links and the hand
+        // arrangement are stored per view, and "discard my additions" is expected to wipe the lot – so nothing
+        // is left lingering on the other map. Rebuild the current view now; the other redraws clean when shown.
+        if (!_vm.TopoEdit.HasAnything("logical") && !_vm.TopoEdit.HasAnything("physical"))
+        { _vm.ReportAction(T("Av_TopoNothingManual")); return; }
         if (!await ConfirmWindow.AskAsync(this, T("Av_TopoClearConfirm"), T("Av_TopoClearManual"))) return;
 
-        _vm.TopoEdit.ClearAll(view);
+        _vm.TopoEdit.ClearAll("logical");
+        _vm.TopoEdit.ClearAll("physical");
         _vm.SaveSettings();
         await BuildTopologyAsync(view);
     }

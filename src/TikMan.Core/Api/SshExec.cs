@@ -17,11 +17,8 @@ public static class SshExec
         var work = Task.Run(() =>
         {
             var results = new List<(string, string)>();
-            var conn = new ConnectionInfo(host, port is > 0 and <= 65535 ? port : 22, user,
-                new PasswordAuthenticationMethod(user, password))
-            {
-                Timeout = TimeSpan.FromSeconds(6),
-            }.WithCompatibleMacs();
+            var conn = SshCompat.PasswordOrInteractive(host, port, user, password, TimeSpan.FromSeconds(6))
+                .WithCompatibleMacs();
             using var ssh = new SshClient(conn);
             ssh.Connect();
             ShellStream? shell = null;

@@ -83,8 +83,7 @@ public static class TpLinkSshConnector
     // ⚠️ Generous connect timeout on purpose: a real TP-Link takes ~8.3 s just to finish the SSH handshake,
     // so 25 s gives the one-time (now persistent) connect room without hanging the pass.
     private static ConnectionInfo Info(string host, int port, string user, string password) =>
-        new ConnectionInfo(host, port is > 0 and <= 65535 ? port : 22, user,
-            new PasswordAuthenticationMethod(user, password)) { Timeout = TimeSpan.FromSeconds(25) }
+        SshCompat.PasswordOrInteractive(host, port, user, password, TimeSpan.FromSeconds(25))
             .WithCompatibleMacs();
 
     /// <summary>Opens and readies a TP-Link shell on a freshly connected client: a "vt100" PTY, swallow the
