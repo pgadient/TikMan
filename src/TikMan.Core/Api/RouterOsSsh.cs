@@ -152,10 +152,13 @@ public static class RouterOsSsh
         IReadOnlyDictionary<string, string>? channels = null)
     {
         var sets = new Dictionary<string, SortedSet<string>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var raw in (text ?? "").Split('\n'))
+        // ⚠️ `registration-table print detail` WRAPS each entry over several lines (the MAC on line 1, band= on
+        // line 3), so a per-line scan never sees a MAC and its band together. Fold each record (starting at its
+        // "<n>  A …" index line) into one string first, then pull the fields out of the whole record.
+        foreach (var record in SplitRegRecords(text))
         {
-            var macM = Regex.Match(raw, @"[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}");
-            var bandM = Regex.Match(raw, @"\b([2-6])ghz-", RegexOptions.IgnoreCase);
+            var macM = Regex.Match(record, @"(?<![\w-])mac-address=([0-9A-Fa-f:]{17})", RegexOptions.IgnoreCase);
+            var bandM = Regex.Match(record, @"\bband=([2-6])ghz-", RegexOptions.IgnoreCase);
             if (!macM.Success || !bandM.Success) continue;
             var band = bandM.Groups[1].Value switch { "2" => "2.4", "5" => "5", "6" => "6", _ => "" };
             if (band.Length == 0) continue;
@@ -163,16 +166,37 @@ public static class RouterOsSsh
             var chan = "";
             if (channels is not null)
             {
-                var ifM = Regex.Match(raw, @"(?<![\w-])interface=(.+?)\s+ssid=");
+                var ifM = Regex.Match(record, @"(?<![\w-])interface=(.+?)\s+ssid=");
                 if (ifM.Success) channels.TryGetValue(ifM.Groups[1].Value.Trim(), out chan!);
             }
             var label = chan is { Length: > 0 } ? $"{band} GHz ({chan})" : $"{band} GHz";
 
-            var mac = macM.Value.ToUpperInvariant();
+            var mac = macM.Groups[1].Value.ToUpperInvariant();
             if (!sets.TryGetValue(mac, out var set)) sets[mac] = set = new SortedSet<string>();
             set.Add(label);
         }
         return sets.ToDictionary(kv => kv.Key, kv => string.Join(" / ", kv.Value), StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Folds a RouterOS <c>print detail</c> dump into one string per record: a record begins at a line
+    /// that starts (after indent) with the entry number, and the wrapped continuation lines below it are joined
+    /// in. Pure.</summary>
+    private static IEnumerable<string> SplitRegRecords(string text)
+    {
+        var sb = new System.Text.StringBuilder();
+        bool started = false;
+        foreach (var raw in (text ?? "").Split('\n'))
+        {
+            var line = raw.TrimEnd('\r');
+            if (Regex.IsMatch(line, @"^\s*\d+\s"))
+            {
+                if (started) { yield return sb.ToString(); sb.Clear(); }
+                started = true;
+                sb.Append(line);
+            }
+            else if (started) { sb.Append(' ').Append(line.Trim()); }
+        }
+        if (started) yield return sb.ToString();
     }
 
     public static async Task<List<Models.LogEntry>?> GetLogAsync(string host, int port, string user, string password,
