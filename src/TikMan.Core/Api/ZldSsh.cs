@@ -472,6 +472,18 @@ public static class ZldSsh
 
     // ---- transport: interactive shell, one session per call ------------------------------------------
 
+    /// <summary>The DHCP leases the firewall is handing out, from <c>show ip dhcp binding</c> over the ZLD CLI:
+    /// MAC → IP → host-name, so a client that offers nothing else can still be named. Null when unreadable / no
+    /// DHCP server on the box.</summary>
+    public static async Task<List<DhcpLease>?> GetDhcpLeasesAsync(string host, int port, string user, string password,
+        CancellationToken ct = default)
+    {
+        var outputs = await RunAsync(host, port, user, password, new[] { "show ip dhcp binding" }, ct).ConfigureAwait(false);
+        if (outputs is null || outputs.Count == 0) return null;
+        var list = DhcpLeases.ParseZldBinding(outputs[0]);
+        return list.Count > 0 ? list : null;
+    }
+
     private static async Task<List<string>?> RunAsync(string host, int port, string user, string password,
         IReadOnlyList<string> commands, CancellationToken ct, TimeSpan? budget = null)
     {

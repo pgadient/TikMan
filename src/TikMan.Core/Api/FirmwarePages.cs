@@ -103,10 +103,16 @@ public static class FirmwarePages
             // have it (read off the switch once a login is set) and open the plain library otherwise. Both
             // are real pages, so neither 404s.
             if (model.Length == 0) return ZyxelDownloads;
-            // First whitespace token only, so a model that arrived with trailing text ("GS1920-48 (…)")
-            // doesn't push junk into the query.
-            var parts = model.Split(new[] { ' ', '\t' }, System.StringSplitOptions.RemoveEmptyEntries);
-            var m = parts.Length > 0 ? parts[0] : model;
+            // Drop any trailing parenthetical ("GS1920-48 (…)") that arrived with the model.
+            var clean = model;
+            int paren = clean.IndexOf('(');
+            if (paren > 0) clean = clean[..paren].Trim();
+            var parts = clean.Split(new[] { ' ', '\t' }, System.StringSplitOptions.RemoveEmptyEntries);
+            // ⚠️ Two model shapes, two query forms (both verified against the live library):
+            //   • a SWITCH is a single token ("XGS1930-28") the ?model= search matches as-is;
+            //   • a FIREWALL is multi-word ("USG FLEX 500") and the site expects the slug form "usg-flex-500"
+            //     (lower-cased, hyphenated) – the raw first token "USG" hits the wrong/blank page.
+            var m = parts.Length > 1 ? ModelSlug(clean) : (parts.Length > 0 ? parts[0] : clean);
             return $"{ZyxelDownloads}?model={System.Uri.EscapeDataString(m)}";
         }
 

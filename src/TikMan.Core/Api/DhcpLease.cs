@@ -33,6 +33,43 @@ public static partial class DhcpLeases
         return list;
     }
 
+    /// <summary>Parses a dnsmasq lease file (<c>/run/dnsmasq.lease</c> on a UniFi OS console – note the singular
+    /// "lease") into leases. Each line is "<c>&lt;expiry-epoch&gt; &lt;mac&gt; &lt;ip&gt; &lt;host-name&gt;
+    /// &lt;client-id&gt;</c>"; a host-name of <c>*</c> means the client sent none. dnsmasq carries no lease comment
+    /// and no DHCP vendor class, so only the host-name (and address) are filled. Pure + pinnable.</summary>
+    public static List<DhcpLease> ParseDnsmasq(string text)
+    {
+        var list = new List<DhcpLease>();
+        foreach (var raw in (text ?? "").Split('\n'))
+        {
+            var parts = raw.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 4 || !MacToken().IsMatch(parts[1])) continue;   // 2nd column must be a MAC
+            var host = parts[3] == "*" ? "" : parts[3];
+            list.Add(new DhcpLease(parts[1].ToUpperInvariant(), parts[2], host, "", ""));
+        }
+        return list;
+    }
+
+    /// <summary>Parses a ZLD firewall's <c>show ip dhcp binding</c> table (verified on a USG FLEX 500, ZLD V5.39)
+    /// into leases. Columns are "<c>No. Interface IP MAC Reserved(yes/no) Host-Name Expiration-Time</c>" – the
+    /// Description wraps onto an indented next line, which is ignored. MAC → IP → host-name; ZLD carries no lease
+    /// comment or DHCP vendor class here, so those stay empty. Pure + pinnable.</summary>
+    public static List<DhcpLease> ParseZldBinding(string text)
+    {
+        var list = new List<DhcpLease>();
+        foreach (var raw in (text ?? "").Split('\n'))
+        {
+            // "<n> <iface> <ip> <mac> <yes|no> [host-name] <YYYY-MM-DD …>"; the host-name is optional (a client
+            // may send none) and is captured non-greedily up to the expiry date.
+            var m = Regex.Match(raw,
+                @"^\s*\d+\s+\S+\s+(\d{1,3}(?:\.\d{1,3}){3})\s+([0-9a-fA-F:]{17})\s+(?:yes|no)\s+(?:(.*?)\s+)?\d{4}-\d{2}-\d{2}",
+                RegexOptions.IgnoreCase);
+            if (!m.Success) continue;
+            list.Add(new DhcpLease(m.Groups[2].Value.ToUpperInvariant(), m.Groups[1].Value, m.Groups[3].Value.Trim(), "", ""));
+        }
+        return list;
+    }
+
     /// <summary>A friendly OS name derived from the DHCP vendor class-id (option 60), or "" when it says
     /// nothing about the OS. "android-dhcp-16" → "Android 16" (the number is the Android major version);
     /// "MSFT 5.0"/"MSFT 98" → "Windows" (Microsoft's DHCP vendor class). Everything else (udhcp, dhcpcd,
@@ -97,4 +134,7 @@ public static partial class DhcpLeases
 
     [GeneratedRegex(@"^android-dhcp-(\d+)", RegexOptions.IgnoreCase)]
     private static partial Regex AndroidClass();
+
+    [GeneratedRegex(@"^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$")]
+    private static partial Regex MacToken();
 }

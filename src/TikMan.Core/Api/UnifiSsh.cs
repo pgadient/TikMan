@@ -358,6 +358,19 @@ public static class UnifiSsh
         : ts.TotalHours >= 1 ? $"{ts.Hours}h {ts.Minutes}m"
         : $"{ts.Minutes}m";
 
+    /// <summary>The DHCP leases a UniFi OS console (UDM/UDR) is handing out, read device-natively from dnsmasq's
+    /// lease file over SSH (<c>/run/dnsmasq.lease</c>) – NOT from the UniFi controller database. Gives MAC → IP →
+    /// host-name, so a client that offers nothing else can still be named. Empty/absent on a device that isn't the
+    /// DHCP server (a switch/AP) – harmless. Null when the file can't be read.</summary>
+    public static async Task<List<DhcpLease>?> GetDhcpLeasesAsync(string host, int port, string user, string password,
+        CancellationToken ct = default)
+    {
+        var text = await RunAsync(host, port, user, password, "cat /run/dnsmasq.lease 2>/dev/null", ct).ConfigureAwait(false);
+        if (text is null) return null;
+        var list = DhcpLeases.ParseDnsmasq(text);
+        return list.Count > 0 ? list : null;
+    }
+
     /// <summary>The switch forwarding table (MAC → physical port) for the physical topology map, read over SSH.
     /// <para>Source is the switch driver's own table <c>/proc/switch/mac_table</c> — lines
     /// <c>vlan=1,port=16,mac=aa:bb:cc:dd:ee:ff</c> (verified on a USW-Lite-16-PoE). This is the L2 evidence the

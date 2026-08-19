@@ -33,6 +33,11 @@ public static class InfoKeyLabels
         ["Druckserver"] = "Ik_PrintServer",
         ["Firmware-Dateien"] = "Ik_FirmwareFiles",
         ["DHCP-Klasse"] = "Ik_DhcpClass",
+        ["DHCP-Name"] = "Ik_DhcpName",
+        ["mDNS-Name"] = "Ik_MdnsName",
+        ["UPnP-Name"] = "Ik_UpnpName",
+        ["SMB-Name"] = "Ik_SmbName",
+        ["DNS-Name"] = "Ik_DnsName",
     };
 
     /// <summary>The localised label for an ExtraInfo key, or the key itself when it needs no translation.</summary>

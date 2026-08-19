@@ -1318,7 +1318,11 @@ public sealed class FleetService
             else if (!string.Equals(d.MacAddress, f.MacAddress, StringComparison.OrdinalIgnoreCase))
                 d.ExtraInfo["Weitere MAC"] = f.MacAddress;
         }
-        if (f.Identity.Length > 0 && d.Name.Length == 0) d.Name = f.Identity;
+        if (f.Identity.Length > 0)
+        {
+            d.ExtraInfo["DNS-Name"] = f.Identity;   // its own detail row, so the reverse-DNS name is visible too
+            if (d.Name.Length == 0) d.Name = f.Identity;
+        }
         if (f.Board.Length > 0)
         {
             d.ExtraInfo["Modell"] = f.Board;
@@ -1787,7 +1791,11 @@ public sealed class FleetService
             if (await SmbInfoProbe.QueryAsync(host, 445, ct).ConfigureAwait(false) is { } smb)
                 lock (_lock)
                 {
-                    if (smb.ComputerName.Length > 0 && d.Name.Length == 0) d.Name = smb.ComputerName;
+                    if (smb.ComputerName.Length > 0)
+                    {
+                        d.ExtraInfo["SMB-Name"] = smb.ComputerName;   // its own detail row, so every name a device gives is visible
+                        if (d.Name.Length == 0) d.Name = smb.ComputerName;
+                    }
                     if (smb.OsFriendly.Length > 0 && !d.ExtraInfo.ContainsKey("System")) d.ExtraInfo["System"] = smb.OsFriendly;
                 }
 
@@ -2624,7 +2632,8 @@ public sealed class FleetService
     {
         List<Device> servers;
         lock (_lock) servers = _devices
-            .Where(d => IsMikroTik(d) && d.EncryptedPassword.Length > 0)
+            .Where(d => d.EncryptedPassword.Length > 0 &&
+                        (IsMikroTik(d) || (IsUbiquiti(d) && Kind(d) == DeviceKind.Router) || IsZyxelFirewall(d)))
             .Select(d => d.Clone()).ToList();
         if (servers.Count == 0) return;
 
@@ -2676,8 +2685,15 @@ public sealed class FleetService
                     (!d.ExtraInfo.TryGetValue("Kommentar", out var oldc) || oldc != l.Comment))
                 { d.ExtraInfo["Kommentar"] = l.Comment; changed = true; }
 
-                // host-name names the device ONLY when nothing else has (an active probe, mDNS, SSDP … all set
-                // d.Name, and they are more trustworthy than a client-chosen DHCP hostname).
+                // The client-reported DHCP host-name → its own detail row, so it shows even when a more
+                // trustworthy source (active probe, mDNS, SSDP …) already won the Name. Those can differ from
+                // the DHCP name, and seeing every name a device reports is the point.
+                if (l.HostName.Length > 0 &&
+                    (!d.ExtraInfo.TryGetValue("DHCP-Name", out var olddn) || olddn != l.HostName))
+                { d.ExtraInfo["DHCP-Name"] = l.HostName; changed = true; }
+
+                // host-name names the device ONLY when nothing else has (mDNS/SSDP/active probe are more
+                // trustworthy than a client-chosen DHCP hostname).
                 if (d.Name.Length == 0 && l.HostName.Length > 0)
                 { d.Name = l.HostName; changed = true; }
 
@@ -2698,12 +2714,28 @@ public sealed class FleetService
         if (changed) Changed?.Invoke();
     }
 
-    /// <summary>Reads one MikroTik's DHCP lease table: REST first, then the encrypted SSH CLI (the secure
-    /// fallback for a broken-HTTPS RouterOS). Never plain HTTP. Returns null when neither transport works.</summary>
+    /// <summary>Reads one DHCP server's lease table. A MikroTik goes REST first then the encrypted SSH CLI (the
+    /// secure fallback for a broken-HTTPS RouterOS); a UniFi OS console (UDM/UDR) reads dnsmasq's lease file over
+    /// SSH. Never plain HTTP. Returns null when it can't be read.</summary>
     private static async Task<List<DhcpLease>?> ReadDhcpLeasesAsync(Device d)
     {
         var password = d.EncryptedPassword.Length > 0 ? CredentialProtector.Unprotect(d.EncryptedPassword) : "";
         if (password.Length == 0) return null;
+
+        // UniFi OS console: its dnsmasq lease file over SSH (device-native, no controller DB).
+        if (IsUbiquiti(d))
+        {
+            try { return await UnifiSsh.GetDhcpLeasesAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false); }
+            catch { return null; }
+        }
+
+        // ZLD firewall (USG FLEX …): its DHCP binding table over the ZLD CLI.
+        if (IsZyxelFirewall(d))
+        {
+            try { return await ZldSsh.GetDhcpLeasesAsync(d.Host, d.SshPort, d.Username, password).ConfigureAwait(false); }
+            catch { return null; }
+        }
+
         try
         {
             using var client = new RouterOsClient(d.Host, d.Port, d.UseHttps, d.Username, password, ignoreCertErrors: true);
@@ -3612,7 +3644,11 @@ public sealed class FleetService
     {
         NoteSource(d, "mDNS");
         d.ExtraInfo["mDNS"] = "yes";       // announced over mDNS → a discovery badge in the services column
-        if (m.HostName.Length > 0 && d.Name.Length == 0) d.Name = m.HostName;
+        if (m.HostName.Length > 0)
+        {
+            d.ExtraInfo["mDNS-Name"] = m.HostName;   // its own detail row (see "all names" below)
+            if (d.Name.Length == 0) d.Name = m.HostName;
+        }
         if (m.Model.Length > 0) d.ExtraInfo["mDNS-Modell"] = m.Model;
         // The OS an AirPlay receiver names for itself (audioOS/tvOS/macOS 26.6). Only fill when nothing
         // more authoritative did – WMI/SMB/QNAP set "System" first for the platforms that have those.
@@ -3624,7 +3660,11 @@ public sealed class FleetService
     {
         NoteSource(d, "SSDP");
         d.ExtraInfo["SSDP"] = "yes";       // announced over UPnP/SSDP → a discovery badge in the services column
-        if (s.FriendlyName.Length > 0 && !LooksLikeUuid(s.FriendlyName) && d.Name.Length == 0) d.Name = s.FriendlyName;
+        if (s.FriendlyName.Length > 0 && !LooksLikeUuid(s.FriendlyName))
+        {
+            d.ExtraInfo["UPnP-Name"] = s.FriendlyName;   // its own detail row
+            if (d.Name.Length == 0) d.Name = s.FriendlyName;
+        }
         if (s.Manufacturer.Length > 0 && !d.ExtraInfo.ContainsKey("Hersteller (Web)")) d.ExtraInfo["Hersteller (Web)"] = s.Manufacturer;
         if (s.ModelName.Length > 0 && !d.ExtraInfo.ContainsKey("Modell")) d.ExtraInfo["Modell"] = s.ModelName;
     }
