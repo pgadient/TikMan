@@ -3200,10 +3200,10 @@ public sealed class FleetService
     /// <summary>The model to show and to classify on, folded from every source that carries one.
     ///
     /// <para>⚠️ WMI reports a machine in two halves and neither is the answer on its own:
-    /// <c>Win32_ComputerSystem.Model</c> is the machine-type code ("20M9CTO1WW") while
+    /// <c>Win32_ComputerSystem.Model</c> is the machine-type code ("20ABCTO1WW") while
     /// <c>Win32_ComputerSystemProduct.Version</c> is the name a human uses ("ThinkPad P52"). Showing only
     /// the first – which is what reading <c>ExtraInfo["Modell"]</c> alone did – turned every PC into a
-    /// part number. Combined they read "ThinkPad P52 (20M9CTO1WW)", and the code is only appended when it
+    /// part number. Combined they read "ThinkPad P52 (20ABCTO1WW)", and the code is only appended when it
     /// actually adds something.</para>
     ///
     /// <para>The web title is the last resort: for a device that answers nothing else, the title of its

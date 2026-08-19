@@ -44,8 +44,8 @@ public static class WmiProbe
                     if (o["ChassisTypes"] is ushort[] { Length: > 0 } types && Chassis(types[0]) is { Length: > 0 } c)
                         info["Bauform"] = c;
 
-                // BIOS serial (e.g. Lenovo "PF1MA5TJ") and the friendly product name ("ThinkPad P52" –
-                // Win32_ComputerSystem.Model only holds the machine-type code like "20M9CTO1WW").
+                // BIOS serial (e.g. Lenovo "PF0A1B2C") and the friendly product name ("ThinkPad P52" –
+                // Win32_ComputerSystem.Model only holds the machine-type code like "20ABCTO1WW").
                 foreach (ManagementBaseObject o in Query(scope, "SELECT SerialNumber FROM Win32_BIOS"))
                     if (Meaningful(o["SerialNumber"]) is { } sn) info["Seriennummer"] = sn;
                 foreach (ManagementBaseObject o in Query(scope, "SELECT Version FROM Win32_ComputerSystemProduct"))

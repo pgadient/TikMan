@@ -855,7 +855,7 @@ public class DeviceViewModel : INotifyPropertyChanged
         get
         {
             // WMI product name first ("ThinkPad P52"), with the machine-type code appended in
-            // parentheses when it adds anything: "ThinkPad P52 (20M9CTO1WW)".
+            // parentheses when it adds anything: "ThinkPad P52 (20ABCTO1WW)".
             Model.ExtraInfo.TryGetValue("Produkt", out var product);
             Model.ExtraInfo.TryGetValue("Modell", out var wmi);
             var model = Board.Length > 0 ? Board
