@@ -1438,7 +1438,9 @@ public partial class MainWindow : Window
         _vm.DetailPaneAllowed = tag is "ipv4" or "ipv6";
         // The assistants pick up devices found since they were last shown.
         if (tag == "backups") { _backupView.Reload(); return; }
-        if (tag == "updates") { _updateView.Reload(); return; }
+        // Opening the update tab refreshes the list and kicks off a check right away, so the
+        // Installed/Available columns are current without pressing the button (no-op if one is already running).
+        if (tag == "updates") { _updateView.Reload(); _updateView.AutoCheckOnOpen(); return; }
         if (tag is not "logical" and not "physical") return;
 
         // ⚠️ Reuse an already-built map on a plain tab switch instead of rebuilding it. The physical build

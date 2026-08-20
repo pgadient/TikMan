@@ -117,11 +117,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             _canScan = value;
             Raise(nameof(CanScan)); Raise(nameof(ScanButtonText));
-            // ⚠️ ShowProgress derives from CanScan and must be raised HERE, after the value changed.
-            // It used to be raised earlier in Refresh – before CanScan was updated – so at scan end the
-            // binding re-read the OLD value, the block stayed visible with an empty grey bar, and only
-            // the next refresh (the next alive tick, seconds later) made it disappear.
-            Raise(nameof(ShowProgress));
         }
     }
 
@@ -139,8 +134,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     /// the whole block disappears rather than sitting there at 100 %.
     /// <para>There is no longer a choice of presentation: the bar and the protocol row are one display now
     /// (the bar runs 0 → 100 % over both stages and the row says which protocols are still listening), so
-    /// the old "combined bar" setting had nothing left to switch between.</para></summary>
-    public bool ShowProgress => !CanScan;
+    /// the old "combined bar" setting had nothing left to switch between.</para>
+    /// <para>⚠️ Tied to the SCAN alone, not to <see cref="CanScan"/>: CanScan now also goes false during a
+    /// credential re-read (so the button can stop it), but that re-read has its own bar – showing the main
+    /// scan block for it too would leave an empty grey bar standing next to the rescan bar.</para></summary>
+    private bool _showProgress;
+    public bool ShowProgress { get => _showProgress; private set { if (_showProgress == value) return; _showProgress = value; Raise(nameof(ShowProgress)); } }
 
     // ---- targeted re-read (after saving credentials, or "rescan devices") --------------------------
     //
@@ -700,7 +699,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         if (CanScan) { Scan(); return; }
         ActionLog.Write("scan.stop", "user");
         _suppressRestart = true;
+        // One Stop ends everything on screen: the scan AND any credential re-read ("Accessing devices"),
+        // which is a separate activity but reads to the user as the same "busy". Both are no-ops when idle.
         _fleet.StopScan();
+        _fleet.StopRescan();
     }
 
     public string ScanButtonText => CanScan ? T("Av_BtnScan") : T("Av_StopScan");
@@ -1297,7 +1299,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             ? T("Av_StatusScanning", pct, count)
             : count == 0 ? T("Av_StatusNoDevices")
                          : T("Av_StatusCount", count);
-        CanScan = !scanning;
+        // ⚠️ The button is "Stop" while EITHER a scan OR a credential re-read ("Accessing devices") is
+        // running, so that re-read can be stopped too – it is not part of the scan (a saved login triggers
+        // it) but the user sees one "busy" state and expects one Stop. ShowProgress stays scan-only (the
+        // re-read has its own bar). RescanRunning is read from the fleet just above.
+        CanScan = !scanning && !RescanRunning;
+        ShowProgress = scanning;
         Raise(nameof(ShowNoLoginBanner));
 
         // Continuous scan: start the next sweep after a breather. ⚠️ The delay is not cosmetic – a scan that

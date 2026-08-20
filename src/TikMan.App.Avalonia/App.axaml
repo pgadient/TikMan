@@ -238,6 +238,44 @@
             <Setter Property="Stretch" Value="Uniform" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
+
+        <!-- White text on the (saturated blue) selected row, so the row reads clearly when highlighted. -->
+        <Style Selector="DataGridRow:selected DataGridCell TextBlock">
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <!-- …but keep the per-row channel ComboBox's own text dark (it sits on its own light box, not on the
+             blue), so it stays readable. More specific selector, so it wins for the combo's inner text. -->
+        <Style Selector="DataGridRow:selected DataGridCell ComboBox TextBlock">
+            <Setter Property="Foreground" Value="#101010" />
+        </Style>
+
+        <!-- ⚠️ Grid selection checkbox: a plain black-on-white box, its own self-contained template, so it is
+             clearly visible BOTH on a white row and on the blue selected row. Semi's default check is a pale
+             tint that vanished on both. White box + dark border + dark check reads on either background.
+             Scoped to checkboxes INSIDE a DataGrid cell, so the option checkboxes elsewhere keep the theme. -->
+        <Style Selector="DataGrid DataGridCell CheckBox">
+            <!-- Hand cursor over the tick box, so it reads as clickable. -->
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Width="16" Height="16" CornerRadius="3.5" Background="White"
+                            BorderBrush="#3C3C3C" BorderThickness="1.3"
+                            HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <!-- Viewbox = the check is scaled proportionally and centred, whatever the geometry
+                             coordinates are, so it always sits neatly in the box. Slight top nudge because a
+                             checkmark looks centred a hair below the true middle. -->
+                        <Viewbox Width="9.5" Height="9.5" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                 Margin="0,0.5,0,0">
+                            <Path Name="Check" Data="M0,4.2 L3.2,7.4 L9,1" Stroke="#141414" StrokeThickness="1.7"
+                                  StrokeLineCap="Round" StrokeJoin="Round" IsVisible="False" />
+                        </Viewbox>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="DataGrid DataGridCell CheckBox:checked /template/ Path#Check">
+            <Setter Property="IsVisible" Value="True" />
+        </Style>
     </Application.Styles>
 
     <!-- Two-tone button glyphs: the icon is drawn in the theme's ink (black on light, white on dark) on the
@@ -286,6 +324,17 @@
                     <SolidColorBrush x:Key="OverlayCardBorderBrush" Color="#454A52" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
+
+            <!-- ⚠️ DataGrid selection colour. Semi's default selected row is a very pale blue that reads as
+                 "nothing is selected" – and it fades further when a ▲▼ button takes focus off the grid. These
+                 are the resource keys Semi's DataGrid row theme binds its selection fill to (overriding the
+                 keys is the way that works; a template-part selector for a part the theme lacks fails silently).
+                 A clear Windows-accent blue in every state (focused, unfocused, hovered), so a selected row is
+                 unmistakable – which is what the ▲▼ / drag reordering needs to be legible. -->
+            <SolidColorBrush x:Key="DataGridRowSelectedBackground" Color="#4A90D9" />
+            <SolidColorBrush x:Key="DataGridRowSelectedUnfocusedBackground" Color="#4A90D9" />
+            <SolidColorBrush x:Key="DataGridRowSelectedPointeroverBackground" Color="#3A80C9" />
+            <SolidColorBrush x:Key="DataGridRowSelectedPointeroverUnfocusedBackground" Color="#3A80C9" />
 
             <!-- Button glyphs as path geometry, not emoji: an emoji is drawn by the OS colour font and can
                  neither be tinted nor follow the light/dark variant. A Path fills with GlyphBrush, so every

@@ -47,24 +47,15 @@ public partial class BackupAllView : UserControl
         _stopButton = this.FindControl<Button>("StopButton")!;
         _emptyNotice = this.FindControl<TextBlock>("EmptyNotice")!;
         _grid.ItemsSource = _rows;
+        // Drag a row to reorder the run order (and click-to-select, so the ▲▼ buttons have a target).
+        RowReorder.Enable(_grid, _rows);
     }
 
     private void OnStop(object? sender, RoutedEventArgs e)
     { _cancel?.Cancel(); Append("Stopping after the current device…"); }
 
-    private void OnMoveUp(object? sender, RoutedEventArgs e) => Move(-1);
-    private void OnMoveDown(object? sender, RoutedEventArgs e) => Move(+1);
-
-    /// <summary>Moves the selected row one place, keeping it selected so repeated clicks walk it along.</summary>
-    private void Move(int delta)
-    {
-        if (_grid.SelectedItem is not BackupRow row) return;
-        var from = _rows.IndexOf(row);
-        var to = from + delta;
-        if (from < 0 || to < 0 || to >= _rows.Count) return;
-        _rows.Move(from, to);
-        _grid.SelectedItem = row;
-    }
+    private void OnMoveUp(object? sender, RoutedEventArgs e) => RowReorder.MoveSelected(_grid, _rows, -1);
+    private void OnMoveDown(object? sender, RoutedEventArgs e) => RowReorder.MoveSelected(_grid, _rows, +1);
 
     /// <summary>Binds the view to the live fleet and fills the grid. Called once by the main window.</summary>
     public void Attach(FleetService fleet)

@@ -421,9 +421,14 @@ public sealed class FleetService
             Persist();
         }
         // Drop any held SSH session for this device so the next read reconnects with the NEW credentials (and
-        // releases the old login). Outside the lock: disposing waits out an in-flight command, and we must not
-        // hold the fleet lock while it does.
-        SshSessionPool.Invalidate(SshSessionPool.KeyFor(host, sshPort));
+        // releases the old login). ⚠️ Off the caller's thread: Dispose() blocks until any in-flight SSH
+        // command on this device finishes, and this method is called on the UI thread. During a scan the probe
+        // pass may be mid-read on this very device, so a synchronous Invalidate froze the UI – and with it the
+        // scan's own Changed posts, so the scan looked like it "never finished" after a login was set. The next
+        // credentialed read (RescanDevicesAsync) waits for the scan to end first, so it is enough that the
+        // stale session is gone by then; it need not block the login dialog.
+        var key = SshSessionPool.KeyFor(host, sshPort);
+        _ = Task.Run(() => SshSessionPool.Invalidate(key));
         Changed?.Invoke();
         return true;
     }
@@ -476,6 +481,22 @@ public sealed class FleetService
         CancellationTokenSource? cts;
         lock (_lock) cts = _scanning ? _scanCts : null;
         try { cts?.Cancel(); } catch (ObjectDisposedException) { /* scan ended in the same instant */ }
+    }
+
+    /// <summary>Cancels the credential-based re-read ("Accessing devices"), whatever triggered it (a saved
+    /// login, "rescan devices"). Cancellation lands between the per-device probes; a file/command in flight is
+    /// left to finish. A no-op when nothing runs. The Stop button calls this alongside <see cref="StopScan"/>,
+    /// so one Stop ends whatever "accessing devices" activity is on screen.</summary>
+    public void StopRescan()
+    {
+        CancellationTokenSource? cts;
+        lock (_lock)
+        {
+            cts = Rescanning ? _rescanCts : null;
+            if (cts is not null) _rescanStopped = true;   // free the UI now; probes drain in the background
+        }
+        try { cts?.Cancel(); } catch (ObjectDisposedException) { /* ended in the same instant */ }
+        if (cts is not null) PublishRescan();             // bar hidden, Scan button back, immediately
     }
 
     /// <summary>The local IPv4 networks (real interface masks) for a UI adapter/subnet picker.</summary>
@@ -1135,12 +1156,19 @@ public sealed class FleetService
                 // services 0.55 → 0.75, v6 per-address enrichment 0.75 → 0.9, reachability 0.9 → 1.
                 await ProbeDevicesAsync(community, token, waitForTurn: true, p => MetaProgress(p * 0.55))
                     .ConfigureAwait(false);
+                // ⚠️ Stop between tail steps too: each of these is its own pass, so a Stop that lands after
+                // the per-device probes must not still run the DHCP-lease enrichment, the v6 probes and the
+                // reachability sweep to the end. ThrowIfCancellationRequested jumps straight to the catch,
+                // which leaves the found-so-far list in place – exactly what a stopped scan should do.
+                token.ThrowIfCancellationRequested();
                 // After the per-device probes have set what they can (so an actively-read name/OS wins over
                 // a DHCP hostname/class-id): pull names, the owner's lease comment and an OS guess from every
                 // credentialed MikroTik's DHCP lease table. Cheap (a handful of logins), a no-op without one.
                 await EnrichFromDhcpLeasesAsync().ConfigureAwait(false);
+                token.ThrowIfCancellationRequested();
                 await ProbeIpv6ServicesAsync(token, p => MetaProgress(0.55 + p * 0.2)).ConfigureAwait(false);
                 await ProbeIpv6MetaAsync(community, token, p => MetaProgress(0.75 + p * 0.15)).ConfigureAwait(false);
+                token.ThrowIfCancellationRequested();
                 await ProbeAllAsync(p => MetaProgress(0.9 + p * 0.1)).ConfigureAwait(false);
             }
             else await ProbeAllAsync(p => MetaProgress(p)).ConfigureAwait(false);
@@ -1690,6 +1718,10 @@ public sealed class FleetService
         List<int> ports;
         lock (_lock) { host = d.Host; ports = new List<int>(d.OpenPorts); }
         if (host.Length == 0) return;
+        // ⚠️ Stop pressed mid-scan cuts a device's remaining probe work here and at each block below. With
+        // ~16-wide concurrency every device is usually in flight at once, so the gate alone can't stop them –
+        // only these checkpoints between the (slow: SSH/SNMP) sub-probes make «Stop» actually take effect.
+        if (ct.IsCancellationRequested) return;
         bool web = ports.Any(p => p is 80 or 443 or 8080);
 
         if (web && await QnapProbe.QueryAsync(host, ports, ct).ConfigureAwait(false) is { } qnap)
@@ -1786,6 +1818,7 @@ public sealed class FleetService
             catch { /* no rights, RPC blocked, not a Windows host – SMB below still contributes */ }
         }
 
+        if (ct.IsCancellationRequested) return;
         if (ports.Contains(445))
         {
             if (await SmbInfoProbe.QueryAsync(host, 445, ct).ConfigureAwait(false) is { } smb)
@@ -1841,6 +1874,7 @@ public sealed class FleetService
         // timeout, so "off" would cost exactly as much as "on" while learning nothing.
         // Both SNMP versions are tried, so the badge can say which the device speaks (v1, v2c, or both) –
         // devices vary, and "SNMP works" is more useful split than merged. Same community for both.
+        if (ct.IsCancellationRequested) return;
         if (community.Length > 0)
         {
             // Both versions at once, not one after the other: a device with SNMP off would otherwise wait out
@@ -1892,6 +1926,7 @@ public sealed class FleetService
                 }
         }
 
+        if (ct.IsCancellationRequested) return;
         string encrypted, user;
         int sshPort;
         bool isZyxelSwitch, isTpLink, isZyxelFirewall, isUbiquiti;
@@ -2048,6 +2083,7 @@ public sealed class FleetService
         // Now that vendor + model (+ any login) are established, fill the Latest column on its own – no need
         // to open the Update tab. Rate-limited per device so the 30-second background refresh doesn't turn it
         // into a round trip every half minute.
+        if (ct.IsCancellationRequested) return;
         await MaybeCheckLatestAsync(d).ConfigureAwait(false);
     }
 
@@ -2890,6 +2926,7 @@ public sealed class FleetService
         // Two units of work per device (probe, then the update check), so the bar reflects the wait rather
         // than jumping to 100 % while the slowest half is still running.
         BeginRescan(targets.Count * 2);
+        var token = RescanToken();
         try
         {
             // ⚠️ In parallel, not one after another. Every device costs at least one connection setup, and
@@ -2902,9 +2939,14 @@ public sealed class FleetService
             using var gate = new SemaphoreSlim(parallel);
             await Task.WhenAll(targets.Select(async d =>
             {
-                await gate.WaitAsync().ConfigureAwait(false);
+                // ⚠️ Cancellable now (Stop button). Acquire under the token; if it is already cancelled the
+                // WaitAsync throws and we bail before touching the device – and we release nothing, because we
+                // never took a slot.
+                try { await gate.WaitAsync(token).ConfigureAwait(false); }
+                catch (OperationCanceledException) { return; }
                 try
                 {
+                    if (token.IsCancellationRequested) return;
                     int port;
                     lock (_lock) port = d.OpenPorts.Count > 0 ? d.OpenPorts[0] : 0;
                     if (port > 0)
@@ -2912,9 +2954,11 @@ public sealed class FleetService
                         var up = await Reachability.TcpProbeAsync(d.Host, port).ConfigureAwait(false);
                         lock (_lock) _online[WebId(d)] = up;
                     }
-                    try { await ProbeOneDeviceAsync(d, community, CancellationToken.None).ConfigureAwait(false); }
+                    try { await ProbeOneDeviceAsync(d, community, token).ConfigureAwait(false); }
                     catch { /* one stubborn device must not stop the rest of the selection */ }
                     StepRescan();
+                    // Stop pressed: skip this device's remaining (update / login-test / FDB) work.
+                    if (token.IsCancellationRequested) return;
 
                     // The update check rides along. It needs exactly what was just established – a working
                     // login – and asking for it separately afterwards was a second trip to every device for
@@ -2964,7 +3008,8 @@ public sealed class FleetService
                 finally { gate.Release(); }
             })).ConfigureAwait(false);
 
-            await ReadResourcesAsync(targets).ConfigureAwait(false);
+            if (!token.IsCancellationRequested)
+                await ReadResourcesAsync(targets).ConfigureAwait(false);
             lock (_lock) Persist();
         }
         finally { EndRescan(); }
@@ -2988,11 +3033,33 @@ public sealed class FleetService
     // batch joining mid-flight lengthens the SAME bar, and it disappears when the last one finishes.
     private int _rescanRunners;
     private int _rescanTotal, _rescanDone;
+    // One cancellation source for all overlapping re-read batches, alive while any runs – so «Stop» cancels
+    // the whole "accessing devices" activity, not just one batch. Created when the first batch starts,
+    // dropped when the last finishes.
+    private CancellationTokenSource? _rescanCts;
+    // ⚠️ Set by StopRescan: the UI reports "not rescanning" the INSTANT Stop is pressed (bar gone, Scan button
+    // back), while the cancelled per-device probes drain in the background. Cancellation can only land between
+    // network calls, so an in-flight SSH read to a slow box still has to finish – but the user should not have
+    // to watch a "stopping…" bar for those seconds. The drained tasks' late Step/EndRescan see this flag and
+    // keep the bar hidden; it clears when the last one finishes (or a fresh batch starts).
+    private bool _rescanStopped;
+
+    /// <summary>The token for the current re-read batch (cancelled by <see cref="StopRescan"/>).</summary>
+    private CancellationToken RescanToken() { lock (_lock) return _rescanCts?.Token ?? CancellationToken.None; }
 
     private void BeginRescan(int steps)
     {
         lock (_lock)
         {
+            if (_rescanRunners == 0 || _rescanStopped)
+            {
+                // Fresh batch: a new, uncancelled token. Only dispose the old source when no task can still
+                // hold it (all runners finished); if a stopped batch is still draining, leave its (cancelled)
+                // source for GC so those tasks don't hit an ObjectDisposedException checking the token.
+                if (_rescanRunners == 0) _rescanCts?.Dispose();
+                _rescanCts = new CancellationTokenSource();
+                _rescanStopped = false;
+            }
             _rescanRunners++;
             _rescanTotal += steps;
         }
@@ -3012,6 +3079,7 @@ public sealed class FleetService
             if (--_rescanRunners > 0) return;      // another batch is still going – keep the bar
             _rescanRunners = 0;
             _rescanTotal = _rescanDone = 0;
+            _rescanStopped = false;                // last drainer gone – ready for the next batch
         }
         PublishRescan();
         // Every credential-based re-read has now finished – let the UI rebuild anything that depended on that
@@ -3024,7 +3092,8 @@ public sealed class FleetService
     {
         lock (_lock)
         {
-            Rescanning = _rescanRunners > 0;
+            // Stopped ⇒ report idle immediately, even while cancelled probes are still draining.
+            Rescanning = _rescanRunners > 0 && !_rescanStopped;
             RescanProgress = _rescanTotal > 0 ? Math.Clamp(_rescanDone / (double)_rescanTotal, 0, 1) : 0;
         }
         try { Changed?.Invoke(); } catch { }

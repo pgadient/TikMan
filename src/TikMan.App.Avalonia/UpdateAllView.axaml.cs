@@ -60,6 +60,8 @@ public partial class UpdateAllView : UserControl
         _oneChannelForAll = this.FindControl<CheckBox>("OneChannelForAll")!;
         _emptyNotice = this.FindControl<TextBlock>("EmptyNotice")!;
         _grid.ItemsSource = _rows;
+        // Drag a row to reorder the run order (and click-to-select, so the ▲▼ buttons have a target).
+        RowReorder.Enable(_grid, _rows);
 
         // ⚠️ Without "(unchanged)": this combo is the fleet-wide channel, and "leave every device as it is"
         // is what the checkbox being OFF already means. Offering it here would be a second, contradictory
@@ -166,18 +168,16 @@ public partial class UpdateAllView : UserControl
         catch (Exception ex) { Append($"Could not save the channel setting: {ex.Message}"); }
     }
 
-    private void OnMoveUp(object? sender, RoutedEventArgs e) => Move(-1);
-    private void OnMoveDown(object? sender, RoutedEventArgs e) => Move(+1);
+    private void OnMoveUp(object? sender, RoutedEventArgs e) => RowReorder.MoveSelected(_grid, _rows, -1);
+    private void OnMoveDown(object? sender, RoutedEventArgs e) => RowReorder.MoveSelected(_grid, _rows, +1);
 
-    /// <summary>Moves the selected row one place, and keeps it selected so repeated clicks walk it along.</summary>
-    private void Move(int delta)
+    /// <summary>Runs a check automatically when the tab is opened, so the Installed/Available columns are
+    /// current without the user having to press the button each time. A no-op while a check or install is
+    /// already running (the run in progress owns the grid), and when there is nothing to check.</summary>
+    public void AutoCheckOnOpen()
     {
-        if (_grid.SelectedItem is not UpdateRow row) return;
-        var from = _rows.IndexOf(row);
-        var to = from + delta;
-        if (from < 0 || to < 0 || to >= _rows.Count) return;
-        _rows.Move(from, to);
-        _grid.SelectedItem = row;
+        if (_fleet is null || _rows.Count == 0 || _cancel is not null) return;
+        OnCheck(this, new RoutedEventArgs());
     }
 
     private async void OnCheck(object? sender, RoutedEventArgs e)
@@ -186,36 +186,54 @@ public partial class UpdateAllView : UserControl
         BeginRun();
         Append("Checking for updates…");
 
+        // ⚠️ In parallel (gated), not one after another. A check is a network round trip per device, and on a
+        // slow appliance the SSH/HTTPS handshake alone is seconds – measured, checking a dozen devices one at
+        // a time took most of a minute of pure waiting. They are independent reads, so a bounded fan-out cuts
+        // that to roughly the slowest single device. (The INSTALL stays strictly serial – OnInstall – because
+        // order matters there: edge first, uplink last, and each device reboots.)
+        // Snapshot _rows first: the bound collection stays live (Refresh clears it, ▲▼ reorder it, a tab
+        // switch runs) while the checks are in flight. The row objects are shared, so status updates still
+        // land in the grid; the continuations resume on the UI thread (no ConfigureAwait), so touching
+        // row/log/progress is safe and the shared counters are only ever incremented there.
+        var rows = _rows.ToList();
+        int parallel = _appData is { ParallelDeviceReads: >= 1 and <= 32 } a ? a.ParallelDeviceReads : 8;
         int done = 0, available = 0;
+        using var gate = new SemaphoreSlim(parallel);
         try
         {
-            // ⚠️ Snapshot first. _rows is the collection bound to the grid, and this loop awaits a network
-            // round trip per device – during which «Refresh» (which clears it), the ▲▼ buttons and a tab
-            // switch all stay live. Enumerating it directly threw "Collection was modified" out of an
-            // async void handler, which takes the process down. The row objects are shared on purpose, so
-            // the status updates below still land in the grid.
-            foreach (var row in _rows.ToList())
+            await Task.WhenAll(rows.Select(async row =>
             {
-                if (_cancel!.IsCancellationRequested) { Append("Stopped."); break; }
-
-                row.Status = "checking…";
-                // Remember the choice before the check so it survives a restart even if the device is down.
-                _fleet.SetUpdateChannel(row.Id, ChannelValue(row.Channel));
-
-                var info = await _fleet.CheckUpdateAsync(row.Id, ChannelValue(row.Channel));
-                if (info is null) { row.Status = "Check failed"; Append($"✗ {row.Name}: no response"); }
-                else
+                if (_cancel!.IsCancellationRequested) return;
+                await gate.WaitAsync();
+                try
                 {
-                    row.Installed = info.InstalledVersion;
-                    row.Latest = info.LatestVersion;
-                    if (info.UpdateAvailable) { row.Status = "Update available"; row.Selected = true; available++; Append($"● {row.Name}: {info.InstalledVersion} → {info.LatestVersion}"); }
-                    else { row.Status = "Up to date"; row.Selected = false; Append($"○ {row.Name}: {info.InstalledVersion} (up to date)"); }
-                }
-                done++;
-                _progress.Value = (double)done / _rows.Count;
-            }
+                    if (_cancel!.IsCancellationRequested) return;
+                    row.Status = "checking…";
+                    // Remember the choice before the check so it survives a restart even if the device is down.
+                    _fleet.SetUpdateChannel(row.Id, ChannelValue(row.Channel));
 
-            Append($"Done — {available} update(s) available.");
+                    var info = await _fleet.CheckUpdateAsync(row.Id, ChannelValue(row.Channel));
+                    if (info is null) { row.Status = "Check failed"; Append($"✗ {row.Name}: no response"); }
+                    else
+                    {
+                        row.Installed = info.InstalledVersion;
+                        row.Latest = info.LatestVersion;
+                        if (info.UpdateAvailable) { row.Status = "Update available"; row.Selected = true; available++; Append($"● {row.Name}: {info.InstalledVersion} → {info.LatestVersion}"); }
+                        else { row.Status = "Up to date"; row.Selected = false; Append($"○ {row.Name}: {info.InstalledVersion} (up to date)"); }
+                    }
+                }
+                catch { row.Status = "Check failed"; Append($"✗ {row.Name}: error"); }
+                finally
+                {
+                    gate.Release();
+                    done++;
+                    _progress.Value = rows.Count > 0 ? (double)done / rows.Count : 1;
+                }
+            }));
+
+            Append(_cancel!.IsCancellationRequested
+                ? $"Stopped — {available} update(s) available so far."
+                : $"Done — {available} update(s) available.");
         }
         finally { EndRun(installEnabled: available > 0); }
     }

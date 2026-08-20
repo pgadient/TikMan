@@ -25,10 +25,11 @@
         <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0" Spacing="8">
             <ProgressBar x:Name="Progress" Minimum="0" Maximum="1" Height="6" IsVisible="False" />
             <TextBox x:Name="Log" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
-                     FontFamily="Consolas, Menlo, monospace" FontSize="12" Height="110"
+                     FontFamily="Consolas, Menlo, monospace" FontSize="12" Height="220"
                      VerticalContentAlignment="Top"
                      ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" />
-            <StackPanel Orientation="Horizontal" Spacing="10">
+            <!-- Bottom margin lifts the run buttons off the status bar so they don't sit flush at the edge. -->
+            <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,0,12">
                 <Button x:Name="CheckButton" Content="{loc:Loc Av_CheckUpdates}" Click="OnCheck" Classes="action" />
                 <Button x:Name="InstallButton" Content="{loc:Loc Av_InstallSelected}" Click="OnInstall" IsEnabled="False" Classes="action" />
                 <!-- Visible only while a run is going: an update chain can take many minutes and the user
